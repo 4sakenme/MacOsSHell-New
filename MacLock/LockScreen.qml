@@ -133,46 +133,38 @@ Item {
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
 
-            // ── Fullscreen Ambient Spread Background (Ambilight around all 4 sides) ──
+            // ── Fullscreen Animated Canvas Background ──
             Loader {
                 id: canvasBgLoader
                 anchors.fill: parent
                 active: ls.canvasVideo !== "" && ls.artT > 0.005
-                opacity: ls.canvasVideo !== "" ? (1.0 * ls.artT) : 0
+                opacity: ls.canvasVideo !== "" ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 550; easing.type: Easing.OutCubic } }
                 z: 3
                 sourceComponent: Item {
-                    ShaderEffectSource {
-                        id: ambientSource
-                        sourceItem: art.cardVoItem
-                        live: true
-                        recursive: false
-                        visible: false
-                    }
-                    MultiEffect {
-                        id: ambientGlow
-                        anchors.fill: parent
-                        scale: 2.8                             // Ambient spreads outwards across 16:9 monitor
-                        source: ambientSource
-                        autoPaddingEnabled: false
-                        blurEnabled: true
-                        blurMax: 42                            // Moderate Ambilight blur so live motion/waves spread vibrantly
-                        blur: 0.65
-                        saturation: 0.48
-                        brightness: 0.02
-                    }
-
-                    // Subtle top & bottom vignette so clock, lyrics, and media controls stay perfectly readable
-                    Rectangle {
-                        anchors.fill: parent
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.22) }
-                            GradientStop { position: 0.22; color: Qt.rgba(0, 0, 0, 0.0) }
-                            GradientStop { position: 0.72; color: Qt.rgba(0, 0, 0, 0.0) }
-                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.28) }
+                    MediaPlayer {
+                        id: bgMp
+                        source: ls.canvasVideo !== "" ? "file://" + ls.canvasVideo : ""
+                        loops: MediaPlayer.Infinite
+                        videoOutput: bgVo
+                        audioOutput: null
+                        Component.onCompleted: play()
+                        onSourceChanged: {
+                            if (source !== "") {
+                                play();
+                            }
                         }
                     }
-
+                    VideoOutput {
+                        id: bgVo
+                        anchors.fill: parent
+                        fillMode: VideoOutput.PreserveAspectCrop
+                    }
+                    // Cinematic dark overlay so clock and text stay perfectly readable
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Qt.rgba(0, 0, 0, 0.20)
+                    }
                     TapHandler {
                         onTapped: {
                             if (ls.st.npMode === "art") {
@@ -719,7 +711,7 @@ Item {
     property string localCoverUrl: ""
     readonly property string effectiveCoverUrl: {
         if (localCoverUrl !== "") return localCoverUrl;
-        if (coverUrl.startsWith("file://") || coverUrl.startsWith("/") || coverUrl.startsWith("http://") || coverUrl.startsWith("https://")) return coverUrl;
+        if (coverUrl.startsWith("file://") || coverUrl.startsWith("/")) return coverUrl;
         return "";
     }
     property int coverIdx: 0
@@ -730,12 +722,7 @@ Item {
         if (effectiveCoverUrl === "" || !ls.isPrimary) return;
         var cur = coverIdx === 0 ? coverA : coverB;
         if (cur.source.toString() === effectiveCoverUrl) return;
-        if (cur.source.toString() === "") {
-            cur.source = effectiveCoverUrl;
-            coverAnim.restart();
-            bgAnim.restart();
-            return;
-        }     // first cover: just show it
+        if (cur.source.toString() === "") { cur.source = effectiveCoverUrl; return; }     // first cover: just show it
         (coverIdx === 0 ? coverB : coverA).source = effectiveCoverUrl;
         coverPending = true;
         coverWait.restart();
@@ -775,7 +762,7 @@ Item {
     // Apple "artwork mode" (tap the cover: it leaves the bubble, as wide as the bubble) and Apple Music style lyrics
     // (lyrics button). Only one at a time.
     // npMode: "" | "art" | "lyrics" | "artlyrics" (big cover on the left, lyrics on the right — Apple Music full screen)
-    readonly property bool artMode: (ls.st.npMode === "art" || ls.st.npMode === "artlyrics" || (ls.canvasVideo !== "" && ls.st.npMode !== "min")) && hasMedia && isPrimary && !leaving
+    readonly property bool artMode: (ls.st.npMode === "art" || ls.st.npMode === "artlyrics") && hasMedia && isPrimary && !leaving
     readonly property bool lyricsMode: (ls.st.npMode === "lyrics" || ls.st.npMode === "artlyrics") && hasMedia && isPrimary && !leaving
     readonly property bool sideMode: ls.st.npMode === "artlyrics" && hasMedia && isPrimary && !leaving
     // 0 → 1: cover + bubble slide left, the lyrics move beside them
@@ -954,15 +941,15 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 220 } }
         }
 
-        // cover art (Square Focus Card with Video + Liquid Glass Frame)
+        // cover art
         Item {
             id: art
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
             parent: ls
             z: media.z + 1
-            property alias cardVoItem: cardVo
+            readonly property bool hideCenterArt: ls.canvasVideo !== "" && (ls.canvasSource === "applemusic" || ls.canvasOfficial)
             visible: media.visible && opacity > 0.001
-            opacity: media.opacity
+            opacity: media.opacity * (hideCenterArt ? (1 - ls.artT) : 1)
             Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
             readonly property real r: (11 * ls.u) + ((28 * ls.u) - (11 * ls.u)) * ls.artT
             x: (media.x + 16 * ls.u) + ((media.x) - (media.x + 16 * ls.u)) * ls.artT
@@ -990,10 +977,10 @@ Item {
                 radius: art.r
                 blur: 40 * ls.u; spread: 0
                 offset.y: 14 * ls.u
-                color: Qt.rgba(0, 0, 0, 0.60)
+                color: Qt.rgba(0, 0, 0, 0.55)
                 opacity: Math.max(0, Math.min(1, ls.artT))
             }
-            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(0.08, 0.08, 0.10, 0.45) }
+            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(1, 1, 1, 0.12) }
             TapHandler {
                 // cover tap: bubble ↔ big cover; with lyrics open the cover joins them on the left (and leaves again)
                 onTapped: {
@@ -1004,7 +991,7 @@ Item {
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Glyph {
-                visible: artImg.status !== Image.Ready && (ls.canvasVideo === "")
+                visible: artImg.status !== Image.Ready
                 anchors.centerIn: parent; width: 24 * ls.u; height: 24 * ls.u
                 kind: "note"; color: Qt.rgba(1, 1, 1, 0.6)
             }
@@ -1015,7 +1002,7 @@ Item {
                 anchors.fill: parent
                 readonly property int status: ls.coverNew.status
                 visible: ls.coverUrl !== ""
-                opacity: (ls.canvasVideo !== "") ? 0 : (ls.coverNew.status === Image.Ready ? 1 : 0)
+                opacity: ls.coverNew.status === Image.Ready ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
                 fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
                 property variant oldTex: covOldSrc
@@ -1025,66 +1012,9 @@ Item {
                 property real radius: art.r
                 property real seed: ls.coverSeed
             }
-
-            // ── Video inside Center Square Card (1:1 Native Resolution) ──
-            Item {
-                id: artVideoContainer
-                anchors.fill: parent
-                visible: ls.canvasVideo !== "" && opacity > 0.001
-                opacity: ls.canvasVideo !== "" ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
-                layer.enabled: true
-                layer.effect: MultiEffect {
-                    maskEnabled: true
-                    maskSource: artMask
-                }
-                Rectangle {
-                    id: artMask
-                    width: art.width; height: art.height
-                    radius: art.r
-                    color: "black"
-                    visible: false
-                }
-                VideoOutput {
-                    id: cardVo
-                    anchors.fill: parent
-                    fillMode: VideoOutput.PreserveAspectCrop
-                }
-            }
-
-            // Liquid Glass Rim Border
             Rectangle {
-                anchors.fill: parent
-                radius: art.r
-                color: "transparent"
-                border.width: (1.2 + 0.6 * ls.artT) * ls.u
-                border.color: Qt.rgba(1, 1, 1, 0.22)
-                z: 8
-            }
-            // Liquid Glass Top Specular Sheen
-            Rectangle {
-                anchors.fill: parent
-                radius: art.r
-                z: 9
-                opacity: ls.artT
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
-                    GradientStop { position: 0.22; color: Qt.rgba(1, 1, 1, 0.04) }
-                    GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.0) }
-                }
-            }
-        }
-
-        MediaPlayer {
-            id: canvasPlayer
-            source: (ls.canvasVideo !== "" && ls.shown && !ls.leaving) ? "file://" + ls.canvasVideo : ""
-            loops: MediaPlayer.Infinite
-            videoOutput: art.cardVoItem
-            audioOutput: null
-            Component.onCompleted: if (source !== "") play()
-            onSourceChanged: {
-                if (source !== "") play();
-                else stop();
+                anchors.fill: parent; radius: art.r; color: "transparent"
+                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
             }
         }
 

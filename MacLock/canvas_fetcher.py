@@ -455,9 +455,9 @@ def fetch_apple_music_motion(artist, title, album, target_path):
             api_data = json.loads(r_api.read().decode())
         item = api_data.get('data', [{}])[0]
         ev = item.get('attributes', {}).get('editorialVideo', {})
-        square = ev.get('motionDetailSquare') or ev.get('motionSquareVideo1x1')
         tall = ev.get('motionDetailTall') or ev.get('motionTallVideo3x4')
-        master_m3u8 = (square or tall or {}).get('video')
+        square = ev.get('motionDetailSquare') or ev.get('motionSquareVideo1x1')
+        master_m3u8 = (tall or square or {}).get('video')
     except Exception:
         return False
 
