@@ -133,37 +133,37 @@ Item {
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
 
-            // ── Fullscreen Animated Canvas Background ──
+            // ── Fullscreen Ambient Liquid Glass Background ──
             Loader {
                 id: canvasBgLoader
                 anchors.fill: parent
                 active: ls.canvasVideo !== "" && ls.artT > 0.005
-                opacity: ls.canvasVideo !== "" ? 1 : 0
+                opacity: ls.canvasVideo !== "" ? (0.95 * ls.artT) : 0
                 Behavior on opacity { NumberAnimation { duration: 550; easing.type: Easing.OutCubic } }
                 z: 3
                 sourceComponent: Item {
-                    MediaPlayer {
-                        id: bgMp
-                        source: ls.canvasVideo !== "" ? "file://" + ls.canvasVideo : ""
-                        loops: MediaPlayer.Infinite
-                        videoOutput: bgVo
-                        audioOutput: null
-                        Component.onCompleted: play()
-                        onSourceChanged: {
-                            if (source !== "") {
-                                play();
-                            }
-                        }
+                    ShaderEffectSource {
+                        id: canvasMirror
+                        sourceItem: art.cardVoItem
+                        live: true
+                        recursive: false
+                        visible: false
                     }
-                    VideoOutput {
-                        id: bgVo
+                    MultiEffect {
                         anchors.fill: parent
-                        fillMode: VideoOutput.PreserveAspectCrop
+                        scale: 1.28                            // pushes the blur's soft edges off-screen
+                        source: canvasMirror
+                        autoPaddingEnabled: false
+                        blurEnabled: true
+                        blurMax: 64
+                        blur: 1.0
+                        saturation: 0.38
+                        brightness: -0.12
                     }
                     // Cinematic dark overlay so clock and text stay perfectly readable
                     Rectangle {
                         anchors.fill: parent
-                        color: Qt.rgba(0, 0, 0, 0.20)
+                        color: Qt.rgba(0, 0, 0, 0.25)
                     }
                     TapHandler {
                         onTapped: {
@@ -190,7 +190,7 @@ Item {
                     saturation: 0.25
                     brightness: -0.16
                     // new: fades in with the hand-over; old: only there while it's being covered
-                    opacity: (ls.canvasVideo !== "" ? 0 : 1) * (index === 1 ? ls.bgProg : (ls.bgProg < 1 ? 1 : 0))
+                    opacity: (ls.canvasVideo !== "" && ls.artT > 0.05 ? 0 : 1) * (index === 1 ? ls.bgProg : (ls.bgProg < 1 ? 1 : 0))
                     Behavior on opacity { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
                     visible: img.status === Image.Ready && opacity > 0.003
                     z: index
@@ -947,9 +947,9 @@ Item {
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
             parent: ls
             z: media.z + 1
-            readonly property bool hideCenterArt: ls.canvasVideo !== "" && (ls.canvasSource === "applemusic" || ls.canvasOfficial)
+            property alias cardVoItem: cardVo
             visible: media.visible && opacity > 0.001
-            opacity: media.opacity * (hideCenterArt ? (1 - ls.artT) : 1)
+            opacity: media.opacity
             Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
             readonly property real r: (11 * ls.u) + ((28 * ls.u) - (11 * ls.u)) * ls.artT
             x: (media.x + 16 * ls.u) + ((media.x) - (media.x + 16 * ls.u)) * ls.artT
@@ -975,12 +975,12 @@ Item {
             RectangularShadow {
                 anchors.fill: parent
                 radius: art.r
-                blur: 40 * ls.u; spread: 0
-                offset.y: 14 * ls.u
-                color: Qt.rgba(0, 0, 0, 0.55)
+                blur: (36 + 18 * ls.artT) * ls.u; spread: 0
+                offset.y: (8 + 12 * ls.artT) * ls.u
+                color: Qt.rgba(0, 0, 0, 0.60)
                 opacity: Math.max(0, Math.min(1, ls.artT))
             }
-            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(1, 1, 1, 0.12) }
+            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(0.08, 0.08, 0.10, 0.45) }
             TapHandler {
                 // cover tap: bubble ↔ big cover; with lyrics open the cover joins them on the left (and leaves again)
                 onTapped: {
@@ -991,7 +991,7 @@ Item {
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Glyph {
-                visible: artImg.status !== Image.Ready
+                visible: artImg.status !== Image.Ready && (ls.canvasVideo === "")
                 anchors.centerIn: parent; width: 24 * ls.u; height: 24 * ls.u
                 kind: "note"; color: Qt.rgba(1, 1, 1, 0.6)
             }
@@ -1002,7 +1002,7 @@ Item {
                 anchors.fill: parent
                 readonly property int status: ls.coverNew.status
                 visible: ls.coverUrl !== ""
-                opacity: ls.coverNew.status === Image.Ready ? 1 : 0
+                opacity: (ls.canvasVideo !== "" && ls.artT > 0.05) ? 0 : (ls.coverNew.status === Image.Ready ? 1 : 0)
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
                 fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
                 property variant oldTex: covOldSrc
@@ -1012,9 +1012,65 @@ Item {
                 property real radius: art.r
                 property real seed: ls.coverSeed
             }
+
+            // ── Animated Artwork Video Layer (100% Crisp Native Ratio) ──
+            Item {
+                id: artVideoContainer
+                anchors.fill: parent
+                visible: ls.canvasVideo !== "" && opacity > 0.001
+                opacity: (ls.canvasVideo !== "" && ls.artT > 0.02) ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: artMask
+                }
+                Rectangle {
+                    id: artMask
+                    width: art.width; height: art.height
+                    radius: art.r
+                    color: "black"
+                    visible: false
+                }
+                VideoOutput {
+                    id: cardVo
+                    anchors.fill: parent
+                    fillMode: VideoOutput.PreserveAspectCrop
+                }
+            }
+
+            // ── Liquid Glass Refraction Rim & Specular Bevel ──
             Rectangle {
-                anchors.fill: parent; radius: art.r; color: "transparent"
-                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
+                anchors.fill: parent
+                radius: art.r
+                color: "transparent"
+                border.width: (1.2 + 0.6 * ls.artT) * ls.u
+                border.color: Qt.rgba(1, 1, 1, 0.22)
+                z: 8
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: art.r
+                z: 9
+                opacity: ls.artT
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
+                    GradientStop { position: 0.22; color: Qt.rgba(1, 1, 1, 0.04) }
+                    GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.0) }
+                }
+            }
+        }
+
+        MediaPlayer {
+            id: canvasPlayer
+            source: (ls.canvasVideo !== "" && ls.shown && !ls.leaving) ? "file://" + ls.canvasVideo : ""
+            loops: MediaPlayer.Infinite
+            videoOutput: art.cardVoItem
+            audioOutput: null
+            Component.onCompleted: if (source !== "") play()
+            onSourceChanged: {
+                if (source !== "") play();
+                else stop();
             }
         }
 
