@@ -133,7 +133,7 @@ Item {
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
 
-            // ── Fullscreen Ambient Spread Background (YouTube Ambilight Style) ──
+            // ── Fullscreen Ambient Spread Background (Ambilight around all 4 sides) ──
             Loader {
                 id: canvasBgLoader
                 anchors.fill: parent
@@ -775,7 +775,7 @@ Item {
     // Apple "artwork mode" (tap the cover: it leaves the bubble, as wide as the bubble) and Apple Music style lyrics
     // (lyrics button). Only one at a time.
     // npMode: "" | "art" | "lyrics" | "artlyrics" (big cover on the left, lyrics on the right — Apple Music full screen)
-    readonly property bool artMode: (ls.st.npMode === "art" || ls.st.npMode === "artlyrics") && hasMedia && isPrimary && !leaving
+    readonly property bool artMode: (ls.st.npMode === "art" || ls.st.npMode === "artlyrics" || (ls.canvasVideo !== "" && ls.st.npMode !== "min")) && hasMedia && isPrimary && !leaving
     readonly property bool lyricsMode: (ls.st.npMode === "lyrics" || ls.st.npMode === "artlyrics") && hasMedia && isPrimary && !leaving
     readonly property bool sideMode: ls.st.npMode === "artlyrics" && hasMedia && isPrimary && !leaving
     // 0 → 1: cover + bubble slide left, the lyrics move beside them
@@ -954,7 +954,7 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 220 } }
         }
 
-        // cover art
+        // cover art (Square Focus Card with Video + Liquid Glass Frame)
         Item {
             id: art
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
