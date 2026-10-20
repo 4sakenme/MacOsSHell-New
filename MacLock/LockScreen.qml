@@ -155,7 +155,7 @@ Item {
                         }
                     }
 
-                    // 1. Ambient Bloom layer (Blooms outwards to the left & right edges - "nở rìa màn hình")
+                    // 1. Ambient Bloom layer (Blooms outwards to the left & right edges - "nở tràn viền màn hình")
                     ShaderEffectSource {
                         id: ambientSource
                         sourceItem: fgVo
@@ -166,14 +166,14 @@ Item {
                     MultiEffect {
                         id: ambientGlow
                         anchors.fill: parent
-                        scale: 1.35
+                        scale: 2.6                             // Expands the ambient bloom all the way across the entire screen width
                         source: ambientSource
                         autoPaddingEnabled: false
                         blurEnabled: true
-                        blurMax: 64
+                        blurMax: 96
                         blur: 1.0
-                        saturation: 0.38
-                        brightness: -0.10
+                        saturation: 0.52
+                        brightness: 0.05
                     }
 
                     // 2. Foreground Crisp Uncropped Video (Center, 100% Native Resolution, Full Height)
@@ -185,22 +185,15 @@ Item {
                         fillMode: VideoOutput.PreserveAspectFit
                     }
 
-                    // 3. Ambient edge vignette: subtle soft horizontal feathering at the edges
+                    // Subtle top & bottom vignette so clock, lyrics, and media controls stay perfectly readable
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.30) }
-                            GradientStop { position: 0.10; color: Qt.rgba(0, 0, 0, 0.0) }
-                            GradientStop { position: 0.90; color: Qt.rgba(0, 0, 0, 0.0) }
-                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.30) }
+                            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.22) }
+                            GradientStop { position: 0.22; color: Qt.rgba(0, 0, 0, 0.0) }
+                            GradientStop { position: 0.72; color: Qt.rgba(0, 0, 0, 0.0) }
+                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.28) }
                         }
-                    }
-
-                    // Cinematic dark overlay so clock and text stay perfectly readable
-                    Rectangle {
-                        anchors.fill: parent
-                        color: Qt.rgba(0, 0, 0, 0.20)
                     }
 
                     TapHandler {
