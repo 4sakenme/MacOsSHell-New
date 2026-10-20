@@ -25,16 +25,44 @@
 
 A macOS Tahoe–style **menu bar + Dock** for Hyprland, built on [Quickshell](https://quickshell.org), with a real-time
 "Liquid Glass" refraction shader, window previews, Spotlight, clipboard/emoji picker, notifications, Control Center,
-screenshots, screen recording, desktop widgets (weather, calendar, clock, music player), a wallpaper picker, an
-Alt+Tab switcher and a full lock screen, all in one Quickshell process.
+screenshots, screen recording, an extended suite of desktop widgets (weather, calendar, clock, music player with synchronized lyrics, animated GIF/WebP, system monitor, stocks/crypto, battery, reminders), a wallpaper picker, an
+Alt+Tab switcher, and a full lock screen, all in one Quickshell process.
 
-The repository also ships **MacLock**, a matching Liquid Glass lock screen. It is a separate Quickshell config on
-purpose: it runs as its own process, so a shell crash can never take the lock with it.
+The repository also ships **MacLock**, a matching Liquid Glass lock screen with **Apple Music Motion Artwork** and **Spotify Canvas** video playback, synchronized karaoke lyrics, and PAM security.
 
 Best icon pack for the shell: https://github.com/Scrimas/MacOS-Like
 
 > **Heads up:** this targets **Hyprland 0.55+ with a Lua config** (`hyprland.lua`) and a recent **Quickshell (0.3.x)**.
 > See [Requirements](#requirements) and [Known issues](#known-issues).
+
+## ✨ New Features & Enhancements (4sakenme Edition)
+
+This fork extends the upstream `0-ss/MacShell` with powerful new capabilities, multimedia features, and GPU optimizations:
+
+### 🎵 Animated Album Canvas on MacLock (Apple Music Motion & Spotify Canvas)
+- **Official Apple Music Motion Artwork**: Integrates Apple Music's modern AMP API (`amp-api.music.apple.com`) to retrieve official animated album motion videos (`motionDetailSquare` / `motionDetailTall`).
+- **Official Spotify Canvas**: Automatically queries and fetches Spotify Canvas videos for currently playing tracks.
+- **Zero-CPU Video Remuxing**: Uses pure stream-copy remuxing (`ffmpeg -c copy`) to convert HLS streams to `.mp4` in milliseconds with **0% CPU transcoding overhead**.
+- **Smart 20 MB Cache Protection**: Automatic LRU cache pruner prevents disk bloat by enforcing a strict 20 MB / 4-video limit.
+- **Smooth Fallback**: Gracefully fades into high-resolution blurred album artwork when no animated video exists.
+
+### 🎤 Synchronized Apple Music-Style Lyrics
+- **Word-by-Word Karaoke Illumination**: Lyrics illuminate and scale smoothly as each word is sung.
+- **Instrumental Break Indicator**: Displays 3 pulsing / breathing rhythm indicator dots during musical interludes.
+- **Depth-of-Field Blur**: Off-focus lines blur and scale down gently; active lines smoothly bounce into focus (`Easing.OutBack`).
+- **Available Everywhere**: Seamlessly integrated into both **MacLock** and the **MacShell Player desktop widget**.
+- **Multi-Source Fetcher (`lyrics_fetcher.py`)**: Asynchronously queries LRCLIB with fallback to `syncedlyrics` (Musixmatch, NetEase, Megalobiz).
+
+### 🖥️ Extended Desktop Widgets Suite
+- **Animated GIF / WebP Widget (`GifWidget.qml`)**: Display looping animations directly on the desktop with macOS squircle aesthetics and an interactive file picker.
+- **System Monitor Widget (`SystemMonitorWidget.qml` & `sysmon_reader.py`)**: macOS Activity Monitor-style circular gauges for CPU, GPU, RAM, Disk, Thermals, and Network.
+- **Stocks & Cryptocurrency Widget (`StocksWidget.qml` & `stocks_fetcher.py`)**: Live market tracking (BTC, ETH, SOL, AAPL, NVDA, etc.) with interactive sparkline curves and gradient fills.
+- **Battery Widget (`BatteryWidget.qml` & `battery_reader.py`)**: Displays battery percentage, health, and power profile.
+- **Reminders Widget (`RemindersWidget.qml` & `Reminders.qml`)**: Interactive task checklist that syncs with `reminders.md` and plays Apple sound effects.
+
+### ⚡ Heavy GPU & CPU Optimizations (macOS App Nap)
+- **Desktop Occlusion Awareness**: Animated widgets (GIF, Canvas, Lyrics) detect when they are covered by application windows. Playback and decoders pause automatically, dropping idle resource usage to **0%**.
+- **Streamlined Liquid Glass Shader**: Downsampled blur pre-passes (`gl.ds = 0.5`) and settle timers eliminate continuous redraw loops.
 
 ## Screenshots
 
@@ -103,7 +131,14 @@ The two are installed as **separate** Quickshell configs (neither lives inside t
 | `ClockApp.qml` | The Clock app window (opened from the menu bar clock). |
 | `MacWidgets.qml` | Desktop widgets layer (data, placement, editing). |
 | `WidgetVisual.qml` | Draws one widget; shared by the desktop layer and the Liquid Glass backdrop, so menus refract the widgets too. |
-| `WeatherWidget.qml`, `WeatherIcon.qml`, `WeatherHourCol.qml`, `CalendarWidget.qml`, `ClockWidget.qml`, `PlayerWidget.qml`, `PlayerArt.qml`, `PlayerBtn.qml`, `PlayerGlyph.qml`, `ImageWidget.qml`, `MarqueeText.qml` | The widgets and their helpers (`ImageWidget.qml` shows a picture of your choice). |
+| `WeatherWidget.qml`, `CalendarWidget.qml`, `ClockWidget.qml`, `PlayerWidget.qml`, `ImageWidget.qml` | Core desktop widgets (`PlayerWidget.qml` includes synchronized karaoke lyrics and pulsing rhythm dots). |
+| `GifWidget.qml` | Animated GIF / WebP loop widget with App Nap occlusion pausing. |
+| `SystemMonitorWidget.qml`, `sysmon_reader.py` | Activity Monitor-style circular gauges for CPU, GPU, RAM, Disk, Thermals, and Network. |
+| `StocksWidget.qml`, `stocks_fetcher.py` | Apple Stocks widget for tracking equities and crypto with interactive sparklines. |
+| `BatteryWidget.qml`, `battery_reader.py` | Battery percentage, health status, and power profile widget. |
+| `RemindersWidget.qml`, `Reminders.qml` | Interactive task checklist that syncs with `reminders.md` and plays Apple sound effects. |
+| `lyrics_fetcher.py` | Asynchronous multi-source lyrics daemon with caching (LRCLIB + syncedlyrics). |
+| `AirDrop.qml`, `scripts/macshell-airdrop.py` | Native local sharing with animated radar UI. |
 | `SPopUp.qml`, `Dissolve.qml`, `MorphText.qml`, `MorphGlyph.qml`, `WGlyph.qml`, `ClockGlyph.qml`, `Wheel.qml` | Shared UI pieces and effects. |
 | `liquidglass.frag` (+ `contourglow`, `tintcard`, `dust`, `burn`, `fade`) | Shaders. Prebuilt `.frag.qsb` files ship next to them; `liquidglass.frag` is recompiled with `qsb` on first run. |
 | `EmojiData.js` | Emoji fallback data for Spotlight (from [gemoji](https://github.com/github/gemoji), MIT). |
@@ -116,7 +151,9 @@ The two are installed as **separate** Quickshell configs (neither lives inside t
 | File | Purpose |
 |---|---|
 | `shell.qml` | Entry point: session lock, IPC (`lockscreen`), preview mode. |
-| `LockScreen.qml` | The lock screen UI and PAM password check. |
+| `LockScreen.qml` | The lock screen UI, animated canvas player, karaoke lyrics, and PAM password check. |
+| `canvas_fetcher.py` | Asynchronous Apple Music Motion (AMP API) and Spotify Canvas video fetcher with 0% CPU remuxing and 20MB cache cap. |
+| `lyrics_fetcher.py` | Lock screen synchronized lyrics engine with local caching. |
 | `lock-via-ipc.sh` | Helper for your keybind: starts MacLock if needed, then locks. |
 | `Glass.qml`, `Glyph.qml`, `MorphGlyph.qml`, `MorphText.qml`, `ClockGlyph.qml`, `ContourGlow.qml` and the `*.frag` / `*.qsb` shaders | Visuals. |
 | `hyprland.lua` | Snippet with the keybind (copy it into your config). |
@@ -209,15 +246,15 @@ This shell **replaces** your bar, dock and notification daemon. Stop anything th
    `bash install.sh --deps-only` does just this step.
    Hyprland 0.55+ with a Lua config may need a newer package than your distro ships, so check `hyprctl version`.
    Debian/Ubuntu have no `quickshell` / `hyprland` packages: build those from source.
-2. Run the installer, either from a clone:
+2. Run the installer, either from a clone of this repository:
    ```sh
-   git clone https://github.com/0-ss/MacShell
-   cd MacShell
+   git clone https://github.com/4sakenme/MacOsSHell-New
+   cd MacOsSHell-New
    bash install.sh
    ```
    or in one line:
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/0-ss/MacShell/main/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/install.sh | bash
    ```
    It installs **MacShell** to `~/.config/quickshell/MacShell` and **MacLock** to `~/.config/quickshell/MacLock`,
    and adds the autostart to your Hyprland config: a block in `hyprland.lua` (Hyprland 0.55+), or an `exec-once`
@@ -266,8 +303,8 @@ Environment: `MACSHELL_REPO`, `MACSHELL_BRANCH`, `MACSHELL_CHANNEL`, `MACSHELL_D
 The Best way to make sure you have the latest update Is to delete the MacShell folder in /home (IF needed) and run this again :
 
    ```sh
-   git clone https://github.com/0-ss/MacShell
-   cd MacShell
+   git clone https://github.com/4sakenme/MacOsSHell-New
+   cd MacOsSHell-New
    bash install.sh
    ```
 or you can use this method :
@@ -375,6 +412,14 @@ qs -c MacLock                                          # lock immediately, one-s
 MACLOCK_PREVIEW=1 qs -c MacLock                        # preview the design as a window, no real lock
 ```
 
+### 🎬 Animated Album Canvas & Lyrics (Apple Music & Spotify)
+MacLock elevates the lock screen with dynamic multimedia playback:
+- **Apple Music Motion Artwork**: Integrates with Apple Music's AMP API (`amp-api.music.apple.com`) to play official animated motion album covers.
+- **Spotify Canvas**: Asynchronously loads and loops official Spotify Canvas videos.
+- **Zero CPU Overhead**: Employs stream-copy remuxing (`ffmpeg -c copy`) to process video streams within milliseconds without CPU transcoding spikes.
+- **Storage Protection**: Built-in LRU cache manager enforces a strict **20 MB** disk space limit.
+- **Apple Music-Style Synchronized Lyrics**: Real-time karaoke lyrics with word-by-word illumination and breathing instrumental indicators.
+
 Passwords are checked with PAM (`/etc/pam.d/hyprlock`). To lock on idle or before sleep with `hypridle`, set
 `lock_cmd = sh ~/.config/quickshell/MacLock/lock-via-ipc.sh`.
 
@@ -387,13 +432,21 @@ original colours. It needs no shader build and no extra packages.
 
 ## Desktop widgets
 
-Settings → General → Desktop Widgets. Weather, Calendar, Clock, Player and **Image** widgets, each in Small, Medium
-and Large. **Widget size** scales every widget and the grid together (60 % to 150 %); widgets snap back onto the
-grid when you let go of the slider.
+Settings → General → Desktop Widgets. A full suite of macOS Sequoia / Tahoe-style widgets, each available in Small, Medium, and Large:
 
-An Image widget shows a picture you choose: press **+ S / M / L** on the Image row and pick a file (needs `zenity`,
-`kdialog` or `yad`). The picture is copied to `~/.config/macwidgets/images`, so it keeps working if the original
-moves. To change it later use **Edit on Desktop** and press **Choose Image…** on the widget.
+- **Weather, Calendar & Clock**: Live weather forecasts (Open-Meteo), calendar events, and customizable clock dials.
+- **Player Widget with Synchronized Lyrics**:
+  - Displays currently playing tracks, album art, and seek controls.
+  - Interactive lyrics button opens real-time scrolling lyrics with Apple Music-style word-by-word karaoke illumination, depth-of-field blur, and 3-dot breathing animations during instrumental sections.
+  - Automatically queries LRCLIB and `syncedlyrics`.
+- **Animated GIF / WebP Widget**: Place looping GIF or WebP animations on the desktop. In Edit mode, click **Choose GIF…** to pick an animation. Automatically pauses when covered to eliminate GPU usage.
+- **System Monitor Widget**: Activity Monitor-style circular gauges and readouts for CPU load, GPU usage, RAM consumption, disk space, temperatures, and network activity.
+- **Stocks & Cryptocurrency Widget**: Track equities and cryptocurrencies (BTC, ETH, SOL, AAPL, NVDA, etc.) with real-time price trends, percentage badges, and interactive sparkline charts.
+- **Battery Widget**: Clean battery indicator displaying charge level, charging state, and power profile.
+- **Reminders Widget**: Interactive checklist synchronized with `~/.config/macwidgets/reminders.md` with completion sound effects.
+- **Image Widget**: Displays any custom image from disk (supports **+ S / M / L** and **Choose Image…**).
+
+**Widget size** scales every widget and the grid together (60 % to 150 %); widgets snap back onto the grid when you let go of the slider.
 
 ## Wallpaper
 
