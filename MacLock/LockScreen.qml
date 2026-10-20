@@ -133,7 +133,7 @@ Item {
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
 
-            // ── Fullscreen Animated Canvas with Ambient Edge Bloom (iOS / iPadOS Style) ──
+            // ── Fullscreen Ambient Spread Background (YouTube Ambilight Style) ──
             Loader {
                 id: canvasBgLoader
                 anchors.fill: parent
@@ -142,23 +142,9 @@ Item {
                 Behavior on opacity { NumberAnimation { duration: 550; easing.type: Easing.OutCubic } }
                 z: 3
                 sourceComponent: Item {
-                    MediaPlayer {
-                        id: bgMp
-                        source: ls.canvasVideo !== "" ? "file://" + ls.canvasVideo : ""
-                        loops: MediaPlayer.Infinite
-                        videoOutput: fgVo
-                        audioOutput: null
-                        Component.onCompleted: play()
-                        onSourceChanged: {
-                            if (source !== "") play();
-                            else stop();
-                        }
-                    }
-
-                    // 1. Ambient Spread Layer (YouTube Ambilight style: motion stays crisp & spreads across the screen)
                     ShaderEffectSource {
                         id: ambientSource
-                        sourceItem: fgVo
+                        sourceItem: art.cardVoItem
                         live: true
                         recursive: false
                         visible: false
@@ -166,51 +152,14 @@ Item {
                     MultiEffect {
                         id: ambientGlow
                         anchors.fill: parent
-                        scale: 2.2                             // Ambient spread across full 16:9 monitor
+                        scale: 2.8                             // Ambient spreads outwards across 16:9 monitor
                         source: ambientSource
                         autoPaddingEnabled: false
                         blurEnabled: true
-                        blurMax: 36                            // Moderate blur (not foggy) so live video animation/ripples are clearly visible spreading out!
-                        blur: 0.58
-                        saturation: 0.42
+                        blurMax: 42                            // Moderate Ambilight blur so live motion/waves spread vibrantly
+                        blur: 0.65
+                        saturation: 0.48
                         brightness: 0.02
-                    }
-
-                    // 2. Foreground Crisp Video with Soft Feathered Edges (Seamless dissolution into ambient spread)
-                    Item {
-                        anchors.fill: parent
-
-                        Item {
-                            id: featherMask
-                            x: fgVo.contentRect.x
-                            y: fgVo.contentRect.y
-                            width: Math.max(1, fgVo.contentRect.width)
-                            height: Math.max(1, fgVo.contentRect.height)
-                            visible: false
-                            Rectangle {
-                                anchors.fill: parent
-                                gradient: Gradient {
-                                    orientation: Gradient.Horizontal
-                                    GradientStop { position: 0.0; color: "transparent" }
-                                    GradientStop { position: 0.06; color: "black" }
-                                    GradientStop { position: 0.94; color: "black" }
-                                    GradientStop { position: 1.0; color: "transparent" }
-                                }
-                            }
-                        }
-
-                        VideoOutput {
-                            id: fgVo
-                            anchors.centerIn: parent
-                            height: parent.height
-                            width: parent.width
-                            fillMode: VideoOutput.PreserveAspectFit
-                            layer.enabled: true
-                            layer.effect: MultiEffect {
-                                maskEnabled: true
-                                maskSource: featherMask
-                            }
-                        }
                     }
 
                     // Subtle top & bottom vignette so clock, lyrics, and media controls stay perfectly readable
@@ -1011,9 +960,9 @@ Item {
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
             parent: ls
             z: media.z + 1
-            readonly property bool hideCenterArt: ls.canvasVideo !== ""
+            property alias cardVoItem: cardVo
             visible: media.visible && opacity > 0.001
-            opacity: media.opacity * (hideCenterArt ? (1 - ls.artT) : 1)
+            opacity: media.opacity
             Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
             readonly property real r: (11 * ls.u) + ((28 * ls.u) - (11 * ls.u)) * ls.artT
             x: (media.x + 16 * ls.u) + ((media.x) - (media.x + 16 * ls.u)) * ls.artT
@@ -1041,10 +990,10 @@ Item {
                 radius: art.r
                 blur: 40 * ls.u; spread: 0
                 offset.y: 14 * ls.u
-                color: Qt.rgba(0, 0, 0, 0.55)
+                color: Qt.rgba(0, 0, 0, 0.60)
                 opacity: Math.max(0, Math.min(1, ls.artT))
             }
-            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(1, 1, 1, 0.12) }
+            Rectangle { anchors.fill: parent; radius: art.r; color: Qt.rgba(0.08, 0.08, 0.10, 0.45) }
             TapHandler {
                 // cover tap: bubble ↔ big cover; with lyrics open the cover joins them on the left (and leaves again)
                 onTapped: {
@@ -1055,7 +1004,7 @@ Item {
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Glyph {
-                visible: artImg.status !== Image.Ready
+                visible: artImg.status !== Image.Ready && (ls.canvasVideo === "")
                 anchors.centerIn: parent; width: 24 * ls.u; height: 24 * ls.u
                 kind: "note"; color: Qt.rgba(1, 1, 1, 0.6)
             }
@@ -1066,7 +1015,7 @@ Item {
                 anchors.fill: parent
                 readonly property int status: ls.coverNew.status
                 visible: ls.coverUrl !== ""
-                opacity: ls.coverNew.status === Image.Ready ? 1 : 0
+                opacity: (ls.canvasVideo !== "") ? 0 : (ls.coverNew.status === Image.Ready ? 1 : 0)
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
                 fragmentShader: Qt.resolvedUrl("burn.frag.qsb")
                 property variant oldTex: covOldSrc
@@ -1076,9 +1025,66 @@ Item {
                 property real radius: art.r
                 property real seed: ls.coverSeed
             }
+
+            // ── Video inside Center Square Card (1:1 Native Resolution) ──
+            Item {
+                id: artVideoContainer
+                anchors.fill: parent
+                visible: ls.canvasVideo !== "" && opacity > 0.001
+                opacity: ls.canvasVideo !== "" ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: artMask
+                }
+                Rectangle {
+                    id: artMask
+                    width: art.width; height: art.height
+                    radius: art.r
+                    color: "black"
+                    visible: false
+                }
+                VideoOutput {
+                    id: cardVo
+                    anchors.fill: parent
+                    fillMode: VideoOutput.PreserveAspectCrop
+                }
+            }
+
+            // Liquid Glass Rim Border
             Rectangle {
-                anchors.fill: parent; radius: art.r; color: "transparent"
-                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
+                anchors.fill: parent
+                radius: art.r
+                color: "transparent"
+                border.width: (1.2 + 0.6 * ls.artT) * ls.u
+                border.color: Qt.rgba(1, 1, 1, 0.22)
+                z: 8
+            }
+            // Liquid Glass Top Specular Sheen
+            Rectangle {
+                anchors.fill: parent
+                radius: art.r
+                z: 9
+                opacity: ls.artT
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
+                    GradientStop { position: 0.22; color: Qt.rgba(1, 1, 1, 0.04) }
+                    GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.0) }
+                }
+            }
+        }
+
+        MediaPlayer {
+            id: canvasPlayer
+            source: (ls.canvasVideo !== "" && ls.shown && !ls.leaving) ? "file://" + ls.canvasVideo : ""
+            loops: MediaPlayer.Infinite
+            videoOutput: art.cardVoItem
+            audioOutput: null
+            Component.onCompleted: if (source !== "") play()
+            onSourceChanged: {
+                if (source !== "") play();
+                else stop();
             }
         }
 
