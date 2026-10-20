@@ -155,7 +155,7 @@ Item {
                         }
                     }
 
-                    // 1. Ambient Bloom layer (Blooms outwards to the left & right edges - "nở tràn viền màn hình")
+                    // 1. Ambient Spread Layer (YouTube Ambilight style: motion stays crisp & spreads across the screen)
                     ShaderEffectSource {
                         id: ambientSource
                         sourceItem: fgVo
@@ -166,23 +166,51 @@ Item {
                     MultiEffect {
                         id: ambientGlow
                         anchors.fill: parent
-                        scale: 2.6                             // Expands the ambient bloom all the way across the entire screen width
+                        scale: 2.2                             // Ambient spread across full 16:9 monitor
                         source: ambientSource
                         autoPaddingEnabled: false
                         blurEnabled: true
-                        blurMax: 96
-                        blur: 1.0
-                        saturation: 0.52
-                        brightness: 0.05
+                        blurMax: 36                            // Moderate blur (not foggy) so live video animation/ripples are clearly visible spreading out!
+                        blur: 0.58
+                        saturation: 0.42
+                        brightness: 0.02
                     }
 
-                    // 2. Foreground Crisp Uncropped Video (Center, 100% Native Resolution, Full Height)
-                    VideoOutput {
-                        id: fgVo
-                        anchors.centerIn: parent
-                        height: parent.height
-                        width: parent.width
-                        fillMode: VideoOutput.PreserveAspectFit
+                    // 2. Foreground Crisp Video with Soft Feathered Edges (Seamless dissolution into ambient spread)
+                    Item {
+                        anchors.fill: parent
+
+                        Item {
+                            id: featherMask
+                            x: fgVo.contentRect.x
+                            y: fgVo.contentRect.y
+                            width: Math.max(1, fgVo.contentRect.width)
+                            height: Math.max(1, fgVo.contentRect.height)
+                            visible: false
+                            Rectangle {
+                                anchors.fill: parent
+                                gradient: Gradient {
+                                    orientation: Gradient.Horizontal
+                                    GradientStop { position: 0.0; color: "transparent" }
+                                    GradientStop { position: 0.06; color: "black" }
+                                    GradientStop { position: 0.94; color: "black" }
+                                    GradientStop { position: 1.0; color: "transparent" }
+                                }
+                            }
+                        }
+
+                        VideoOutput {
+                            id: fgVo
+                            anchors.centerIn: parent
+                            height: parent.height
+                            width: parent.width
+                            fillMode: VideoOutput.PreserveAspectFit
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                maskEnabled: true
+                                maskSource: featherMask
+                            }
+                        }
                     }
 
                     // Subtle top & bottom vignette so clock, lyrics, and media controls stay perfectly readable
