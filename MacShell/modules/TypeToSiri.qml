@@ -26,10 +26,10 @@ Scope {
         }
     }
 
-    // Running clock for GLSL flowing border animation
+    // Running clock for GLSL flowing border animation (Only runs when open)
     property real animTime: 0.0
     FrameAnimation {
-        running: root.animProgress > 0.001
+        running: root.isOpen && root.animProgress > 0.001
         onTriggered: {
             root.animTime += 0.016;
             if (root.animTime > 10000.0) root.animTime = 0.0;
@@ -119,7 +119,7 @@ Scope {
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: root.isOpen ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-            visible: root.animProgress > 0.001
+            visible: root.isOpen || root.animProgress > 0.001
 
             // Click-through everywhere EXCEPT the pill and response popup
             mask: Region {

@@ -12,6 +12,8 @@ Siri Edge Glow & Voice AI Assistant Daemon for MacShell (Quickshell)
 
 import sys
 import os
+import gc
+from collections import deque
 import json
 import time
 import argparse
@@ -373,14 +375,15 @@ def speak(text: str):
 
     rate = str(CONFIG.get("speech_rate", 165))
 
-    # Pulsing thread while TTS is running
+    # Pulsing thread while TTS is running (bounded memory queue)
     stop_pulse = threading.Event()
+    level_queue = deque([0.35, 0.65, 0.85, 0.55, 0.75, 0.45, 0.90, 0.60], maxlen=16)
 
     def pulse_loop():
-        levels = [0.4, 0.75, 0.9, 0.6, 0.85, 0.5, 0.95, 0.7]
         idx = 0
+        q_len = len(level_queue)
         while not stop_pulse.is_set():
-            SiriIPC.set_audio_level(levels[idx % len(levels)])
+            SiriIPC.set_audio_level(level_queue[idx % q_len])
             idx += 1
             time.sleep(0.12)
         SiriIPC.set_audio_level(0.0)
@@ -399,6 +402,8 @@ def speak(text: str):
     finally:
         stop_pulse.set()
         pulse_thread.join(timeout=0.5)
+        del level_queue
+        gc.collect()
 
 
 # ── ASSISTANT INTERACTION CYCLE ──
@@ -465,27 +470,32 @@ def run_assistant_cycle(recognizer, mic=None):
     SiriIPC.set_prompt(user_query)
     SiriIPC.set_state("thinking")
 
-    # Check Local-First Intent Router (0 AI Tokens)
-    local_ans = handle_local_intent(user_query)
-    if local_ans:
-        print(f"[Local Router] ⚡ Handled locally (0 tokens): \"{local_ans}\"")
-        answer = local_ans
-    else:
-        print("[Siri] 🌐 Forwarding to Gemini AI...")
-        answer = query_gemini(user_query)
-    print(f"[Siri] 💬 \"{answer}\"")
+    try:
+        # Check Local-First Intent Router (0 AI Tokens)
+        local_ans = handle_local_intent(user_query)
+        if local_ans:
+            print(f"[Local Router] ⚡ Handled locally (0 tokens): \"{local_ans}\"")
+            answer = local_ans
+        else:
+            print("[Siri] 🌐 Forwarding to Gemini AI...")
+            answer = query_gemini(user_query)
+        print(f"[Siri] 💬 \"{answer}\"")
 
-    SiriIPC.set_state("speaking")
-    SiriIPC.set_response(answer)
+        SiriIPC.set_state("speaking")
+        SiriIPC.set_response(answer)
 
-    # Read answer aloud
-    speak(answer)
+        # Read answer aloud
+        speak(answer)
 
-    # Cooldown & dismiss
-    time.sleep(1.5)
-    SiriIPC.activate(False)
-    SiriIPC.set_state("idle")
-    print("[Siri] Cycle completed. Returning to idle.\n")
+        # Cooldown & dismiss
+        time.sleep(1.5)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
+        print("[Siri] Cycle completed. Returning to idle.\n")
+    finally:
+        # Strict memory cleanup after each cycle
+        del user_query
+        gc.collect()
 
 
 # ── DAEMON CONTINUOUS LISTENER ──
@@ -517,6 +527,7 @@ def start_daemon():
         print(f"[Error] Failed to initialize microphone: {e}", file=sys.stderr)
         return
 
+    cycle_count = 0
     while True:
         try:
             with mic as source:
@@ -541,10 +552,18 @@ def start_daemon():
                 pass
             except sr.RequestError as e:
                 time.sleep(1.0)
+            finally:
+                # Discard audio chunk immediately
+                del audio
+                cycle_count += 1
+                if cycle_count >= 8:
+                    cycle_count = 0
+                    gc.collect()
 
         except KeyboardInterrupt:
             print("\n[Siri] Stopping daemon gracefully...")
             SiriIPC.activate(False)
+            gc.collect()
             break
         except Exception as e:
             time.sleep(0.5)

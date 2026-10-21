@@ -93,10 +93,10 @@ Scope {
         }
     }
 
-    // Running clock for GLSL wave undulations (~60 FPS)
+    // Running clock for GLSL wave undulations (Strictly 0% CPU/GPU when idle)
     property real animTime: 0.0
     FrameAnimation {
-        running: root.smoothProgress > 0.001
+        running: root.active && root.smoothProgress > 0.001
         onTriggered: {
             root.animTime += 0.016;
             if (root.animTime > 10000.0) root.animTime = 0.0;
@@ -129,7 +129,7 @@ Scope {
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: (root.active && (!root.typeToSiri || !root.typeToSiri.isOpen)) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-            visible: root.smoothProgress > 0.001
+            visible: root.active || root.smoothProgress > 0.001
 
             // 100% Click-through: Glow never interferes with desktop mouse clicks
             mask: Region {
@@ -163,7 +163,7 @@ Scope {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property real u_time: root.animTime
                 property real screenRadius: 28.0
-                property real glowWidth: 26.0       // Balanced 26px Apple Intelligence glow width with diffused aura
+                property real glowWidth: 22.0       // Refined 22px Apple Intelligence glow width (gentle, hugs bezel)
                 property real audioLevel: root.effectiveAudioLevel
                 property real animProgress: root.smoothProgress
                 property vector2d u_origin: Qt.vector2d(0.96, 0.02)
