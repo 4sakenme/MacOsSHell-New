@@ -281,6 +281,7 @@ OPTIONAL=(
     "rsync:rsync:faster, safer file sync in the installer"
     "kitty:kitty:the default terminal"
     "espeak-ng:espeak-ng:text-to-speech voice synthesis for Siri"
+    "mpv:mpv:audio playback for Siri Voice and media"
     "hypridle:hypridle:lock on idle (optional)"
 )
 # libraries / fonts / packages without a command to test: arch-package:what-for   (a|b = first one the repositories have)
@@ -1093,6 +1094,33 @@ setup_python_deps() {
 
         # 3. Ensure all helper scripts have execute permissions
         chmod +x "$DEST"/scripts/*.py "$DEST"/scripts/*.sh 2>/dev/null || true
+
+        # 4. Default configuration templates for Apple Intelligence & Siri
+        if [ ! -f "$DEST/gemini_config.json" ]; then
+            cat << 'EOF' > "$DEST/gemini_config.json"
+{
+  "api_key": "YOUR_GEMINI_API_KEY_HERE",
+  "model": "gemini-2.5-flash"
+}
+EOF
+        fi
+        if [ ! -f "$DEST/siri_settings.json" ]; then
+            cat << 'EOF' > "$DEST/siri_settings.json"
+{
+  "enabled": true,
+  "wake_word_enabled": true,
+  "wake_words": ["hey siri", "siri", "ơi siri"],
+  "language": "en-US",
+  "voice": "en-US-JennyNeural",
+  "tts_voice_vi": "vi-VN-HoaiMyNeural",
+  "tts_voice_en": "en-US-JennyNeural",
+  "speech_rate": 165,
+  "edge_glow_intensity": 1.0,
+  "model": "gemini-2.5-flash",
+  "api_key": ""
+}
+EOF
+        fi
     fi
 }
 

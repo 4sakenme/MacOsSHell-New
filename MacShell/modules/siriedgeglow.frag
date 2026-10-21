@@ -147,33 +147,34 @@ void main()
         glowColor = mix(cAmber, cCyan, smoothstep(0.0, 1.0, (colorPhase - 0.75) / 0.25));
     }
 
-    // ── 5. MULTI-TIER PURE NEON LIGHT EMISSION & VOICE GLEAM ──
+    // ── 5. MULTI-TIER SOFT LUMINESCENT GLOW & VOICE GLEAM (BALANCED & ELEGANT) ──
     vec4 edgeOutput = vec4(0.0);
     if (inwardDist >= 0.0 && inwardDist <= maxReach && dynamicWidth > 0.5) {
         float normDistToEdge = inwardDist / dynamicWidth;
-        float core = exp(-pow(normDistToEdge / 0.35, 2.0)) * 1.35;
-        float halo = exp(-pow(normDistToEdge / 0.80, 1.6)) * 0.75;
-        float aura = exp(-pow(normDistToEdge / 1.50, 1.2)) * 0.30;
+        float core = exp(-pow(normDistToEdge / 0.35, 2.0)) * 1.05;
+        float halo = exp(-pow(normDistToEdge / 0.80, 1.6)) * 0.60;
+        float aura = exp(-pow(normDistToEdge / 1.50, 1.2)) * 0.22;
 
-        // Micro-ripple gleam when speaking
-        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.50;
+        // Gentle voice gleam when speaking
+        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.35;
         float edgeIntensity = (core + halo + aura) * crestGleam * animProgress * (bloomMask + bounceEcho);
 
         // Activation spark near origin
         if (u_bloomProgress < 0.30) {
             float originProx = exp(-length(p - originPx) / 110.0);
-            edgeIntensity += originProx * (1.0 - u_bloomProgress / 0.30) * 1.2;
+            edgeIntensity += originProx * (1.0 - u_bloomProgress / 0.30) * 0.9;
         }
 
         // Feather outer bezel edge smoothly to prevent black edge halos
         float edgeFeather = smoothstep(0.0, 3.5, inwardDist);
         edgeIntensity *= edgeFeather;
 
-        float alpha = clamp(edgeIntensity * 0.95, 0.0, 1.0) * qt_Opacity;
-        vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.55, 2.5);
+        // Softened alpha for a refined, premium Apple aesthetic
+        float alpha = clamp(edgeIntensity * 0.78, 0.0, 0.88) * qt_Opacity;
+        vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.45, 2.6);
         vec3 pureNeonColor = glowColor + whiteHighlight;
 
-        // Premultiplied alpha format: pure bright neon with no dirty dark multiplier
+        // Premultiplied alpha format: soft luminous neon without harsh saturation
         edgeOutput = vec4(pureNeonColor * alpha, alpha);
     }
 

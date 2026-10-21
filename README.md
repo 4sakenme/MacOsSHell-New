@@ -64,6 +64,54 @@ This fork extends the upstream `0-ss/MacShell` with powerful new capabilities, m
 - **Desktop Occlusion Awareness**: Animated widgets (GIF, Canvas, Lyrics) detect when they are covered by application windows. Playback and decoders pause automatically, dropping idle resource usage to **0%**.
 - **Streamlined Liquid Glass Shader**: Downsampled blur pre-passes (`gl.ds = 0.5`) and settle timers eliminate continuous redraw loops.
 
+### 🧠 Apple Intelligence & Siri Voice Assistant
+- **Apple Intelligence Edge Glow Waves**: Fullscreen multi-tier chromatic liquid light bloom (`siriedgeglow.frag`) along all 4 display borders with pure translucent neon emission, subtle micro-ripples, and zero black edge halos.
+- **Dynamic Fluid Siri Orb (`SiriOrb.qml`)**: Fluid plasma sphere icon with noise-driven organic turbulence, breathing with your voice.
+- **Smart On-Demand Voice Interaction**: Instant voice awake via `SUPER + Space` with automatic mic shutdown right after processing.
+- **Studio-Quality Neural Text-to-Speech**: Built-in Microsoft Edge Neural TTS (`edge-tts`) delivers lifelike, crystal-clear vocal responses without robotic buzz. Features single-speaker mutex to prevent overlapping audio.
+- **Gemini AI 2.5 Flash / Pro Integration**: Natural conversational intelligence, live weather syntheses (`wttr.in`), and intelligent multi-step application launcher (Flatpak, Desktop files, Hyprland exec).
+- **Type to Siri Floating Capsule (`TypeToSiri.qml`)**: macOS Sequoia-style floating search capsule with auto-dismissal, history, and keyboard navigation.
+
+---
+
+## 🌟 Setting Up Apple Intelligence & Siri
+
+MacShell comes with on-device Apple Intelligence powered by Google's Gemini generative AI engine.
+
+### 1. Get a Free Gemini API Key
+1. Go to [Google AI Studio](https://aistudio.google.com).
+2. Sign in with your Google account and click **Get API key** -> **Create API key**.
+3. Copy your generated key.
+
+### 2. Configure the API Key in MacShell
+You can configure your API key in either of two ways:
+- **Via Graphical Settings (Recommended)**:
+  1. Open **System Settings** from the Apple Menu or Dock.
+  2. Select the **Apple Intelligence & Siri** panel.
+  3. Paste your key into the **Gemini API Key** field and click **Test Key**.
+- **Via Configuration File**:
+  Edit `~/.config/quickshell/MacShell/gemini_config.json`:
+  ```json
+  {
+    "api_key": "YOUR_GEMINI_API_KEY_HERE",
+    "model": "gemini-2.5-flash"
+  }
+  ```
+
+### 3. Siri Voice Assistant Usage & Keybindings
+| Action | Keybinding / Trigger | Description |
+|---|---|---|
+| **Voice Siri** | `SUPER + Space` | Activates on-demand voice listening. Siri records, responds, speaks aloud, and auto-dismisses. |
+| **Type to Siri** | Click Menu Bar / Dock icon, or press `Space` during voice mode | Opens the floating Type to Siri capsule. |
+| **Dismiss / Silence** | `Esc` | Instantly dismisses Siri and cuts off any currently playing speech. |
+
+### 4. Language & Voices
+- **Languages Supported**: English (`en-US`, default) and Vietnamese (`vi-VN`).
+- **Neural Voice Options**:
+  - English: *Jenny* (Female), *Guy* (Male), *Sonia* (British).
+  - Vietnamese: *Hoài My* (Female), *Nam Minh* (Male).
+- **Speech Rate**: Fully adjustable from 130 WPM to 220 WPM in Settings with an instant **Test Voice** preview button.
+
 ## Screenshots
 
 ### MacShell
