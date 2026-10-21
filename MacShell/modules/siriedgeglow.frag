@@ -2,14 +2,17 @@
 
 // Apple Intelligence Siri Edge Glow Wave Fragment Shader
 // Features:
-// 1. Intro Animation:
+// 1. Two-tier Wave Deformation Algorithm:
+//    - Tier 1: Ambient Idle Flow (very slow, smooth, minimal 0.14 breathing undulation)
+//    - Tier 2: Voice Micro-Ripples (high-frequency delicate water ripples when speaking)
+//    - When silent (audioLevel == 0), edge automatically settles flat and serene
+// 2. Intro Animation:
 //    - Phase 1: Screen Flash / Vignette Mist Layer spreading from top-right origin (180ms)
-//    - Phase 2: Settle to Edge: Mist fades out while energy converges into 48px-55px edge glow
-// 2. Outro Animation:
+//    - Phase 2: Settle to Edge: Mist fades out while energy converges into 45px-52px edge glow
+// 3. Outro Animation:
 //    - Border Shrink: Edge width collapses toward bezel into 0px
 //    - Reverse Radial Collapse: Wave drains along perimeter back to top-right origin
-//    - Smooth Opacity Fade (350ms - 400ms)
-// 3. Multi-tier light diffusion: Crisp Core + Chromatic Fluid Halo + Soft Aura
+//    - Smooth Opacity Fade (380ms)
 // Compile: /usr/lib/qt6/bin/qsb --qt6 -o siriedgeglow.frag.qsb siriedgeglow.frag
 
 layout(location = 0) in vec2 qt_TexCoord0;
@@ -21,8 +24,8 @@ layout(std140, binding = 0) uniform buf {
     vec2 itemSize;         // Screen dimension in logical px (e.g. 1920x1080)
     float u_time;          // Running animation time in seconds
     float screenRadius;    // Corner radius of screen bezel in px (e.g. 28.0)
-    float glowWidth;       // Base glow width in px (~24.0px)
-    float audioLevel;      // 0.0 to 1.0 audio reactivity level
+    float glowWidth;       // Base glow width in px (~32.0px)
+    float audioLevel;      // 0.0 to 1.0 smoothed audio reactivity level
     float animProgress;    // 0.0 to 1.0 fade in/out
     vec2 u_origin;         // Origin normalized coord (0.96, 0.02)
     float u_bloomProgress; // 0.0 to 1.0 perimeter bloom animation (forward in intro, reverse in outro)
@@ -76,40 +79,42 @@ void main()
         float maxDist = length(vec2(0.0, itemSize.y) - originPx);
         float mistRadius = max(40.0, u_introMist * maxDist * 1.35);
 
-        // Soft pastel mist expanding smoothly across the screen
         float mistGrad = smoothstep(mistRadius, mistRadius * 0.10, distFromOrigin);
         vec2 normCenter = (qt_TexCoord0 - 0.5) * 2.0;
         float vignette = 1.0 - dot(normCenter, normCenter) * 0.28;
 
-        float mistAlpha = mistGrad * u_introMist * 0.22 * max(0.0, vignette);
-        vec3 mistRgb = mix(cCyan, cMagenta, 0.5 + 0.5 * sin(u_time * 2.0 + distFromOrigin * 0.004));
+        float mistAlpha = mistGrad * u_introMist * 0.20 * max(0.0, vignette);
+        vec3 mistRgb = mix(cCyan, cMagenta, 0.5 + 0.5 * sin(u_time * 1.8 + distFromOrigin * 0.004));
         mistOutput = vec4(mistRgb * mistAlpha, mistAlpha);
     }
 
-    // ── 2. INTRO PHASE 2 & OUTRO: PERIMETER CONVERGENCE & BORDER SHRINK ──
+    // ── 2. TWO-TIER WAVE DEFORMATION ALGORITHM ──
     float d = sdRoundedBox(posFromCenter, halfSize, screenRadius);
     float inwardDist = -d;
 
-    // Perimeter wave coordinate (0.0 to 1.0 around the 4 edges)
+    // Perimeter coordinate (0.0 to 1.0 around the 4 edges)
     float perimeterCoord = (angleP / TWO_PI) + 0.5;
     float pRad = perimeterCoord * TWO_PI;
 
-    // Multi-harmonic gentle organic waves
-    float wave1 = sin(pRad * 8.0 - u_time * 1.8) * 0.40;
-    float wave2 = cos(pRad * 16.0 + u_time * 1.3) * 0.25;
-    float wave3 = sin(pRad * 4.0 + u_time * 0.7) * 0.25;
-    float totalWave = wave1 + wave2 + wave3;
+    // TIER 1: Ambient Idle Flow (very slow, gentle, ~0.14 minimal undulation)
+    float amb1 = sin(pRad * 6.0 - u_time * 1.2) * 0.60;
+    float amb2 = cos(pRad * 12.0 + u_time * 0.9) * 0.40;
+    float ambientWave = (amb1 + amb2) * 0.14;
 
-    float waveIntensity = 0.35 + audioLevel * 0.20;
+    // TIER 2: Voice Micro-Ripples (delicate, high-frequency water ripples when speaking)
+    float voiceRipple = sin(perimeterCoord * 45.0 - u_time * 6.0) 
+                      * cos(perimeterCoord * 25.0 + u_time * 4.0);
+    float voiceOffset = voiceRipple * clamp(audioLevel, 0.0, 1.0) * 0.18;
 
-    // Peak expansion reaches 48px - 55px during settle bloom, then resolves to base ~24px
-    float settleBoost = (u_bloomProgress < 0.999) ? (1.20 * sin(u_bloomProgress * PI)) : 0.0;
-    float dynamicBaseW = glowWidth * (1.0 + settleBoost + audioLevel * 0.30);
+    // Settle Bloom: initial energy convergence (reaches ~48px-52px, then settles to base width)
+    float settleBoost = (u_bloomProgress < 0.999) ? (0.50 * sin(u_bloomProgress * PI)) : 0.0;
+    float dynamicBaseW = glowWidth * (1.0 + settleBoost);
 
     // Border Shrink in Outro: collapses cleanly to 0px
     dynamicBaseW *= clamp(u_shrinkFactor, 0.0, 1.0);
 
-    float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + totalWave * waveIntensity));
+    // Dynamic width modulated cleanly by ambient breathing and voice micro-ripples
+    float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + ambientWave + voiceOffset));
 
     float maxReach = dynamicWidth * 2.2;
     if ((inwardDist < 0.0 || inwardDist > maxReach) && mistOutput.a <= 0.001) {
@@ -133,7 +138,7 @@ void main()
     }
 
     // ── 4. CHROMATIC SPECTRUM SLIDING ALONG WAVE FLOW ──
-    float colorPhase = fract(perimeterCoord + totalWave * 0.06 + u_time * 0.08);
+    float colorPhase = fract(perimeterCoord + ambientWave * 0.05 + u_time * 0.07);
     vec3 glowColor;
     if (colorPhase < 0.25) {
         glowColor = mix(cCyan, cMagenta, smoothstep(0.0, 1.0, colorPhase / 0.25));
@@ -145,7 +150,7 @@ void main()
         glowColor = mix(cAmber, cCyan, smoothstep(0.0, 1.0, (colorPhase - 0.75) / 0.25));
     }
 
-    // ── 5. MULTI-TIER LIGHT EMISSION ──
+    // ── 5. MULTI-TIER LIGHT EMISSION & VOICE GLEAM ──
     vec4 edgeOutput = vec4(0.0);
     if (inwardDist >= 0.0 && inwardDist <= maxReach && dynamicWidth > 0.5) {
         float normDistToEdge = inwardDist / dynamicWidth;
@@ -153,8 +158,9 @@ void main()
         float halo = exp(-pow(normDistToEdge / 0.85, 1.7)) * 0.80;
         float aura = exp(-pow(normDistToEdge / 1.65, 1.3)) * 0.35;
 
-        float crestSurge = 1.0 + max(0.0, totalWave) * 0.35 + audioLevel * 0.30;
-        float edgeIntensity = (core + halo + aura) * crestSurge * animProgress * (bloomMask + bounceEcho);
+        // Subtle micro-ripple gleam when speaking
+        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.40;
+        float edgeIntensity = (core + halo + aura) * crestGleam * animProgress * (bloomMask + bounceEcho);
 
         // Activation spark near origin
         if (u_bloomProgress < 0.30) {

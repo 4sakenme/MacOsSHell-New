@@ -19,6 +19,18 @@ Scope {
     property string userPrompt: ""
     property string siriResponse: ""
     property real audioLevel: 0.0         // 0.0 to 1.0 from mic or simulated
+    property real smoothAudioLevel: 0.0   // Smoothed audio level to eliminate jitter
+
+    Behavior on smoothAudioLevel {
+        NumberAnimation {
+            duration: 85
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    onAudioLevelChanged: {
+        smoothAudioLevel = audioLevel;
+    }
 
     readonly property bool isListening: siriState === "listening"
     readonly property bool isThinking: siriState === "thinking"
@@ -191,7 +203,7 @@ Scope {
         ? (0.18 + 0.12 * Math.sin(animTime * 5.0))
         : (isSpeaking ? (0.28 + 0.20 * Math.sin(animTime * 6.5)) : (isThinking ? (0.14 + 0.10 * Math.sin(animTime * 3.5)) : 0.0))
 
-    readonly property real effectiveAudioLevel: Math.max(audioLevel, simulatedPulse)
+    readonly property real effectiveAudioLevel: Math.max(smoothAudioLevel, simulatedPulse)
 
     // ══════════════════════════════════════════════════════════════════
     // FULLSCREEN OVERLAY ON EVERY SCREEN (100% CLICK-THROUGH)
@@ -246,7 +258,7 @@ Scope {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property real u_time: root.animTime
                 property real screenRadius: 28.0
-                property real glowWidth: 24.0
+                property real glowWidth: 32.0
                 property real audioLevel: root.effectiveAudioLevel
                 property real animProgress: root.smoothProgress
                 property vector2d u_origin: Qt.vector2d(0.96, 0.02)

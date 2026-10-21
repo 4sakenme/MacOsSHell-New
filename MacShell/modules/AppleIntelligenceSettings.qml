@@ -18,6 +18,9 @@ Column {
     property bool wakeWordEnabled: true
     property string language: "vi-VN"
     property string voice: "vi"
+    property string ttsVoiceVi: "vi"
+    property string ttsVoiceEn: "en-us+f3"
+    property int speechRate: 165
     property real edgeGlowIntensity: 1.0
     property string geminiModel: "gemini-2.5-flash"
     property string apiKey: ""
@@ -38,6 +41,9 @@ Column {
                 if (o.wake_word_enabled !== undefined) root.wakeWordEnabled = o.wake_word_enabled;
                 if (o.language !== undefined) root.language = o.language;
                 if (o.voice !== undefined) root.voice = o.voice;
+                if (o.tts_voice_vi !== undefined) root.ttsVoiceVi = o.tts_voice_vi;
+                if (o.tts_voice_en !== undefined) root.ttsVoiceEn = o.tts_voice_en;
+                if (o.speech_rate !== undefined) root.speechRate = o.speech_rate;
                 if (o.edge_glow_intensity !== undefined) root.edgeGlowIntensity = o.edge_glow_intensity;
                 if (o.model !== undefined) root.geminiModel = o.model;
                 if (o.api_key !== undefined) root.apiKey = o.api_key;
@@ -66,12 +72,16 @@ Column {
     }
 
     function writeToDisk() {
+        var activeVoice = root.language === "vi-VN" ? root.ttsVoiceVi : root.ttsVoiceEn;
         var o = {
             enabled: root.siriEnabled,
             wake_word_enabled: root.wakeWordEnabled,
             wake_words: ["hey siri", "siri", "ơi siri"],
             language: root.language,
-            voice: root.voice,
+            voice: activeVoice,
+            tts_voice_vi: root.ttsVoiceVi,
+            tts_voice_en: root.ttsVoiceEn,
+            speech_rate: root.speechRate,
             edge_glow_intensity: root.edgeGlowIntensity,
             model: root.geminiModel,
             api_key: root.apiKey
@@ -98,6 +108,28 @@ Column {
         id: geminiStore
         path: root.geminiConfigPath
         printErrors: false
+    }
+
+    // Process to test TTS Voice
+    Process {
+        id: testVoiceProc
+        property bool speaking: false
+        onExited: speaking = false
+    }
+
+    function runVoiceTest() {
+        if (testVoiceProc.speaking) return;
+        testVoiceProc.speaking = true;
+        var sampleText = root.language === "vi-VN"
+            ? "Xin chào, tôi là trợ lý ảo Siri trên máy Mac của bạn."
+            : "Hello, I am Siri, your desktop voice assistant.";
+        testVoiceProc.command = [
+            "/home/kuro/.config/quickshell/MacShell/venv/bin/python",
+            "/home/kuro/.config/quickshell/MacShell/scripts/siri_daemon.py",
+            "--test-tts",
+            sampleText
+        ];
+        testVoiceProc.running = true;
     }
 
     // Process to test API
@@ -250,6 +282,7 @@ Column {
             anchors.margins: 12
             spacing: 12
 
+            // Language Selector
             Item {
                 width: parent.width
                 height: 36
@@ -271,14 +304,155 @@ Column {
                         width: 90; height: 28; radius: 6
                         color: root.language === "vi-VN" ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
                         Text { anchors.centerIn: parent; text: "Tiếng Việt"; color: "white"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 12 }
-                        TapHandler { onTapped: { root.language = "vi-VN"; root.voice = "vi"; root.saveSettings(); } }
+                        TapHandler { onTapped: { root.language = "vi-VN"; root.voice = root.ttsVoiceVi; root.saveSettings(); } }
                     }
 
                     Rectangle {
                         width: 90; height: 28; radius: 6
                         color: root.language === "en-US" ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
                         Text { anchors.centerIn: parent; text: "English (US)"; color: "white"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 12 }
-                        TapHandler { onTapped: { root.language = "en-US"; root.voice = "en-us+f3"; root.saveSettings(); } }
+                        TapHandler { onTapped: { root.language = "en-US"; root.voice = root.ttsVoiceEn; root.saveSettings(); } }
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: t ? t.cardBorder : Qt.rgba(1, 1, 1, 0.08) }
+
+            // Voice Variant Selector
+            Item {
+                width: parent.width
+                height: 36
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text { text: I18n.tr("Siri Voice Tone"); color: t ? t.text : "white"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Text { text: I18n.tr("Select speaker gender and vocal timbre"); color: t ? t.text2 : "#8E8E93"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 11 }
+                }
+
+                // Vietnamese voice variants
+                Row {
+                    visible: root.language === "vi-VN"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+
+                    Repeater {
+                        model: [
+                            { id: "vi", label: "Nữ chuẩn" },
+                            { id: "vi+f1", label: "Nữ dịu" },
+                            { id: "vi+m1", label: "Nam trầm" },
+                            { id: "vi+m2", label: "Nam ấm" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 68; height: 28; radius: 6
+                            color: root.ttsVoiceVi === modelData.id ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: "white"
+                                font.family: t ? t.fam : "Open Runde"
+                                font.pixelSize: 11
+                                font.weight: root.ttsVoiceVi === modelData.id ? Font.DemiBold : Font.Normal
+                            }
+                            TapHandler {
+                                onTapped: {
+                                    root.ttsVoiceVi = modelData.id;
+                                    root.voice = modelData.id;
+                                    root.saveSettings();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // English voice variants
+                Row {
+                    visible: root.language === "en-US"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+
+                    Repeater {
+                        model: [
+                            { id: "en-us+f3", label: "Siri Nữ" },
+                            { id: "en-us+m3", label: "Siri Nam" },
+                            { id: "en-gb+f2", label: "Anh - Anh" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 78; height: 28; radius: 6
+                            color: root.ttsVoiceEn === modelData.id ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: "white"
+                                font.family: t ? t.fam : "Open Runde"
+                                font.pixelSize: 11
+                                font.weight: root.ttsVoiceEn === modelData.id ? Font.DemiBold : Font.Normal
+                            }
+                            TapHandler {
+                                onTapped: {
+                                    root.ttsVoiceEn = modelData.id;
+                                    root.voice = modelData.id;
+                                    root.saveSettings();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: t ? t.cardBorder : Qt.rgba(1, 1, 1, 0.08) }
+
+            // Speech Rate (WPM) & Test Voice Button
+            Item {
+                width: parent.width
+                height: 38
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text { text: I18n.tr("Speech Rate"); color: t ? t.text : "white"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Text { text: root.speechRate + " WPM (" + (root.speechRate < 150 ? I18n.tr("Slow") : (root.speechRate > 185 ? I18n.tr("Fast") : I18n.tr("Normal"))) + ")"; color: t ? t.text2 : "#8E8E93"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 11 }
+                }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+
+                    Slider {
+                        width: 130
+                        from: 130
+                        to: 220
+                        stepSize: 5
+                        value: root.speechRate
+                        onMoved: {
+                            root.speechRate = Math.round(value);
+                            root.saveSettings();
+                        }
+                    }
+
+                    Rectangle {
+                        width: 80; height: 28; radius: 6
+                        color: testVoiceProc.speaking ? Qt.rgba(1, 1, 1, 0.2) : (t ? t.accent : "#0A84FF")
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: testVoiceProc.speaking ? "..." : I18n.tr("Test Voice")
+                            color: "white"
+                            font.family: t ? t.fam : "Open Runde"
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                        }
+
+                        TapHandler {
+                            onTapped: root.runVoiceTest()
+                        }
                     }
                 }
             }
