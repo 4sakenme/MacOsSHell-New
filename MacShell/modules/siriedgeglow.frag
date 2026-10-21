@@ -72,18 +72,15 @@ void main()
     vec3 cPurple  = vec3(0.624, 0.235, 0.941);
     vec3 cAmber   = vec3(1.000, 0.580, 0.000);
 
-    // ── 1. INTRO PHASE 1: SCREEN FLASH / VIGNETTE MIST OVERLAY ──
+    // ── 1. INTRO PHASE 1: SCREEN FLASH / PURE NEON MIST (NO DARK VIGNETTE) ──
     vec4 mistOutput = vec4(0.0);
-    if (u_introMist > 0.001) {
+    if (u_introMist > 0.01) {
         float distFromOrigin = length(p - originPx);
         float maxDist = length(vec2(0.0, itemSize.y) - originPx);
-        float mistRadius = max(40.0, u_introMist * maxDist * 1.35);
+        float mistRadius = max(40.0, u_introMist * maxDist * 1.25);
 
-        float mistGrad = smoothstep(mistRadius, mistRadius * 0.10, distFromOrigin);
-        vec2 normCenter = (qt_TexCoord0 - 0.5) * 2.0;
-        float vignette = 1.0 - dot(normCenter, normCenter) * 0.28;
-
-        float mistAlpha = mistGrad * u_introMist * 0.20 * max(0.0, vignette);
+        float mistGrad = smoothstep(mistRadius, mistRadius * 0.15, distFromOrigin);
+        float mistAlpha = mistGrad * u_introMist * 0.08;
         vec3 mistRgb = mix(cCyan, cMagenta, 0.5 + 0.5 * sin(u_time * 1.8 + distFromOrigin * 0.004));
         mistOutput = vec4(mistRgb * mistAlpha, mistAlpha);
     }
@@ -150,16 +147,16 @@ void main()
         glowColor = mix(cAmber, cCyan, smoothstep(0.0, 1.0, (colorPhase - 0.75) / 0.25));
     }
 
-    // ── 5. MULTI-TIER LIGHT EMISSION & VOICE GLEAM ──
+    // ── 5. MULTI-TIER PURE NEON LIGHT EMISSION & VOICE GLEAM ──
     vec4 edgeOutput = vec4(0.0);
     if (inwardDist >= 0.0 && inwardDist <= maxReach && dynamicWidth > 0.5) {
         float normDistToEdge = inwardDist / dynamicWidth;
-        float core = exp(-pow(normDistToEdge / 0.32, 2.2)) * 1.35;
-        float halo = exp(-pow(normDistToEdge / 0.85, 1.7)) * 0.80;
-        float aura = exp(-pow(normDistToEdge / 1.65, 1.3)) * 0.35;
+        float core = exp(-pow(normDistToEdge / 0.35, 2.0)) * 1.35;
+        float halo = exp(-pow(normDistToEdge / 0.80, 1.6)) * 0.75;
+        float aura = exp(-pow(normDistToEdge / 1.50, 1.2)) * 0.30;
 
-        // Subtle micro-ripple gleam when speaking
-        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.40;
+        // Micro-ripple gleam when speaking
+        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.50;
         float edgeIntensity = (core + halo + aura) * crestGleam * animProgress * (bloomMask + bounceEcho);
 
         // Activation spark near origin
@@ -168,12 +165,16 @@ void main()
             edgeIntensity += originProx * (1.0 - u_bloomProgress / 0.30) * 1.2;
         }
 
-        edgeIntensity = clamp(edgeIntensity, 0.0, 2.4);
-        vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.65, 2.0);
-        vec3 edgeRgb = glowColor * edgeIntensity + whiteHighlight;
-        float edgeAlpha = clamp(edgeIntensity * 0.85, 0.0, 1.0) * qt_Opacity;
+        // Feather outer bezel edge smoothly to prevent black edge halos
+        float edgeFeather = smoothstep(0.0, 3.5, inwardDist);
+        edgeIntensity *= edgeFeather;
 
-        edgeOutput = vec4(edgeRgb * edgeAlpha, edgeAlpha);
+        float alpha = clamp(edgeIntensity * 0.95, 0.0, 1.0) * qt_Opacity;
+        vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.55, 2.5);
+        vec3 pureNeonColor = glowColor + whiteHighlight;
+
+        // Premultiplied alpha format: pure bright neon with no dirty dark multiplier
+        edgeOutput = vec4(pureNeonColor * alpha, alpha);
     }
 
     // Blend mist overlay with edge glow

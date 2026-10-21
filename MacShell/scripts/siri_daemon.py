@@ -632,15 +632,61 @@ def speak(text: str):
         gc.collect()
 
 
+# ── REAL-TIME MICROPHONE LEVEL MONITOR ──
+class MicLevelMonitor:
+    """Monitors live microphone volume and streams normalized level to QML edge glow via IPC."""
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.thread = None
+
+    def start(self):
+        self.stop_event.clear()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=0.3)
+        SiriIPC.set_audio_level(0.0)
+
+    def _run(self):
+        import sounddevice as sd
+        last_send = 0.0
+        def cb(indata, frames, time_info, status):
+            nonlocal last_send
+            if self.stop_event.is_set():
+                return
+            now = time.time()
+            if now - last_send < 0.035: # ~28 updates/sec
+                return
+            last_send = now
+
+            rms = float(np.sqrt(np.mean(indata**2)))
+            # Noise floor gate and high sensitivity scaling
+            clean = max(0.0, rms - 0.0018)
+            lvl = min(1.0, clean * 35.0)
+            SiriIPC.set_audio_level(lvl)
+
+        try:
+            with sd.InputStream(channels=1, samplerate=16000, blocksize=512, callback=cb):
+                while not self.stop_event.is_set():
+                    time.sleep(0.04)
+        except Exception as e:
+            pass
+        finally:
+            SiriIPC.set_audio_level(0.0)
+
+
 # ── ASSISTANT INTERACTION CYCLE ──
 def run_assistant_cycle(recognizer, mic=None):
     """
     1. Activate edge glow UI (listening state).
-    2. Record user speech from microphone.
-    3. Convert to text via SpeechRecognition (free STT).
-    4. Send prompt to Gemini AI (thinking state).
-    5. Speak response and update UI (speaking state).
-    6. Transition to idle, card remains visible for 20s or until Esc is pressed.
+    2. Stream live microphone volume to edge glow waves.
+    3. Convert speech to text via SpeechRecognition (free STT).
+    4. Send prompt to Gemini AI or execute local app command.
+    5. Speak response and update UI.
+    6. Automatically dismiss Siri once task/speech is finished.
     """
     import speech_recognition as sr
 
@@ -651,19 +697,48 @@ def run_assistant_cycle(recognizer, mic=None):
     SiriIPC.set_response("")
 
     user_query = ""
+    mic_monitor = MicLevelMonitor()
 
     try:
+        # Start real-time mic wave monitoring
+        mic_monitor.start()
+
         with (mic if mic else sr.Microphone()) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.4)
+            recognizer.adjust_for_ambient_noise(source, duration=0.3)
             # Listen with phrase limit
             audio = recognizer.listen(source, timeout=6.0, phrase_time_limit=10.0)
 
-        print("[Siri] 🧠 Processing speech...")
-        SiriIPC.set_state("thinking")
-        SiriIPC.set_prompt("Processing speech...")
+    except sr.WaitTimeoutError:
+        print("[Siri] No speech heard in time.")
+        SiriIPC.set_prompt("I didn't hear anything.")
+        time.sleep(1.2)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
+        return
+    except sr.UnknownValueError:
+        print("[Siri] Could not understand audio.")
+        SiriIPC.set_prompt("Sorry, I didn't catch that.")
+        time.sleep(1.2)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
+        return
+    except Exception as e:
+        print(f"[Siri] Speech recognition error: {e}")
+        SiriIPC.set_prompt("Speech recognition unavailable.")
+        time.sleep(1.2)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
+        return
+    finally:
+        mic_monitor.stop()
 
-        # Language selection
-        lang_pref = CONFIG.get("language", "auto")
+    print("[Siri] 🧠 Processing speech...")
+    SiriIPC.set_state("thinking")
+    SiriIPC.set_prompt("Processing speech...")
+
+    # Language selection
+    lang_pref = CONFIG.get("language", "auto")
+    try:
         if lang_pref == "auto":
             try:
                 user_query = recognizer.recognize_google(audio, language="vi-VN")
@@ -671,20 +746,11 @@ def run_assistant_cycle(recognizer, mic=None):
                 user_query = recognizer.recognize_google(audio, language="en-US")
         else:
             user_query = recognizer.recognize_google(audio, language=lang_pref)
-
-    except sr.WaitTimeoutError:
-        print("[Siri] No speech heard in time.")
-        SiriIPC.set_prompt("I didn't hear anything.")
-        SiriIPC.set_state("idle")
-        return
-    except sr.UnknownValueError:
-        print("[Siri] Could not understand audio.")
-        SiriIPC.set_prompt("Sorry, I didn't catch that.")
-        SiriIPC.set_state("idle")
-        return
     except Exception as e:
-        print(f"[Siri] Speech recognition error: {e}")
-        SiriIPC.set_prompt("Speech recognition unavailable.")
+        print(f"[Siri] Recognition error: {e}")
+        SiriIPC.set_prompt("Sorry, could not understand audio.")
+        time.sleep(1.2)
+        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
         return
 
@@ -693,14 +759,24 @@ def run_assistant_cycle(recognizer, mic=None):
     SiriIPC.set_state("thinking")
 
     try:
-        # Check Local-First Intent Router (0 AI Tokens)
+        # Check Local-First Intent Router (e.g. open apps, volume, mute)
         local_ans = handle_local_intent(user_query)
         if local_ans:
-            print(f"[Local Router] ⚡ Handled locally (0 tokens): \"{local_ans}\"")
+            print(f"[Local Router] ⚡ Handled locally: \"{local_ans}\"")
             answer = local_ans
+            SiriIPC.set_state("speaking")
+            SiriIPC.set_response(answer)
+            speak(answer)
+            # Dismiss automatically after executing command
+            time.sleep(0.8)
+            SiriIPC.activate(False)
+            SiriIPC.set_state("idle")
+            print("[Siri] Task completed successfully. Siri dismissed.\n")
+            return
         else:
             print("[Siri] 🌐 Forwarding to Gemini AI...")
             answer = query_gemini(user_query)
+
         print(f"[Siri] 💬 \"{answer}\"")
 
         SiriIPC.set_state("speaking")
@@ -709,9 +785,11 @@ def run_assistant_cycle(recognizer, mic=None):
         # Read answer aloud with Neural TTS
         speak(answer)
 
-        # Transition to idle (card stays visible for 20s or closes on Esc)
+        # Once speech has finished, auto-dismiss Siri so user doesn't have to wait or press Esc
+        time.sleep(1.2)
+        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
-        print("[Siri] Response delivered. Edge glow & response card remain visible for 20s.\n")
+        print("[Siri] Response spoken completely. Siri dismissed automatically.\n")
     finally:
         del user_query
         gc.collect()
@@ -827,8 +905,14 @@ def handle_query_mode(query_text: str, enable_tts: bool = True):
     if enable_tts:
         print("[TTS] Reading response aloud with Neural TTS...")
         speak(answer)
+        time.sleep(1.2)
+        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
-        print("[Siri] Response complete. Display will auto-dismiss in 20s or on Esc.")
+        print("[Siri] Query response finished. Siri dismissed automatically.")
+    else:
+        time.sleep(2.0)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
     print("[Done] Query finished successfully.")
 
 
