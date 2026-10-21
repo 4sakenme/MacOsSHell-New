@@ -632,54 +632,77 @@ def speak(text: str):
         gc.collect()
 
 
-# ── REAL-TIME MICROPHONE LEVEL MONITOR ──
-class MicLevelMonitor:
-    """Monitors live microphone volume and streams normalized level to QML edge glow via IPC."""
-    def __init__(self):
-        self.stop_event = threading.Event()
-        self.thread = None
+# ── UNIFIED REAL-TIME AUDIO RECORDER & LEVEL STREAMER ──
+def record_speech_with_levels(timeout=6.0, phrase_time_limit=10.0, silence_timeout=1.3):
+    """
+    Record speech using ONLY sounddevice (single unified audio pipeline).
+    Continuously streams live microphone volume to QML edge glow waves.
+    Automatically detects speech start and speech finish (VAD), returns sr.AudioData.
+    Zero segfaults, zero PortAudio conflicts!
+    """
+    import sounddevice as sd
+    import numpy as np
+    import speech_recognition as sr
 
-    def start(self):
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
+    frames = []
+    has_spoken = False
+    silence_start = None
+    start_time = time.time()
+    last_ipc_send = 0.0
 
-    def stop(self):
-        self.stop_event.set()
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=0.3)
-        SiriIPC.set_audio_level(0.0)
+    def audio_callback(indata, frame_count, time_info, status):
+        nonlocal has_spoken, silence_start, last_ipc_send
+        frames.append(indata.copy())
 
-    def _run(self):
-        import sounddevice as sd
-        last_send = 0.0
-        def cb(indata, frames, time_info, status):
-            nonlocal last_send
-            if self.stop_event.is_set():
-                return
-            now = time.time()
-            if now - last_send < 0.035: # ~28 updates/sec
-                return
-            last_send = now
+        # Normalize int16 (-32768 to 32767) to float
+        data_float = indata.astype(np.float32) / 32768.0
+        rms = float(np.sqrt(np.mean(data_float ** 2)))
 
-            rms = float(np.sqrt(np.mean(indata**2)))
-            # Noise floor gate and high sensitivity scaling
-            clean = max(0.0, rms - 0.0018)
-            lvl = min(1.0, clean * 35.0)
+        now = time.time()
+        if now - last_ipc_send >= 0.035: # ~28 updates/sec
+            last_ipc_send = now
+            # Gate ambient background noise
+            clean = max(0.0, rms - 0.002)
+            lvl = min(1.0, clean * 30.0)
             SiriIPC.set_audio_level(lvl)
 
-        try:
-            with sd.InputStream(channels=1, samplerate=16000, blocksize=512, callback=cb):
-                while not self.stop_event.is_set():
-                    time.sleep(0.04)
-        except Exception as e:
-            pass
-        finally:
-            SiriIPC.set_audio_level(0.0)
+        # Voice Activity Detection (VAD)
+        if rms > 0.004:
+            has_spoken = True
+            silence_start = None
+        elif has_spoken and silence_start is None:
+            silence_start = time.time()
+
+    try:
+        with sd.InputStream(channels=1, samplerate=16000, dtype='int16', blocksize=512, callback=audio_callback):
+            while True:
+                time.sleep(0.04)
+                now = time.time()
+                elapsed = now - start_time
+
+                # If silence has elapsed after speaking, finish recording immediately
+                if has_spoken and silence_start and (now - silence_start >= silence_timeout):
+                    break
+
+                # Max phrase limit
+                if elapsed >= phrase_time_limit:
+                    break
+
+                # Timeout if no speech heard at all
+                if not has_spoken and (elapsed >= timeout):
+                    break
+    finally:
+        SiriIPC.set_audio_level(0.0)
+
+    if not has_spoken or not frames:
+        return None
+
+    raw_bytes = np.concatenate(frames, axis=0).tobytes()
+    return sr.AudioData(raw_bytes, 16000, 2)
 
 
 # ── ASSISTANT INTERACTION CYCLE ──
-def run_assistant_cycle(recognizer, mic=None):
+def run_assistant_cycle(recognizer=None, mic=None):
     """
     1. Activate edge glow UI (listening state).
     2. Stream live microphone volume to edge glow waves.
@@ -689,6 +712,8 @@ def run_assistant_cycle(recognizer, mic=None):
     6. Automatically dismiss Siri once task/speech is finished.
     """
     import speech_recognition as sr
+    if recognizer is None:
+        recognizer = sr.Recognizer()
 
     print("\n[Siri] 🎙️  Activated! Listening for your request...")
     SiriIPC.activate(True)
@@ -697,40 +722,23 @@ def run_assistant_cycle(recognizer, mic=None):
     SiriIPC.set_response("")
 
     user_query = ""
-    mic_monitor = MicLevelMonitor()
 
     try:
-        # Start real-time mic wave monitoring
-        mic_monitor.start()
-
-        with (mic if mic else sr.Microphone()) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.3)
-            # Listen with phrase limit
-            audio = recognizer.listen(source, timeout=6.0, phrase_time_limit=10.0)
-
-    except sr.WaitTimeoutError:
-        print("[Siri] No speech heard in time.")
-        SiriIPC.set_prompt("I didn't hear anything.")
-        time.sleep(1.2)
-        SiriIPC.activate(False)
-        SiriIPC.set_state("idle")
-        return
-    except sr.UnknownValueError:
-        print("[Siri] Could not understand audio.")
-        SiriIPC.set_prompt("Sorry, I didn't catch that.")
-        time.sleep(1.2)
-        SiriIPC.activate(False)
-        SiriIPC.set_state("idle")
-        return
+        audio = record_speech_with_levels(timeout=6.0, phrase_time_limit=10.0, silence_timeout=1.3)
+        if not audio:
+            print("[Siri] No speech heard in time.")
+            SiriIPC.set_prompt("I didn't hear anything.")
+            time.sleep(1.2)
+            SiriIPC.activate(False)
+            SiriIPC.set_state("idle")
+            return
     except Exception as e:
-        print(f"[Siri] Speech recognition error: {e}")
-        SiriIPC.set_prompt("Speech recognition unavailable.")
+        print(f"[Siri] Microphone recording error: {e}")
+        SiriIPC.set_prompt("Microphone unavailable.")
         time.sleep(1.2)
         SiriIPC.activate(False)
         SiriIPC.set_state("idle")
         return
-    finally:
-        mic_monitor.stop()
 
     print("[Siri] 🧠 Processing speech...")
     SiriIPC.set_state("thinking")
