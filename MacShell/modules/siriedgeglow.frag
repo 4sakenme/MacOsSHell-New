@@ -72,17 +72,47 @@ void main()
     vec3 cPurple  = vec3(0.624, 0.235, 0.941);
     vec3 cAmber   = vec3(1.000, 0.580, 0.000);
 
-    // ── 1. INTRO PHASE 1: SCREEN FLASH / PURE NEON MIST (NO DARK VIGNETTE) ──
-    vec4 mistOutput = vec4(0.0);
-    if (u_introMist > 0.01) {
+    // ── 1. FULLSCREEN VIVID CHROMATIC SHOCKWAVE BLOOM (iOS 18 APPLE INTELLIGENCE) ──
+    vec4 shockwaveOutput = vec4(0.0);
+    if (u_bloomProgress < 0.999 && animProgress > 0.01) {
         float distFromOrigin = length(p - originPx);
-        float maxDist = length(vec2(0.0, itemSize.y) - originPx);
-        float mistRadius = max(40.0, u_introMist * maxDist * 1.25);
+        float maxScreenDist = length(itemSize);
 
-        float mistGrad = smoothstep(mistRadius, mistRadius * 0.15, distFromOrigin);
-        float mistAlpha = mistGrad * u_introMist * 0.08;
-        vec3 mistRgb = mix(cCyan, cMagenta, 0.5 + 0.5 * sin(u_time * 1.8 + distFromOrigin * 0.004));
-        mistOutput = vec4(mistRgb * mistAlpha, mistAlpha);
+        // Shockwave front expands rapidly across the entire display
+        float waveRadius = u_bloomProgress * maxScreenDist * 1.25;
+        float waveDelta = abs(distFromOrigin - waveRadius);
+
+        // 1. Intense vibrant shockwave crest (vành sóng bung mạnh)
+        float crest = exp(-pow(waveDelta / 95.0, 2.0)) * 2.2;
+
+        // 2. Trailing rich colorful haze inside the expanding wave front
+        float innerWake = smoothstep(waveRadius + 60.0, 0.0, distFromOrigin) * 0.55;
+
+        // 3. Smooth dissipation: bursts strongly then fades out completely as energy settles to the border
+        float burstEnvelope = sin(clamp(u_bloomProgress * 1.15, 0.0, 1.0) * PI);
+        float shockIntensity = (crest + innerWake) * burstEnvelope * animProgress;
+
+        // Saturated chromatic spectrum matching the travelling line colors
+        float angleOrigin = atan(p.y - originPx.y, p.x - originPx.x);
+        float shockHue = fract(angleOrigin / TWO_PI + distFromOrigin * 0.0012 - u_time * 0.4);
+
+        vec3 shockColor;
+        if (shockHue < 0.25) {
+            shockColor = mix(cCyan * 1.35, cMagenta * 1.40, shockHue / 0.25);
+        } else if (shockHue < 0.50) {
+            shockColor = mix(cMagenta * 1.40, cPurple * 1.35, (shockHue - 0.25) / 0.25);
+        } else if (shockHue < 0.75) {
+            shockColor = mix(cPurple * 1.35, cAmber * 1.30, (shockHue - 0.50) / 0.25);
+        } else {
+            shockColor = mix(cAmber * 1.30, cCyan * 1.35, (shockHue - 0.75) / 0.25);
+        }
+
+        // Add soft white highlight along the crest peak
+        shockColor += vec3(1.0) * exp(-pow(waveDelta / 30.0, 2.0)) * 0.45;
+
+        // Clamped soft alpha: rich, vivid and translucent without black artifacts
+        float shockAlpha = clamp(shockIntensity * 0.38, 0.0, 0.65) * qt_Opacity;
+        shockwaveOutput = vec4(shockColor * shockAlpha, shockAlpha);
     }
 
     // ── 2. TWO-TIER WAVE DEFORMATION ALGORITHM ──
@@ -114,7 +144,7 @@ void main()
     float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + ambientWave + voiceOffset));
 
     float maxReach = dynamicWidth * 2.2;
-    if ((inwardDist < 0.0 || inwardDist > maxReach) && mistOutput.a <= 0.001) {
+    if ((inwardDist < 0.0 || inwardDist > maxReach) && shockwaveOutput.a <= 0.001) {
         fragColor = vec4(0.0);
         return;
     }
@@ -204,8 +234,8 @@ void main()
         edgeOutput = vec4(pureNeonColor * alpha, alpha);
     }
 
-    // Blend layers: base edge glow + saturated travelling beam + soft mist
-    vec4 result = edgeOutput + lineOutput * (1.0 - edgeOutput.a * 0.4);
-    result = result + mistOutput * (1.0 - result.a);
+    // Blend layers: base edge glow + saturated travelling beam + fullscreen vivid shockwave
+    vec4 result = edgeOutput + lineOutput * (1.0 - edgeOutput.a * 0.35);
+    result = result + shockwaveOutput * (1.0 - result.a * 0.5);
     fragColor = result * qt_Opacity;
 }
