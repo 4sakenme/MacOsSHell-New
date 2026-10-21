@@ -116,26 +116,116 @@ class SiriIPC:
         cls.call("dismiss")
 
 
-# ── SYSTEM CONTROL TOOLS (GEMINI FUNCTION CALLING) ──
+# ── SYSTEM CONTROL TOOLS (GEMINI FUNCTION CALLING & LOCAL ROUTER) ──
 def launch_app(app_name: str) -> str:
-    """Launch an application on Linux by its name or command (e.g. firefox, kitty, spotify, code, dolphin)."""
+    """
+    Launch an application on Linux (supporting Native apps and Flatpaks).
+    Uses a multi-step Waterfall Fallback mechanism:
+    1. Flatpak ID matching (flatpak list --app)
+    2. Desktop entry lookup in application directories & gtk-launch
+    3. Hyprland dispatcher (hyprctl dispatch exec) / direct PATH execution
+    All processes are spawned asynchronously without blocking the daemon.
+    """
+    if not app_name or not app_name.strip():
+        return "Please specify the application name to launch."
+
     clean_name = app_name.strip().lower()
+
+    # ── STEP 1: FLATPAK ID MATCHING ──
+    try:
+        res = subprocess.run(
+            ["flatpak", "list", "--app", "--columns=application,name"],
+            capture_output=True, text=True, timeout=2.0
+        )
+        if res.returncode == 0:
+            lines = res.stdout.strip().split("\n")
+            for line in lines[1:]:  # Skip header
+                parts = line.split("\t") if "\t" in line else line.split(None, 1)
+                if parts:
+                    app_id = parts[0].strip()
+                    app_display_name = parts[1].strip() if len(parts) > 1 else app_id
+                    id_tail = app_id.split(".")[-1].lower()
+
+                    # Match against ID, display name, or end of ID (e.g. spotify -> com.spotify.Client)
+                    if (clean_name in app_id.lower() or
+                        clean_name in app_display_name.lower() or
+                        clean_name == id_tail):
+                        subprocess.Popen(
+                            ["flatpak", "run", app_id],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True
+                        )
+                        return f"Đã mở {app_display_name} qua Flatpak."
+    except Exception as e:
+        print(f"[LaunchApp] Flatpak check error: {e}")
+
+    # ── STEP 2: DESKTOP ENTRY LOOKUP & GTK-LAUNCH ──
+    desktop_dirs = [
+        os.path.expanduser("~/.local/share/applications"),
+        "/usr/share/applications",
+        "/var/lib/flatpak/exports/share/applications",
+        os.path.expanduser("~/.local/share/flatpak/exports/share/applications")
+    ]
+    matched_desktop = None
+    for d in desktop_dirs:
+        if not os.path.isdir(d):
+            continue
+        try:
+            for entry in os.listdir(d):
+                if entry.endswith(".desktop"):
+                    entry_base = entry[:-8].lower()
+                    if clean_name == entry_base or clean_name in entry_base:
+                        matched_desktop = entry[:-8]
+                        break
+                    # Check Name= line inside .desktop file
+                    try:
+                        filepath = os.path.join(d, entry)
+                        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                            for fline in f:
+                                if fline.startswith("Name=") and clean_name in fline[5:].strip().lower():
+                                    matched_desktop = entry[:-8]
+                                    break
+                        if matched_desktop:
+                            break
+                    except Exception:
+                        pass
+            if matched_desktop:
+                break
+        except Exception:
+            pass
+
+    if matched_desktop:
+        try:
+            subprocess.Popen(
+                ["gtk-launch", matched_desktop],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            return f"Đã khởi chạy {app_name}."
+        except Exception as e:
+            print(f"[LaunchApp] gtk-launch error: {e}")
+
+    # ── STEP 3: HYPRLAND DISPATCHER OR DIRECT COMMAND EXECUTION ──
     try:
         if os.getenv("HYPRLAND_INSTANCE_SIGNATURE"):
-            subprocess.run(["hyprctl", "dispatch", "exec", clean_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return f"Successfully launched {app_name}."
+            subprocess.Popen(
+                ["hyprctl", "dispatch", "exec", clean_name],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            return f"Đã thực thi mở {app_name} qua Hyprland."
     except Exception:
         pass
 
     try:
-        subprocess.Popen([clean_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        return f"Successfully launched {app_name}."
+        subprocess.Popen(
+            [clean_name],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        return f"Đã mở {app_name}."
     except Exception as e:
-        try:
-            subprocess.run(["gtk-launch", clean_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return f"Launched {app_name} with gtk-launch."
-        except Exception:
-            return f"Could not launch {app_name}: {e}"
+        return f"Không thể tìm thấy hoặc khởi chạy ứng dụng '{app_name}': {e}"
 
 def open_url(url: str) -> str:
     """Open a web URL in the default browser using xdg-open."""
@@ -177,20 +267,56 @@ def play_music(platform: str, query: str) -> str:
         open_url(f"https://www.youtube.com/results?search_query={encoded_q}")
         return f"Playing {q}."
 
-def get_weather(location: str) -> str:
-    """Get real-time weather information for a given city or location without API keys."""
+def fetch_weather(location: str = "Danang") -> dict:
+    """
+    Get detailed real-time weather data and forecast for a given location or city.
+    If the user does not specify a location, defaults to 'Danang'.
+    Returns structured metrics including temperature, feels-like, humidity, condition, rain chance, and UV index.
+    """
     import unicodedata
-    clean_loc = "".join(c for c in unicodedata.normalize("NFD", location.strip()) if unicodedata.category(c) != "Mn").replace("đ", "d").replace("Đ", "D")
+    loc = location.strip() if location and location.strip() else "Danang"
+
+    # Remove accents for wttr.in URL parameter
+    clean_loc = "".join(c for c in unicodedata.normalize("NFD", loc) if unicodedata.category(c) != "Mn").replace("đ", "d").replace("Đ", "D")
     loc_param = clean_loc.replace(" ", "+")
+
     try:
-        req = urllib.request.Request(f"https://wttr.in/{loc_param}?format=3", headers={"User-Agent": "curl/8.0"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = resp.read().decode("utf-8").strip()
-            if data and not data.startswith("<"):
-                return data
+        req = urllib.request.Request(f"https://wttr.in/{loc_param}?format=j1", headers={"User-Agent": "curl/8.0"})
+        with urllib.request.urlopen(req, timeout=4.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            curr = data.get("current_condition", [{}])[0]
+            today = data.get("weather", [{}])[0]
+            hourly = today.get("hourly", [{}])
+
+            # Calculate maximum chance of rain today
+            rain_chances = []
+            for h in hourly:
+                try:
+                    rain_chances.append(int(h.get("chanceofrain", 0)))
+                except (ValueError, TypeError):
+                    pass
+            max_rain_chance = max(rain_chances) if rain_chances else 0
+
+            desc_list = curr.get("weatherDesc", [{}])
+            weather_desc = desc_list[0].get("value", "Clear") if desc_list else "Clear"
+
+            return {
+                "location": loc.title(),
+                "temperature_c": curr.get("temp_C", "N/A"),
+                "feels_like_c": curr.get("FeelsLikeC", "N/A"),
+                "humidity_percent": curr.get("humidity", "N/A"),
+                "condition": weather_desc,
+                "wind_speed_kmph": curr.get("windspeedKmph", "N/A"),
+                "uv_index": curr.get("uvIndex", "N/A"),
+                "max_temp_c": today.get("maxtempC", "N/A"),
+                "min_temp_c": today.get("mintempC", "N/A"),
+                "chance_of_rain_percent": max_rain_chance
+            }
     except Exception as e:
-        return f"Could not retrieve weather for {location}: {e}"
-    return f"Weather for {location} is currently unavailable."
+        return {
+            "location": loc,
+            "error": f"Could not retrieve weather: {e}"
+        }
 
 def search_files(keyword: str) -> str:
     """Quickly search files and directories in home folder or .config matching the keyword."""
@@ -222,6 +348,7 @@ def handle_local_intent(query: str):
     """
     Local-First Intent Router:
     Execute system tasks locally with 0 AI tokens.
+    Weather inquiries are forwarded directly to Gemini AI with fetch_weather tool.
     Returns response string if handled, or None to fallback to Gemini AI.
     """
     raw_q = query.strip()
@@ -229,28 +356,7 @@ def handle_local_intent(query: str):
     if not norm_q:
         return None
 
-    # 1. THỜI TIẾT (Weather API)
-    weather_keywords = ["thoi tiet", "nhiet do", "weather"]
-    if any(k in norm_q for k in weather_keywords):
-        loc = "Danang"
-        m = re.search(r'(?:thoi tiet|nhiet do|weather)(?:\s+(?:tai|o|in|cua|tai tinh|tp))?\s+([a-zA-Z0-9\s]+)', norm_q)
-        if m and m.group(1).strip():
-            candidate = m.group(1).strip()
-            candidate = re.sub(r'\b(hom nay|ngay mai|the nao|ra sao|bay gio|today|now)\b', '', candidate).strip()
-            if candidate:
-                loc = candidate
-        try:
-            loc_param = loc.replace(" ", "+")
-            req = urllib.request.Request(f"https://wttr.in/{loc_param}?format=3", headers={"User-Agent": "curl/8.0"})
-            with urllib.request.urlopen(req, timeout=3.5) as resp:
-                data = resp.read().decode("utf-8").strip()
-                if data and not data.startswith("<"):
-                    return f"Thời tiết tại {loc.title()}: {data}"
-        except Exception:
-            pass
-        return f"Hiện tại không thể lấy dữ liệu thời tiết cho {loc.title()}."
-
-    # 2. MỞ NHẠC (Music Playback)
+    # 1. MỞ NHẠC (Music Playback)
     music_keywords = ["mo nhac", "bat nhac", "nghe nhac", "nghe bai", "play music", "play"]
     for mk in music_keywords:
         if norm_q.startswith(mk) or f" {mk} " in f" {norm_q} ":
@@ -264,7 +370,7 @@ def handle_local_intent(query: str):
             else:
                 return play_music("youtube", track)
 
-    # 3. TÌM KIẾM GOOGLE (Web Search)
+    # 2. TÌM KIẾM GOOGLE (Web Search)
     search_keywords = ["tim kiem", "search", "google"]
     for sk in search_keywords:
         if norm_q.startswith(sk):
@@ -273,7 +379,7 @@ def handle_local_intent(query: str):
                 open_url(f"https://www.google.com/search?q={urllib.parse.quote(term)}")
                 return f"Đang tìm kiếm '{term}' trên Google cho bạn."
 
-    # 4. MỞ ỨNG DỤNG (Launch App)
+    # 3. MỞ ỨNG DỤNG (Launch App)
     app_keywords = ["mo ung dung", "chay ung dung", "mo app", "chay app", "mo", "chay", "launch", "bat"]
     for ak in app_keywords:
         if norm_q.startswith(ak + " "):
@@ -295,7 +401,7 @@ def handle_local_intent(query: str):
             exec_name = app_map.get(app_target, app_target)
             return launch_app(exec_name)
 
-    # 5. TÌM FILE (Search Files)
+    # 4. TÌM FILE (Search Files)
     file_keywords = ["tim file", "tim tep", "tim tap tin", "search file", "find file"]
     for fk in file_keywords:
         if fk in norm_q:
@@ -303,7 +409,7 @@ def handle_local_intent(query: str):
             if kw:
                 return search_files(kw)
 
-    # Fallback to Gemini AI for reasoning, code, translation, etc.
+    # Fallback to Gemini AI for reasoning, weather, code, translation, etc.
     return None
 
 
@@ -327,8 +433,11 @@ def query_gemini(prompt: str) -> str:
     system_instruction = (
         "You are Siri, Apple's intelligent assistant on Linux (MacShell). "
         "Keep your answers direct, concise, natural for speech, and helpful. "
-        "Use available tools when asked to launch apps, open URLs, play music, check weather, or search files. "
-        "Do not use markdown bolding or bullets because your reply will be read aloud."
+        "Use available tools when asked to launch apps, open URLs, play music, fetch weather, or search files. "
+        "When answering weather inquiries using the fetch_weather tool, synthesize a natural, friendly spoken reply "
+        "(mention temperature, feels-like if significantly different, conditions, and practical advice like bringing an umbrella if rain chance is high). "
+        "If the user does not specify a location for weather, assume 'Danang'. "
+        "Do not use markdown bolding (**) or bullet points (*) because your reply will be read aloud by TTS."
     )
 
     from google import genai
@@ -337,7 +446,7 @@ def query_gemini(prompt: str) -> str:
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        tools=[launch_app, open_url, play_music, get_weather, search_files],
+        tools=[launch_app, open_url, play_music, fetch_weather, search_files],
         temperature=0.3
     )
 
