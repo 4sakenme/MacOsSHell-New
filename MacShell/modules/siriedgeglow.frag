@@ -82,7 +82,7 @@ void main()
     vec3 cPurple  = vec3(0.624, 0.235, 0.941);
     vec3 cAmber   = vec3(1.000, 0.580, 0.000);
 
-    // ── 1. FULLSCREEN VIVID OCEAN WAVE & CORNER REFLECTION (KHÔNG CÓ HÌNH VUÔNG) ──
+    // ── 1. FULLSCREEN VIVID OCEAN WAVE BURST (FILL FULL MÀN HÌNH MƯỢT MÀ) ──
     vec4 shockwaveOutput = vec4(0.0);
     if (u_bloomProgress < 0.999 && animProgress > 0.01) {
         float distFromOrigin = length(p - originPx);
@@ -92,30 +92,21 @@ void main()
         float waveRadius = u_bloomProgress * maxScreenDist * 1.30;
         float waveDelta = distFromOrigin - waveRadius;
 
-        // Leading crest (vành sóng chính bung mạnh)
+        // Leading crest (vành sóng chính bung mạnh mẽ)
         float leadingCrest = exp(-pow(waveDelta / 85.0, 2.0)) * 2.2;
 
-        // Trailing ocean swells (các gợn sóng biển nối tiếp sau ngọn sóng chính)
+        // Trailing ocean swells (các gợn sóng biển mềm mại nối tiếp ngọn sóng)
         float trailingSwells = 0.0;
         if (waveDelta < 0.0) {
             float swellOsc = sin(waveDelta * 0.045);
             trailingSwells = max(0.0, swellOsc) * exp(waveDelta / 280.0) * 1.3;
         }
 
-        // Inner luminous wake
+        // Inner luminous wake fill across the screen
         float innerWake = smoothstep(waveRadius + 80.0, 0.0, distFromOrigin) * 0.40;
 
-        // 2. Natural corner reflection bounce (sóng dội nảy ngược từ góc đối diện)
-        // Opposite bottom-left corner acts as the primary reflective shoreline
-        vec2 bounceOrigin = vec2(0.0, itemSize.y);
-        float distFromBounce = length(p - bounceOrigin);
-        float bounceTime = clamp((u_bloomProgress - 0.42) / 0.58, 0.0, 1.0);
-        float bounceRadius = bounceTime * maxScreenDist * 0.75;
-        float bounceDelta = abs(distFromBounce - bounceRadius);
-        float bounceCrest = exp(-pow(bounceDelta / 110.0, 2.0)) * sin(bounceTime * PI) * 1.4;
-
-        // Total organic fluid wave field (100% tròn mượt, không hề có đường thẳng vuông)
-        float totalWaves = leadingCrest + trailingSwells + innerWake + bounceCrest;
+        // Total organic fluid wave field
+        float totalWaves = leadingCrest + trailingSwells + innerWake;
 
         // Smooth dissipation over the 1500ms duration
         float burstEnvelope = sin(clamp(u_bloomProgress * 1.15, 0.0, 1.0) * PI);
@@ -137,8 +128,7 @@ void main()
         }
 
         // Luminous foam crest highlight along the wave peaks
-        float crestHighlight = exp(-pow(waveDelta / 28.0, 2.0)) * 0.45 
-                             + exp(-pow(bounceDelta / 38.0, 2.0)) * sin(bounceTime * PI) * 0.35;
+        float crestHighlight = exp(-pow(waveDelta / 28.0, 2.0)) * 0.45;
         shockColor += vec3(1.0) * crestHighlight;
 
         // Clamped rich translucent alpha without dark clipping
