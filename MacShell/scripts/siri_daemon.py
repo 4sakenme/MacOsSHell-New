@@ -332,7 +332,7 @@ def start_daemon():
 
 
 # ── DIRECT QUERY TEST ──
-def handle_query_mode(query_text: str):
+def handle_query_mode(query_text: str, enable_tts: bool = True):
     """Test Gemini API and UI response card directly without voice input."""
     print(f"\n[Test Query] Prompt: \"{query_text}\"")
     SiriIPC.activate(True)
@@ -343,17 +343,17 @@ def handle_query_mode(query_text: str):
     answer = query_gemini(query_text)
     print(f"[Gemini Response] {answer}")
 
-    SiriIPC.set_state("speaking")
+    SiriIPC.set_state("speaking" if enable_tts else "idle")
     SiriIPC.set_response(answer)
 
-    print("[TTS] Reading response aloud...")
-    speak(answer)
-
-    print("[IPC] Waiting 3s before auto-dismiss...")
-    time.sleep(3.0)
-    SiriIPC.activate(False)
-    SiriIPC.set_state("idle")
-    print("[Done] Test finished successfully.")
+    if enable_tts:
+        print("[TTS] Reading response aloud...")
+        speak(answer)
+        print("[IPC] Waiting 3s before auto-dismiss...")
+        time.sleep(3.0)
+        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
+    print("[Done] Query finished successfully.")
 
 
 # ── CLI ENTRY POINT ──
@@ -362,6 +362,7 @@ def main():
     parser.add_argument("--daemon", action="store_true", help="Start continuous wake-word listener daemon")
     parser.add_argument("--trigger", action="store_true", help="Trigger a single listening cycle right now")
     parser.add_argument("--query", type=str, help="Send a text query to Gemini and test TTS/UI directly")
+    parser.add_argument("--no-tts", action="store_true", help="Disable TTS speech output for text query")
     parser.add_argument("--test-api", action="store_true", help="Test Gemini API connectivity")
     parser.add_argument("--test-tts", type=str, help="Test TTS synthesis with given text")
     parser.add_argument("--test-ipc", action="store_true", help="Test Quickshell edge glow and speech card")
@@ -391,7 +392,7 @@ def main():
         return
 
     if args.query:
-        handle_query_mode(args.query)
+        handle_query_mode(args.query, enable_tts=not args.no_tts)
         return
 
     if args.trigger:

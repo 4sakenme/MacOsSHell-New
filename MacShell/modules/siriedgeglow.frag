@@ -107,3 +107,4 @@ void main()
 
     fragColor = vec4(glowColor * intensity, intensity) * qt_Opacity;
 }
+

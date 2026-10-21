@@ -290,9 +290,12 @@ ShellRoot {
     AirDrop { id: airDrop; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
     SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub }
+    TypeToSiri { id: typeToSiri; edgeGlow: siriEdgeGlow }
 
     // qs -c MacShell ipc call siri activate true | false
     // qs -c MacShell ipc call siri toggle
+    // qs -c MacShell ipc call siri toggle_type
+    // qs -c MacShell ipc call siri ask "<query>"
     // qs -c MacShell ipc call siri state "listening" | "thinking" | "speaking" | "idle"
     // qs -c MacShell ipc call siri prompt "<text>"
     // qs -c MacShell ipc call siri response "<text>"
@@ -302,11 +305,22 @@ ShellRoot {
         target: "siri"
         function activate(on: bool) { siriEdgeGlow.active = on; }
         function toggle() { siriEdgeGlow.active = !siriEdgeGlow.active; }
+        function toggle_type() { typeToSiri.toggle(); }
+        function open_type() { typeToSiri.open(); }
+        function close_type() { typeToSiri.close(); }
+        function ask(text: string) { typeToSiri.ask(text); }
         function state(st: string) { siriEdgeGlow.siriState = st; }
         function prompt(text: string) { siriEdgeGlow.userPrompt = text; }
-        function response(text: string) { siriEdgeGlow.siriResponse = text; }
+        function response(text: string) {
+            siriEdgeGlow.siriResponse = text;
+            typeToSiri.response = text;
+            typeToSiri.isThinking = false;
+        }
         function audioLevel(lvl: real) { siriEdgeGlow.audioLevel = lvl; }
-        function dismiss() { siriEdgeGlow.dismiss(); }
+        function dismiss() {
+            siriEdgeGlow.dismiss();
+            typeToSiri.close();
+        }
     }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
