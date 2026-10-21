@@ -119,7 +119,33 @@ void main()
         return;
     }
 
-    // ── 3. PERIMETER BLOOM WAVE & REVERSE RADIAL COLLAPSE ──
+    // ── 3. IPHONE-STYLE VIVID TRAVELLING LINE PULSE & DISSIPATING BLOOM ──
+    vec4 lineOutput = vec4(0.0);
+    if (u_bloomProgress < 0.999 && animProgress > 0.01) {
+        float sweepHead = u_bloomProgress * 1.25;
+        float dHead = sweepHead - normDist;
+
+        if (dHead >= 0.0 && dHead <= 0.45) {
+            // High-intensity sharp traveling line hugging the border bezel
+            float sharpLine = exp(-pow((inwardDist - 3.2) / 2.6, 2.0));
+            float headPulse = exp(-pow(dHead / 0.045, 2.0)) * 2.8;
+
+            // Rich expanding luminous wake behind the travelling line
+            float wakeBloom = exp(-dHead * 7.0) * exp(-pow(inwardDist / (dynamicWidth * 1.3), 1.7)) * 1.6;
+
+            // Dissipation factor: bursts strongly then fades out smoothly as progress completes
+            float burstFactor = sin(clamp(u_bloomProgress * 1.15, 0.0, 1.0) * PI);
+            float lineIntensity = (sharpLine * headPulse + wakeBloom) * burstFactor * animProgress;
+
+            // Deep saturated Apple Intelligence colors (Electric Cyan, Vivid Magenta, Royal Purple)
+            vec3 saturatedColor = mix(cMagenta * 1.4, cCyan * 1.3, 0.5 + 0.5 * sin(normDist * TWO_PI * 2.0 + u_time * 3.0));
+            float lineAlpha = clamp(lineIntensity * 0.90, 0.0, 1.0) * qt_Opacity;
+
+            lineOutput = vec4(saturatedColor * lineAlpha, lineAlpha);
+        }
+    }
+
+    // ── 4. PERIMETER AMBIENT BLOOM MASK & REVERSE RADIAL COLLAPSE ──
     float wavePos = u_bloomProgress * 1.12;
     float bloomMask = 1.0 - smoothstep(wavePos - 0.20, wavePos, normDist);
     float bounceEcho = 0.0;
@@ -127,14 +153,14 @@ void main()
     if (u_bloomProgress < 0.999) {
         float distDelta = wavePos - normDist;
         if (distDelta >= 0.0) {
-            bounceEcho = sin(distDelta * 24.0) * exp(-distDelta * 8.0) * 1.1;
+            bounceEcho = sin(distDelta * 24.0) * exp(-distDelta * 8.0) * 0.8;
             bounceEcho = max(0.0, bounceEcho);
         }
-        float crest = exp(-pow((normDist - wavePos) * 18.0, 2.0)) * 1.6;
+        float crest = exp(-pow((normDist - wavePos) * 18.0, 2.0)) * 1.2;
         bounceEcho += crest;
     }
 
-    // ── 4. CHROMATIC SPECTRUM SLIDING ALONG WAVE FLOW ──
+    // ── 5. CHROMATIC SPECTRUM SLIDING ALONG WAVE FLOW ──
     float colorPhase = fract(perimeterCoord + ambientWave * 0.05 + u_time * 0.07);
     vec3 glowColor;
     if (colorPhase < 0.25) {
@@ -178,7 +204,8 @@ void main()
         edgeOutput = vec4(pureNeonColor * alpha, alpha);
     }
 
-    // Blend mist overlay with edge glow
-    vec4 result = edgeOutput + mistOutput * (1.0 - edgeOutput.a);
+    // Blend layers: base edge glow + saturated travelling beam + soft mist
+    vec4 result = edgeOutput + lineOutput * (1.0 - edgeOutput.a * 0.4);
+    result = result + mistOutput * (1.0 - result.a);
     fragColor = result * qt_Opacity;
 }
