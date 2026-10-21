@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import "../I18n.js" as I18n
 
@@ -149,10 +150,19 @@ Scope {
             isRenderActive = true;
             shrinkFactor = 1.0;
             introAnim.restart();
+            // Start 20-second auto-dismiss countdown (dismisses after 20s or on Esc)
+            dismissTimer.restart();
         } else {
             dismissTimer.stop();
             introAnim.stop();
             outroAnim.restart();
+        }
+    }
+
+    onSiriResponseChanged: {
+        // Reset 20-second timer when new response arrives so user has full 20s to read
+        if (active && siriResponse !== "") {
+            dismissTimer.restart();
         }
     }
 
@@ -162,28 +172,40 @@ Scope {
         }
     }
 
+    Process {
+        id: stopSpeechProc
+        running: false
+        command: [
+            "/home/kuro/.config/quickshell/MacShell/venv/bin/python",
+            "/home/kuro/.config/quickshell/MacShell/scripts/siri_daemon.py",
+            "--stop-speech"
+        ]
+    }
+
     function dismiss() {
         if (!active && !isRenderActive) return;
         active = false;
+        dismissTimer.stop();
+        stopSpeechProc.running = true;
         if (typeToSiri && typeToSiri.isOpen) {
             typeToSiri.close();
         }
     }
 
-    // Auto-dismiss timer after speaking has finished
+    // Auto-dismiss timer: 20 seconds of inactivity before gracefully closing
     Timer {
         id: dismissTimer
-        interval: 6500
+        interval: 20000
         repeat: false
         onTriggered: {
-            if (root.active && (root.siriState === "speaking" || root.siriResponse !== "")) {
+            if (root.active) {
                 root.dismiss();
             }
         }
     }
 
     onSiriStateChanged: {
-        if (siriState === "speaking") {
+        if (active && (siriState === "speaking" || siriState === "idle")) {
             dismissTimer.restart();
         }
     }

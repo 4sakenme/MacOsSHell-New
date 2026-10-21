@@ -18,8 +18,8 @@ Column {
     property bool wakeWordEnabled: true
     property string language: "vi-VN"
     property string voice: "vi"
-    property string ttsVoiceVi: "vi"
-    property string ttsVoiceEn: "en-us+f3"
+    property string ttsVoiceVi: "vi-VN-HoaiMyNeural"
+    property string ttsVoiceEn: "en-US-JennyNeural"
     property int speechRate: 165
     property real edgeGlowIntensity: 1.0
     property string geminiModel: "gemini-2.5-flash"
@@ -331,7 +331,7 @@ Column {
                     Text { text: I18n.tr("Select speaker gender and vocal timbre"); color: t ? t.text2 : "#8E8E93"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 11 }
                 }
 
-                // Vietnamese voice variants
+                // Vietnamese voice variants (Microsoft Neural Studio Quality)
                 Row {
                     visible: root.language === "vi-VN"
                     anchors.right: parent.right
@@ -340,15 +340,13 @@ Column {
 
                     Repeater {
                         model: [
-                            { id: "vi", label: "Nữ chuẩn" },
-                            { id: "vi+f1", label: "Nữ dịu" },
-                            { id: "vi+m1", label: "Nam trầm" },
-                            { id: "vi+m2", label: "Nam ấm" }
+                            { id: "vi-VN-HoaiMyNeural", label: "Nữ Hoài My" },
+                            { id: "vi-VN-NamMinhNeural", label: "Nam Nam Minh" }
                         ]
                         delegate: Rectangle {
                             required property var modelData
-                            width: 68; height: 28; radius: 6
-                            color: root.ttsVoiceVi === modelData.id ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
+                            width: 110; height: 28; radius: 6
+                            color: (root.ttsVoiceVi === modelData.id || (modelData.id === "vi-VN-HoaiMyNeural" && (root.ttsVoiceVi === "vi" || root.ttsVoiceVi === "vi+f1"))) ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData.label
@@ -368,7 +366,7 @@ Column {
                     }
                 }
 
-                // English voice variants
+                // English voice variants (Microsoft Neural Studio Quality)
                 Row {
                     visible: root.language === "en-US"
                     anchors.right: parent.right
@@ -377,14 +375,14 @@ Column {
 
                     Repeater {
                         model: [
-                            { id: "en-us+f3", label: "Siri Nữ" },
-                            { id: "en-us+m3", label: "Siri Nam" },
-                            { id: "en-gb+f2", label: "Anh - Anh" }
+                            { id: "en-US-JennyNeural", label: "Siri Nữ (Jenny)" },
+                            { id: "en-US-GuyNeural", label: "Siri Nam (Guy)" },
+                            { id: "en-GB-SoniaNeural", label: "Anh - Anh (Sonia)" }
                         ]
                         delegate: Rectangle {
                             required property var modelData
-                            width: 78; height: 28; radius: 6
-                            color: root.ttsVoiceEn === modelData.id ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
+                            width: 110; height: 28; radius: 6
+                            color: (root.ttsVoiceEn === modelData.id || (modelData.id === "en-US-JennyNeural" && root.ttsVoiceEn === "en-us+f3")) ? (t ? t.accent : "#0A84FF") : (t ? Qt.rgba(1,1,1,0.08) : "#2C2C2E")
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData.label

@@ -96,10 +96,10 @@ void main()
     float perimeterCoord = (angleP / TWO_PI) + 0.5;
     float pRad = perimeterCoord * TWO_PI;
 
-    // TIER 1: Ambient Idle Flow (very slow, gentle, ~0.14 minimal undulation)
-    float amb1 = sin(pRad * 6.0 - u_time * 1.2) * 0.60;
-    float amb2 = cos(pRad * 12.0 + u_time * 0.9) * 0.40;
-    float ambientWave = (amb1 + amb2) * 0.14;
+    // TIER 1: Ambient Idle Flow (bồng bềnh uốn lượn rõ nét, ~0.26 undulation)
+    float amb1 = sin(pRad * 5.0 - u_time * 1.3) * 0.65;
+    float amb2 = cos(pRad * 11.0 + u_time * 1.0) * 0.35;
+    float ambientWave = (amb1 + amb2) * 0.26;
 
     // TIER 2: Voice Micro-Ripples (delicate, high-frequency water ripples when speaking)
     float voiceRipple = sin(perimeterCoord * 45.0 - u_time * 6.0) 

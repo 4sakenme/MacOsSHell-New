@@ -1083,7 +1083,7 @@ setup_python_deps() {
             say "Upgrading pip and installing required Python packages inside venv..."
             "$venv_dir/bin/pip" install --upgrade pip >/dev/null 2>&1 || true
 
-            local py_pkgs=("google-genai" "speechrecognition" "sounddevice" "numpy" "syncedlyrics")
+            local py_pkgs=("google-genai" "speechrecognition" "sounddevice" "numpy" "syncedlyrics" "edge-tts")
             if "$venv_dir/bin/pip" install "${py_pkgs[@]}" >/dev/null 2>&1; then
                 ok "Python dependencies installed successfully inside venv (${py_pkgs[*]})"
             else

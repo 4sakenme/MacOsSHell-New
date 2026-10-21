@@ -25,9 +25,9 @@ MACSHELL_DIR="$(dirname "$SCRIPT_DIR")"
 VENV_PYTHON="$MACSHELL_DIR/venv/bin/python"
 
 if [ -x "$VENV_PYTHON" ]; then
-    "$VENV_PYTHON" "$SCRIPT_DIR/siri_daemon.py" --awake
+    exec "$VENV_PYTHON" "$SCRIPT_DIR/siri_daemon.py" --awake
 else
-    python3 "$SCRIPT_DIR/siri_daemon.py" --awake
+    exec python3 "$SCRIPT_DIR/siri_daemon.py" --awake
 fi
 
 rm -f "$PIDFILE"

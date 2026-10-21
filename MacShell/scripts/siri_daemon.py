@@ -465,53 +465,170 @@ def query_gemini(prompt: str) -> str:
     return f"I'm sorry, I encountered an issue contacting Gemini: {last_error[:120]}"
 
 
-# ── TEXT TO SPEECH (TTS) ──
+# ── TEXT TO SPEECH (TTS) & SINGLE-SPEAKER MUTEX ──
+IS_SPEAKING = False
+LAST_SPEAK_FINISH = 0.0
+LAST_SPOKEN_TEXT = ""
+CURRENT_PLAYER_PROC = None
+SPEECH_LOCK = threading.Lock()
+SPEECH_PID_FILE = "/tmp/macshell_siri_speech.pid"
+
+def stop_all_speech():
+    """Immediately stop all ongoing speech synthesis and playback across processes."""
+    global CURRENT_PLAYER_PROC, IS_SPEAKING
+    IS_SPEAKING = False
+
+    # 1. Terminate current process player if active
+    if CURRENT_PLAYER_PROC is not None:
+        try:
+            CURRENT_PLAYER_PROC.kill()
+        except Exception:
+            pass
+        CURRENT_PLAYER_PROC = None
+
+    # 2. Terminate previous speech PID if alive
+    if os.path.exists(SPEECH_PID_FILE):
+        try:
+            with open(SPEECH_PID_FILE, "r") as pf:
+                old_pid = int(pf.read().strip())
+            if old_pid != os.getpid():
+                os.kill(old_pid, 15)
+        except Exception:
+            pass
+        try:
+            os.remove(SPEECH_PID_FILE)
+        except OSError:
+            pass
+
+    # 3. Kill any rogue mpv or espeak-ng instances playing Siri audio
+    try:
+        subprocess.run(["pkill", "-9", "-f", "siri_speech"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["killall", "-9", "espeak-ng"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def is_vietnamese(text: str) -> bool:
     """Check if the response contains Vietnamese characters."""
     return bool(re.search(r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', text, re.IGNORECASE))
 
+def map_to_neural_voice(voice: str, is_vi: bool) -> str:
+    """Map voice name to pristine Microsoft Edge Neural voices (studio grade, no buzzing)."""
+    if is_vi:
+        if any(k in voice for k in ["m1", "m2", "NamMinh", "nam"]):
+            return "vi-VN-NamMinhNeural"
+        return "vi-VN-HoaiMyNeural"
+    else:
+        if any(k in voice for k in ["m3", "Guy", "male"]):
+            return "en-US-GuyNeural"
+        elif any(k in voice for k in ["gb", "Sonia", "british"]):
+            return "en-GB-SoniaNeural"
+        return "en-US-JennyNeural"
+
 def speak(text: str):
-    """Read text aloud with audio level pulsing."""
+    """Read text aloud with pristine Neural TTS (edge-tts), strictly ensuring ONLY ONE speaker plays."""
+    global IS_SPEAKING, LAST_SPEAK_FINISH, LAST_SPOKEN_TEXT, CURRENT_PLAYER_PROC
     clean_text = re.sub(r'[*_#`~]', '', text).strip()
     if not clean_text:
         return
 
-    # Choose voice based on language
-    if is_vietnamese(clean_text):
-        voice = CONFIG.get("tts_voice_vi", "vi")
-    else:
-        voice = CONFIG.get("tts_voice_en", "en-us+f3")
+    # Strictly kill any ongoing or overlapping speech before starting this one!
+    stop_all_speech()
 
-    rate = str(CONFIG.get("speech_rate", 165))
+    with SPEECH_LOCK:
+        IS_SPEAKING = True
+        LAST_SPOKEN_TEXT = clean_text.lower()
 
-    # Pulsing thread while TTS is running (bounded memory queue)
-    stop_pulse = threading.Event()
-    level_queue = deque([0.35, 0.65, 0.85, 0.55, 0.75, 0.45, 0.90, 0.60], maxlen=16)
+        try:
+            with open(SPEECH_PID_FILE, "w") as pf:
+                pf.write(str(os.getpid()))
+        except Exception:
+            pass
 
-    def pulse_loop():
-        idx = 0
-        q_len = len(level_queue)
-        while not stop_pulse.is_set():
-            SiriIPC.set_audio_level(level_queue[idx % q_len])
-            idx += 1
-            time.sleep(0.12)
-        SiriIPC.set_audio_level(0.0)
+        is_vi = is_vietnamese(clean_text)
+        cfg_voice = CONFIG.get("tts_voice_vi" if is_vi else "tts_voice_en", "vi" if is_vi else "en-us+f3")
+        neural_voice = map_to_neural_voice(cfg_voice, is_vi)
 
-    pulse_thread = threading.Thread(target=pulse_loop, daemon=True)
-    pulse_thread.start()
+        # Calculate speech rate string (e.g. "+5%", "-10%")
+        speech_rate = CONFIG.get("speech_rate", 165)
+        rate_percent = int(round((speech_rate - 165) / 165.0 * 80))
+        rate_str = f"{rate_percent:+d}%"
 
-    try:
-        subprocess.run(
-            ["espeak-ng", "-v", voice, "-s", rate, clean_text],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-    except FileNotFoundError:
-        print("[TTS] espeak-ng not found. Please install espeak-ng.", file=sys.stderr)
-    finally:
+        # Pulsing thread while TTS is playing
+        stop_pulse = threading.Event()
+        level_queue = deque([0.30, 0.55, 0.70, 0.45, 0.65, 0.40, 0.75, 0.50], maxlen=16)
+
+        def pulse_loop():
+            idx = 0
+            q_len = len(level_queue)
+            while not stop_pulse.is_set():
+                SiriIPC.set_audio_level(level_queue[idx % q_len])
+                idx += 1
+                time.sleep(0.12)
+            SiriIPC.set_audio_level(0.0)
+
+        pulse_thread = threading.Thread(target=pulse_loop, daemon=True)
+        pulse_thread.start()
+
+        tmp_audio = f"/tmp/siri_speech_{os.getpid()}.mp3"
+        played = False
+
+        # 1. High Quality Edge Neural TTS (Pristine audio, no buzzing / no distortion)
+        try:
+            import asyncio, edge_tts
+            async def synthesize():
+                comm = edge_tts.Communicate(clean_text, neural_voice, rate=rate_str)
+                await comm.save(tmp_audio)
+            asyncio.run(synthesize())
+
+            if os.path.exists(tmp_audio) and os.path.getsize(tmp_audio) > 0:
+                CURRENT_PLAYER_PROC = subprocess.Popen(
+                    ["mpv", "--no-terminal", "--really-quiet", "--volume=100", tmp_audio],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                CURRENT_PLAYER_PROC.wait()
+                CURRENT_PLAYER_PROC = None
+                played = True
+        except Exception as e:
+            print(f"[TTS] Neural TTS notice: {e}, falling back to espeak-ng", file=sys.stderr)
+
+        # 2. Fallback to espeak-ng if neural TTS fails or offline
+        if not played:
+            try:
+                raw_voice = "vi" if is_vi else "en-us+f3"
+                CURRENT_PLAYER_PROC = subprocess.Popen(
+                    ["espeak-ng", "-v", raw_voice, "-s", str(speech_rate), clean_text],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                CURRENT_PLAYER_PROC.wait()
+                CURRENT_PLAYER_PROC = None
+            except Exception as e:
+                print(f"[TTS] espeak-ng error: {e}", file=sys.stderr)
+
+        # Cleanup temporary mp3 file
+        if os.path.exists(tmp_audio):
+            try:
+                os.remove(tmp_audio)
+            except OSError:
+                pass
+
+        if os.path.exists(SPEECH_PID_FILE):
+            try:
+                os.remove(SPEECH_PID_FILE)
+            except OSError:
+                pass
+
         stop_pulse.set()
         pulse_thread.join(timeout=0.5)
-        del level_queue
+
+        # Acoustic cooldown: wait 0.8s to allow room sound reverberation to dissipate
+        time.sleep(0.8)
+        LAST_SPEAK_FINISH = time.time()
+        IS_SPEAKING = False
         gc.collect()
 
 
@@ -521,9 +638,9 @@ def run_assistant_cycle(recognizer, mic=None):
     1. Activate edge glow UI (listening state).
     2. Record user speech from microphone.
     3. Convert to text via SpeechRecognition (free STT).
-    4. Send prompt to Gemini API (thinking state).
+    4. Send prompt to Gemini AI (thinking state).
     5. Speak response and update UI (speaking state).
-    6. Return to idle and auto-dismiss.
+    6. Transition to idle, card remains visible for 20s or until Esc is pressed.
     """
     import speech_recognition as sr
 
@@ -538,8 +655,8 @@ def run_assistant_cycle(recognizer, mic=None):
     try:
         with (mic if mic else sr.Microphone()) as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.4)
-            # Listen with a 6-second phrase limit
-            audio = recognizer.listen(source, timeout=5.0, phrase_time_limit=10.0)
+            # Listen with phrase limit
+            audio = recognizer.listen(source, timeout=6.0, phrase_time_limit=10.0)
 
         print("[Siri] 🧠 Processing speech...")
         SiriIPC.set_state("thinking")
@@ -548,7 +665,6 @@ def run_assistant_cycle(recognizer, mic=None):
         # Language selection
         lang_pref = CONFIG.get("language", "auto")
         if lang_pref == "auto":
-            # Try English first, fallback or recognize bilingual
             try:
                 user_query = recognizer.recognize_google(audio, language="vi-VN")
             except sr.UnknownValueError:
@@ -559,20 +675,17 @@ def run_assistant_cycle(recognizer, mic=None):
     except sr.WaitTimeoutError:
         print("[Siri] No speech heard in time.")
         SiriIPC.set_prompt("I didn't hear anything.")
-        time.sleep(1.5)
-        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
         return
     except sr.UnknownValueError:
         print("[Siri] Could not understand audio.")
         SiriIPC.set_prompt("Sorry, I didn't catch that.")
-        time.sleep(1.5)
-        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
         return
     except Exception as e:
         print(f"[Siri] Speech recognition error: {e}")
         SiriIPC.set_prompt("Speech recognition unavailable.")
-        time.sleep(1.5)
-        SiriIPC.activate(False)
+        SiriIPC.set_state("idle")
         return
 
     print(f"[User] 🗣️  \"{user_query}\"")
@@ -593,23 +706,20 @@ def run_assistant_cycle(recognizer, mic=None):
         SiriIPC.set_state("speaking")
         SiriIPC.set_response(answer)
 
-        # Read answer aloud
+        # Read answer aloud with Neural TTS
         speak(answer)
 
-        # Cooldown & dismiss
-        time.sleep(1.5)
-        SiriIPC.activate(False)
+        # Transition to idle (card stays visible for 20s or closes on Esc)
         SiriIPC.set_state("idle")
-        print("[Siri] Cycle completed. Returning to idle.\n")
+        print("[Siri] Response delivered. Edge glow & response card remain visible for 20s.\n")
     finally:
-        # Strict memory cleanup after each cycle
         del user_query
         gc.collect()
 
 
 # ── DAEMON CONTINUOUS LISTENER ──
 def start_daemon():
-    """Continuously listen for wake-words ("Hey Siri", "Siri")."""
+    """Continuously listen for wake-words with robust echo cancellation."""
     import speech_recognition as sr
 
     recognizer = sr.Recognizer()
@@ -621,7 +731,7 @@ def start_daemon():
     print("═════════════════════════════════════════════════════════════════")
     print(" 🌟 MacShell Siri Voice Assistant Daemon is Running")
     print(f" 🎯 Wake words: {', '.join(wake_words)}")
-    print(f" 🤖 Gemini Model: {CONFIG.get('model', 'gemini-1.5-flash')}")
+    print(f" 🤖 Gemini Model: {CONFIG.get('model', 'gemini-2.5-flash')}")
     print(" 🔊 Press Ctrl+C in this terminal to stop.")
     print("═════════════════════════════════════════════════════════════════\n")
 
@@ -639,18 +749,32 @@ def start_daemon():
     cycle_count = 0
     while True:
         try:
+            # ANTI-LOOP: If speaking or within 2.5s cooldown after speaking, skip mic recording
+            # to strictly prevent speaker echo from triggering wake word!
+            if IS_SPEAKING or (time.time() - LAST_SPEAK_FINISH < 2.5):
+                time.sleep(0.3)
+                continue
+
             with mic as source:
-                # Fast listening for potential wake words
                 audio = recognizer.listen(source, timeout=None, phrase_time_limit=4.0)
+
+            # Re-check speaking flag after recording chunk
+            if IS_SPEAKING or (time.time() - LAST_SPEAK_FINISH < 2.5):
+                del audio
+                continue
 
             # Recognize short wake word snippet
             try:
-                # Fast check in English and Vietnamese
                 heard = ""
                 try:
                     heard = recognizer.recognize_google(audio, language="en-US").lower()
                 except Exception:
                     heard = recognizer.recognize_google(audio, language="vi-VN").lower()
+
+                # Self-Echo Filter: Ignore if snippet contains words from Siri's own recent response
+                if LAST_SPOKEN_TEXT and any(w in LAST_SPOKEN_TEXT for w in heard.split() if len(w) > 3):
+                    print(f"[Echo Filter] Discarded room speaker feedback: \"{heard}\"")
+                    continue
 
                 matched = any(w in heard for w in wake_words)
                 if matched:
@@ -662,7 +786,6 @@ def start_daemon():
             except sr.RequestError as e:
                 time.sleep(1.0)
             finally:
-                # Discard audio chunk immediately
                 del audio
                 cycle_count += 1
                 if cycle_count >= 8:
@@ -702,12 +825,10 @@ def handle_query_mode(query_text: str, enable_tts: bool = True):
     SiriIPC.set_response(answer)
 
     if enable_tts:
-        print("[TTS] Reading response aloud...")
+        print("[TTS] Reading response aloud with Neural TTS...")
         speak(answer)
-        print("[IPC] Waiting 3s before auto-dismiss...")
-        time.sleep(3.0)
-        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
+        print("[Siri] Response complete. Display will auto-dismiss in 20s or on Esc.")
     print("[Done] Query finished successfully.")
 
 
@@ -722,8 +843,14 @@ def main():
     parser.add_argument("--test-api", action="store_true", help="Test Gemini API connectivity")
     parser.add_argument("--test-tts", type=str, help="Test TTS synthesis with given text")
     parser.add_argument("--test-ipc", action="store_true", help="Test Quickshell edge glow and speech card")
+    parser.add_argument("--stop-speech", action="store_true", help="Stop all currently playing speech immediately")
 
     args = parser.parse_args()
+
+    if args.stop_speech:
+        stop_all_speech()
+        print("[TTS] Speech playback stopped immediately.")
+        return
 
     if args.test_api:
         print("[API Test] Contacting Gemini API...")
@@ -752,11 +879,47 @@ def main():
         return
 
     if args.trigger or args.awake:
-        import speech_recognition as sr
-        r = sr.Recognizer()
-        r.dynamic_energy_threshold = True
-        r.pause_threshold = 0.6
-        run_assistant_cycle(r)
+        import fcntl
+        lock_file = "/tmp/macshell_siri_awake.lock"
+        pid_file = "/tmp/macshell_siri_awake.pid"
+        try:
+            lock_fd = open(lock_file, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, BlockingIOError):
+            print("[Siri] An awake cycle is already active. Toggling dismiss.")
+            try:
+                if os.path.exists(pid_file):
+                    with open(pid_file, "r") as pf:
+                        old_pid = int(pf.read().strip())
+                    if old_pid != os.getpid():
+                        os.kill(old_pid, 15)
+            except Exception:
+                pass
+            SiriIPC.activate(False)
+            return
+
+        try:
+            with open(pid_file, "w") as pf:
+                pf.write(str(os.getpid()))
+        except Exception:
+            pass
+
+        try:
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            r.dynamic_energy_threshold = True
+            r.pause_threshold = 0.6
+            run_assistant_cycle(r)
+        finally:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+                if os.path.exists(pid_file):
+                    os.remove(pid_file)
+            except Exception:
+                pass
         return
 
     # Default to daemon mode if called directly
