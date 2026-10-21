@@ -2,12 +2,13 @@
 
 // Apple Intelligence Siri Edge Glow Wave Fragment Shader
 // Features:
-// 1. Refined, gentle organic wave ribbon (reduced waveIntensity for subtle elegance):
-//    - Controlled wave amplitude (0.35 - 0.55) so the glow hugs the bezel comfortably
-//    - Does not jump excessively or occlude screen workspace
-//    - Smooth chromatic shift (Cyan, Magenta, Purple, Amber) sliding along wave flow
-// 2. Perimeter Inception Shockwave:
-//    - Dual-branch bloom originating from Menu Bar top-right icon (0.96, 0.02)
+// 1. Intro Animation:
+//    - Phase 1: Screen Flash / Vignette Mist Layer spreading from top-right origin (180ms)
+//    - Phase 2: Settle to Edge: Mist fades out while energy converges into 48px-55px edge glow
+// 2. Outro Animation:
+//    - Border Shrink: Edge width collapses toward bezel into 0px
+//    - Reverse Radial Collapse: Wave drains along perimeter back to top-right origin
+//    - Smooth Opacity Fade (350ms - 400ms)
 // 3. Multi-tier light diffusion: Crisp Core + Chromatic Fluid Halo + Soft Aura
 // Compile: /usr/lib/qt6/bin/qsb --qt6 -o siriedgeglow.frag.qsb siriedgeglow.frag
 
@@ -20,11 +21,13 @@ layout(std140, binding = 0) uniform buf {
     vec2 itemSize;         // Screen dimension in logical px (e.g. 1920x1080)
     float u_time;          // Running animation time in seconds
     float screenRadius;    // Corner radius of screen bezel in px (e.g. 28.0)
-    float glowWidth;       // Base glow width in px (~22.0px)
+    float glowWidth;       // Base glow width in px (~24.0px)
     float audioLevel;      // 0.0 to 1.0 audio reactivity level
     float animProgress;    // 0.0 to 1.0 fade in/out
     vec2 u_origin;         // Origin normalized coord (0.96, 0.02)
-    float u_bloomProgress; // 0.0 to 1.0 perimeter bloom animation
+    float u_bloomProgress; // 0.0 to 1.0 perimeter bloom animation (forward in intro, reverse in outro)
+    float u_introMist;     // 0.0 to 1.0 fullscreen vignette mist overlay during intro
+    float u_shrinkFactor;  // 1.0 active, collapses to 0.0 during outro
 };
 
 const float PI = 3.14159265358979323846;
@@ -48,41 +51,10 @@ void main()
     vec2 halfSize = itemSize * 0.5;
     vec2 posFromCenter = p - halfSize;
 
-    // Distance to screen boundary with rounded corners (d == 0 at edge, inwardDist > 0 inside)
-    float d = sdRoundedBox(posFromCenter, halfSize, screenRadius);
-    float inwardDist = -d;
-
-    // ── 1. GENTLE ORGANIC WAVE FUNCTION (REDUCED INTENSITY) ──
-    float angleP = atan(posFromCenter.y, posFromCenter.x);
-    float perimeterCoord = (angleP / TWO_PI) + 0.5;
-    float pRad = perimeterCoord * TWO_PI;
-
-    // Refined multi-harmonic waves with gentle amplitudes
-    float wave1 = sin(pRad * 8.0 - u_time * 1.8) * 0.40;
-    float wave2 = cos(pRad * 16.0 + u_time * 1.3) * 0.25;
-    float wave3 = sin(pRad * 4.0 + u_time * 0.7) * 0.25;
-    float totalWave = wave1 + wave2 + wave3;
-
-    // Moderate, elegant wave intensity (~0.35, up to 0.55 when speaking)
-    float waveIntensity = 0.35 + audioLevel * 0.20;
-
-    // Soft inward expansion during activation bloom
-    float burstBloom = (u_bloomProgress < 0.999) ? (0.35 * sin(u_bloomProgress * PI)) : 0.0;
-    float baseGlowW = glowWidth * (1.0 + burstBloom + audioLevel * 0.30);
-
-    // Subtle dynamic width that hugs the bezel without covering screen content
-    float dynamicWidth = baseGlowW * max(0.40, (1.0 + totalWave * waveIntensity));
-
-    // Boundary cutoff to prevent any unnecessary GPU texture fill
-    float maxReach = dynamicWidth * 2.2;
-    if (inwardDist < 0.0 || inwardDist > maxReach) {
-        fragColor = vec4(0.0);
-        return;
-    }
-
-    // ── 2. PERIMETER INCEPTION PROPAGATION (Top-Right Menu Bar Origin) ──
+    // ── ORIGIN COORDINATES & PERIMETER PARAMETERS ──
     vec2 originPx = u_origin * itemSize;
     vec2 originFromCenter = originPx - halfSize;
+    float angleP = atan(posFromCenter.y, posFromCenter.x);
     float angleO = atan(originFromCenter.y, originFromCenter.x);
 
     float angleDiff = abs(angleP - angleO);
@@ -91,36 +63,77 @@ void main()
     }
     float normDist = angleDiff / PI;
 
-    float bloomMask = 1.0;
-    float bounceEcho = 0.0;
-
-    if (u_bloomProgress < 0.999) {
-        float wavePos = u_bloomProgress * 1.12;
-        bloomMask = 1.0 - smoothstep(wavePos - 0.20, wavePos, normDist);
-
-        float distDelta = wavePos - normDist;
-        if (distDelta >= 0.0) {
-            bounceEcho = sin(distDelta * 24.0) * exp(-distDelta * 8.0) * 1.1;
-            bounceEcho = max(0.0, bounceEcho);
-        }
-
-        float crest = exp(-pow((normDist - wavePos) * 18.0, 2.0)) * 1.8;
-        bounceEcho += crest;
-    }
-
-    if (bloomMask <= 0.001 && bounceEcho <= 0.001) {
-        fragColor = vec4(0.0);
-        return;
-    }
-
-    // ── 3. CHROMATIC COLOR SPECTRUM SLIDING ALONG WAVE FLOW ──
-    float colorPhase = fract(perimeterCoord + totalWave * 0.06 + u_time * 0.08);
-
+    // ── APPLE INTELLIGENCE CHROMATIC PALETTE ──
     vec3 cCyan    = vec3(0.000, 0.882, 1.000);
     vec3 cMagenta = vec3(1.000, 0.180, 0.330);
     vec3 cPurple  = vec3(0.624, 0.235, 0.941);
     vec3 cAmber   = vec3(1.000, 0.580, 0.000);
 
+    // ── 1. INTRO PHASE 1: SCREEN FLASH / VIGNETTE MIST OVERLAY ──
+    vec4 mistOutput = vec4(0.0);
+    if (u_introMist > 0.001) {
+        float distFromOrigin = length(p - originPx);
+        float maxDist = length(vec2(0.0, itemSize.y) - originPx);
+        float mistRadius = max(40.0, u_introMist * maxDist * 1.35);
+
+        // Soft pastel mist expanding smoothly across the screen
+        float mistGrad = smoothstep(mistRadius, mistRadius * 0.10, distFromOrigin);
+        vec2 normCenter = (qt_TexCoord0 - 0.5) * 2.0;
+        float vignette = 1.0 - dot(normCenter, normCenter) * 0.28;
+
+        float mistAlpha = mistGrad * u_introMist * 0.22 * max(0.0, vignette);
+        vec3 mistRgb = mix(cCyan, cMagenta, 0.5 + 0.5 * sin(u_time * 2.0 + distFromOrigin * 0.004));
+        mistOutput = vec4(mistRgb * mistAlpha, mistAlpha);
+    }
+
+    // ── 2. INTRO PHASE 2 & OUTRO: PERIMETER CONVERGENCE & BORDER SHRINK ──
+    float d = sdRoundedBox(posFromCenter, halfSize, screenRadius);
+    float inwardDist = -d;
+
+    // Perimeter wave coordinate (0.0 to 1.0 around the 4 edges)
+    float perimeterCoord = (angleP / TWO_PI) + 0.5;
+    float pRad = perimeterCoord * TWO_PI;
+
+    // Multi-harmonic gentle organic waves
+    float wave1 = sin(pRad * 8.0 - u_time * 1.8) * 0.40;
+    float wave2 = cos(pRad * 16.0 + u_time * 1.3) * 0.25;
+    float wave3 = sin(pRad * 4.0 + u_time * 0.7) * 0.25;
+    float totalWave = wave1 + wave2 + wave3;
+
+    float waveIntensity = 0.35 + audioLevel * 0.20;
+
+    // Peak expansion reaches 48px - 55px during settle bloom, then resolves to base ~24px
+    float settleBoost = (u_bloomProgress < 0.999) ? (1.20 * sin(u_bloomProgress * PI)) : 0.0;
+    float dynamicBaseW = glowWidth * (1.0 + settleBoost + audioLevel * 0.30);
+
+    // Border Shrink in Outro: collapses cleanly to 0px
+    dynamicBaseW *= clamp(u_shrinkFactor, 0.0, 1.0);
+
+    float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + totalWave * waveIntensity));
+
+    float maxReach = dynamicWidth * 2.2;
+    if ((inwardDist < 0.0 || inwardDist > maxReach) && mistOutput.a <= 0.001) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    // ── 3. PERIMETER BLOOM WAVE & REVERSE RADIAL COLLAPSE ──
+    float wavePos = u_bloomProgress * 1.12;
+    float bloomMask = 1.0 - smoothstep(wavePos - 0.20, wavePos, normDist);
+    float bounceEcho = 0.0;
+
+    if (u_bloomProgress < 0.999) {
+        float distDelta = wavePos - normDist;
+        if (distDelta >= 0.0) {
+            bounceEcho = sin(distDelta * 24.0) * exp(-distDelta * 8.0) * 1.1;
+            bounceEcho = max(0.0, bounceEcho);
+        }
+        float crest = exp(-pow((normDist - wavePos) * 18.0, 2.0)) * 1.6;
+        bounceEcho += crest;
+    }
+
+    // ── 4. CHROMATIC SPECTRUM SLIDING ALONG WAVE FLOW ──
+    float colorPhase = fract(perimeterCoord + totalWave * 0.06 + u_time * 0.08);
     vec3 glowColor;
     if (colorPhase < 0.25) {
         glowColor = mix(cCyan, cMagenta, smoothstep(0.0, 1.0, colorPhase / 0.25));
@@ -132,30 +145,32 @@ void main()
         glowColor = mix(cAmber, cCyan, smoothstep(0.0, 1.0, (colorPhase - 0.75) / 0.25));
     }
 
-    // ── 4. MULTI-TIER LIGHT EMISSION & SUBTLE CREST SURGE ──
-    float normDistToEdge = inwardDist / dynamicWidth;
+    // ── 5. MULTI-TIER LIGHT EMISSION ──
+    vec4 edgeOutput = vec4(0.0);
+    if (inwardDist >= 0.0 && inwardDist <= maxReach && dynamicWidth > 0.5) {
+        float normDistToEdge = inwardDist / dynamicWidth;
+        float core = exp(-pow(normDistToEdge / 0.32, 2.2)) * 1.35;
+        float halo = exp(-pow(normDistToEdge / 0.85, 1.7)) * 0.80;
+        float aura = exp(-pow(normDistToEdge / 1.65, 1.3)) * 0.35;
 
-    float core = exp(-pow(normDistToEdge / 0.32, 2.2)) * 1.35;
-    float halo = exp(-pow(normDistToEdge / 0.85, 1.7)) * 0.80;
-    float aura = exp(-pow(normDistToEdge / 1.65, 1.3)) * 0.35;
+        float crestSurge = 1.0 + max(0.0, totalWave) * 0.35 + audioLevel * 0.30;
+        float edgeIntensity = (core + halo + aura) * crestSurge * animProgress * (bloomMask + bounceEcho);
 
-    // Gentle crest surge
-    float crestSurge = 1.0 + max(0.0, totalWave) * 0.35 + audioLevel * 0.30;
+        // Activation spark near origin
+        if (u_bloomProgress < 0.30) {
+            float originProx = exp(-length(p - originPx) / 110.0);
+            edgeIntensity += originProx * (1.0 - u_bloomProgress / 0.30) * 1.2;
+        }
 
-    float baseIntensity = (core + halo + aura) * crestSurge * animProgress;
-    float totalIntensity = baseIntensity * (bloomMask + bounceEcho);
+        edgeIntensity = clamp(edgeIntensity, 0.0, 2.4);
+        vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.65, 2.0);
+        vec3 edgeRgb = glowColor * edgeIntensity + whiteHighlight;
+        float edgeAlpha = clamp(edgeIntensity * 0.85, 0.0, 1.0) * qt_Opacity;
 
-    // Initial activation spark near origin
-    if (u_bloomProgress < 0.30) {
-        float originProx = exp(-length(p - originPx) / 110.0);
-        totalIntensity += originProx * (1.0 - u_bloomProgress / 0.30) * 1.2;
+        edgeOutput = vec4(edgeRgb * edgeAlpha, edgeAlpha);
     }
 
-    totalIntensity = clamp(totalIntensity, 0.0, 2.2);
-
-    vec3 whiteHighlight = vec3(1.0, 1.0, 1.0) * pow(core * 0.65, 2.0);
-    vec3 finalRgb = glowColor * totalIntensity + whiteHighlight;
-
-    float finalAlpha = clamp(totalIntensity * 0.85, 0.0, 1.0) * qt_Opacity;
-    fragColor = vec4(finalRgb * finalAlpha, finalAlpha);
+    // Blend mist overlay with edge glow
+    vec4 result = edgeOutput + mistOutput * (1.0 - edgeOutput.a);
+    fragColor = result * qt_Opacity;
 }

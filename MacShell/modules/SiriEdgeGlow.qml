@@ -24,38 +24,123 @@ Scope {
     readonly property bool isThinking: siriState === "thinking"
     readonly property bool isSpeaking: siriState === "speaking"
 
-    // Animation progress & smooth transitions
-    readonly property real targetProgress: active ? 1.0 : 0.0
+    // Animation progress & state tracking
+    property bool isRenderActive: false
     property real smoothProgress: 0.0
     property real bloomProgress: 0.0
+    property real introMist: 0.0
+    property real shrinkFactor: 1.0
 
-    Behavior on smoothProgress {
+    // ── 1. INTRO ANIMATION: PHASE 1 (180ms MIST FLASH) -> PHASE 2 (250ms SETTLE TO EDGE) ──
+    ParallelAnimation {
+        id: introAnim
+
+        SequentialAnimation {
+            // Phase 1: Screen Flash / Vignette mist bloom from top-right origin (180ms)
+            NumberAnimation {
+                target: root
+                property: "introMist"
+                from: 0.0
+                to: 1.0
+                duration: 180
+                easing.type: Easing.OutQuad
+            }
+            // Phase 2: Fade out mist in center as energy settles into the perimeter edge (250ms)
+            NumberAnimation {
+                target: root
+                property: "introMist"
+                from: 1.0
+                to: 0.0
+                duration: 250
+                easing.type: Easing.InQuad
+            }
+        }
+
         NumberAnimation {
-            duration: root.active ? 420 : 350
+            target: root
+            property: "bloomProgress"
+            from: 0.0
+            to: 1.0
+            duration: 580
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: root
+            property: "smoothProgress"
+            from: 0.0
+            to: 1.0
+            duration: 280
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: root
+            property: "shrinkFactor"
+            from: 0.75
+            to: 1.0
+            duration: 350
             easing.type: Easing.OutCubic
         }
     }
 
-    // 650ms OutCubic: Apple Intelligence perimeter shockwave burst
-    NumberAnimation {
-        id: bloomAnim
-        target: root
-        property: "bloomProgress"
-        from: 0.0
-        to: 1.0
-        duration: 650
-        easing.type: Easing.OutCubic
+    // ── 2. OUTRO ANIMATION: BORDER SHRINK + REVERSE RADIAL COLLAPSE (380ms) ──
+    ParallelAnimation {
+        id: outroAnim
+
+        // Border Shrink: collapse glow width into the bezel
+        NumberAnimation {
+            target: root
+            property: "shrinkFactor"
+            to: 0.0
+            duration: 380
+            easing.type: Easing.InQuad
+        }
+
+        // Reverse Radial Collapse: drain wave along 4 edges back to top-right origin
+        NumberAnimation {
+            target: root
+            property: "bloomProgress"
+            to: 0.0
+            duration: 380
+            easing.type: Easing.InQuad
+        }
+
+        // Fade Alpha to 0
+        NumberAnimation {
+            target: root
+            property: "smoothProgress"
+            to: 0.0
+            duration: 380
+            easing.type: Easing.InQuad
+        }
+
+        NumberAnimation {
+            target: root
+            property: "introMist"
+            to: 0.0
+            duration: 120
+        }
+
+        onFinished: {
+            // Only set render inactive after outro animation has completely finished
+            root.isRenderActive = false;
+            root.siriState = "idle";
+            root.userPrompt = "";
+            root.siriResponse = "";
+        }
     }
 
     onActiveChanged: {
-        smoothProgress = active ? 1.0 : 0.0;
         if (active) {
-            bloomProgress = 0.0;
-            bloomAnim.restart();
+            outroAnim.stop();
+            isRenderActive = true;
+            shrinkFactor = 1.0;
+            introAnim.restart();
         } else {
             dismissTimer.stop();
-            bloomAnim.stop();
-            bloomProgress = 0.0;
+            introAnim.stop();
+            outroAnim.restart();
         }
     }
 
@@ -66,10 +151,8 @@ Scope {
     }
 
     function dismiss() {
+        if (!active && !isRenderActive) return;
         active = false;
-        siriState = "idle";
-        userPrompt = "";
-        siriResponse = "";
         if (typeToSiri && typeToSiri.isOpen) {
             typeToSiri.close();
         }
@@ -82,7 +165,7 @@ Scope {
         repeat: false
         onTriggered: {
             if (root.active && (root.siriState === "speaking" || root.siriResponse !== "")) {
-                root.active = false;
+                root.dismiss();
             }
         }
     }
@@ -96,7 +179,7 @@ Scope {
     // Running clock for GLSL wave undulations (Strictly 0% CPU/GPU when idle)
     property real animTime: 0.0
     FrameAnimation {
-        running: root.active && root.smoothProgress > 0.001
+        running: root.isRenderActive || root.smoothProgress > 0.001
         onTriggered: {
             root.animTime += 0.016;
             if (root.animTime > 10000.0) root.animTime = 0.0;
@@ -129,7 +212,7 @@ Scope {
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: (root.active && (!root.typeToSiri || !root.typeToSiri.isOpen)) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-            visible: root.active || root.smoothProgress > 0.001
+            visible: root.isRenderActive || root.smoothProgress > 0.001
 
             // 100% Click-through: Glow never interferes with desktop mouse clicks
             mask: Region {
@@ -153,7 +236,7 @@ Scope {
                 }
             }
 
-            // ── SHADEREFFECT: SCREEN EDGE GLOW WAVE ──
+            // ── SHADEREFFECT: SCREEN EDGE GLOW WAVE & INTRO/OUTRO DYNAMICS ──
             ShaderEffect {
                 id: edgeGlowShader
                 anchors.fill: parent
@@ -163,11 +246,13 @@ Scope {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property real u_time: root.animTime
                 property real screenRadius: 28.0
-                property real glowWidth: 22.0       // Refined 22px Apple Intelligence glow width (gentle, hugs bezel)
+                property real glowWidth: 24.0
                 property real audioLevel: root.effectiveAudioLevel
                 property real animProgress: root.smoothProgress
                 property vector2d u_origin: Qt.vector2d(0.96, 0.02)
                 property real u_bloomProgress: root.bloomProgress
+                property real u_introMist: root.introMist
+                property real u_shrinkFactor: root.shrinkFactor
             }
         }
     }
