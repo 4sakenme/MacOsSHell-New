@@ -908,6 +908,7 @@ def handle_query_mode(query_text: str, enable_tts: bool = True):
         print("[Siri] Query response finished.")
     else:
         SiriIPC.set_state("idle")
+    gc.collect()
     print("[Done] Query finished successfully.")
 
 

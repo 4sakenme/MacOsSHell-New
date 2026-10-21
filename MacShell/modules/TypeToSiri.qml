@@ -344,6 +344,7 @@ Scope {
                         // Dynamic 3D Fluid Plasma SiriOrb (28x28px)
                         SiriOrb {
                             id: siriOrbIcon
+                            active: root.isOpen || root.animProgress > 0.001
                             width: 28; height: 28
                             anchors.verticalCenter: parent.verticalCenter
                             isProcessing: root.isThinking || (root.edgeGlow && root.edgeGlow.siriState === "speaking")

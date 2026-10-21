@@ -64,10 +64,10 @@ Item {
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         smooth: true
-        mipmap: true
-        cache: false
-        sourceSize.width: Math.ceil(Math.max(w.width, w.height) * 2)
-        sourceSize.height: Math.ceil(Math.max(w.width, w.height) * 2)
+        mipmap: false
+        cache: true
+        sourceSize.width: Math.ceil(Math.max(w.width, w.height) * 1.5)
+        sourceSize.height: Math.ceil(Math.max(w.width, w.height) * 1.5)
         visible: status === Image.Ready
         layer.enabled: true
         layer.effect: MultiEffect {

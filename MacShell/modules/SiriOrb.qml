@@ -5,6 +5,7 @@ Item {
     id: root
 
     // Public properties
+    property bool active: false        // strictly false when parent dialog/window is closed to save 100% CPU/RAM
     property real audioLevel: 0.0      // 0.0 to 1.0 from mic or simulated
     property bool isProcessing: false  // true when AI is thinking or speaking
     property real animSpeed: 1.0       // base speed multiplier
@@ -16,7 +17,7 @@ Item {
     property real animTime: 0.0
 
     FrameAnimation {
-        running: root.visible && root.opacity > 0.01
+        running: root.active && root.visible && root.opacity > 0.01
         onTriggered: {
             root.animTime += 0.016 * root.animSpeed;
             if (root.animTime > 10000.0) root.animTime = 0.0;
@@ -46,6 +47,7 @@ Item {
     ShaderEffect {
         id: orbShader
         anchors.fill: parent
+        visible: root.active && root.visible && root.opacity > 0.01
 
         fragmentShader: Qt.resolvedUrl("siriorb.frag.qsb")
 

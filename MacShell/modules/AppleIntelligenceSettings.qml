@@ -179,6 +179,7 @@ Column {
             spacing: 16
 
             SiriOrb {
+                active: root.visible
                 width: 48; height: 48
                 anchors.verticalCenter: parent.verticalCenter
                 isProcessing: true

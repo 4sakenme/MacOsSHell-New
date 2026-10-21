@@ -86,7 +86,7 @@ Item {
         visible: false
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
-        mipmap: true
+        mipmap: false
         sourceSize.width: 400
         sourceSize.height: 400
         onStatusChanged: art.tryStart()
@@ -98,7 +98,7 @@ Item {
         visible: false
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
-        mipmap: true
+        mipmap: false
         sourceSize.width: 400
         sourceSize.height: 400
         onStatusChanged: art.tryStart()

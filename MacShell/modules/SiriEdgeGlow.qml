@@ -294,23 +294,29 @@ Scope {
                 }
             }
 
-            // ── SHADEREFFECT: SCREEN EDGE GLOW WAVE & INTRO/OUTRO DYNAMICS ──
-            ShaderEffect {
-                id: edgeGlowShader
+            // ── LAZY LOAD SHADER: Unloaded completely when idle to free GPU/RAM ──
+            Loader {
                 anchors.fill: parent
+                active: root.isRenderActive || root.smoothProgress > 0.001
+                asynchronous: false
+                sourceComponent: Component {
+                    ShaderEffect {
+                        anchors.fill: parent
 
-                fragmentShader: Qt.resolvedUrl("siriedgeglow.frag.qsb")
+                        fragmentShader: Qt.resolvedUrl("siriedgeglow.frag.qsb")
 
-                property vector2d itemSize: Qt.vector2d(width, height)
-                property real u_time: root.animTime
-                property real screenRadius: 28.0
-                property real glowWidth: 32.0
-                property real audioLevel: root.effectiveAudioLevel
-                property real animProgress: root.smoothProgress
-                property vector2d u_origin: Qt.vector2d(0.96, 0.02)
-                property real u_bloomProgress: root.bloomProgress
-                property real u_introMist: root.introMist
-                property real u_shrinkFactor: root.shrinkFactor
+                        property vector2d itemSize: Qt.vector2d(width, height)
+                        property real u_time: root.animTime
+                        property real screenRadius: 28.0
+                        property real glowWidth: 32.0
+                        property real audioLevel: root.effectiveAudioLevel
+                        property real animProgress: root.smoothProgress
+                        property vector2d u_origin: Qt.vector2d(0.96, 0.02)
+                        property real u_bloomProgress: root.bloomProgress
+                        property real u_introMist: root.introMist
+                        property real u_shrinkFactor: root.shrinkFactor
+                    }
+                }
             }
         }
     }
