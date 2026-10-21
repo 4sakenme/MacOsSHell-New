@@ -280,6 +280,7 @@ OPTIONAL=(
     "fastfetch:fastfetch:About This Linux"
     "rsync:rsync:faster, safer file sync in the installer"
     "kitty:kitty:the default terminal"
+    "espeak-ng:espeak-ng:text-to-speech voice synthesis for Siri"
     "hypridle:hypridle:lock on idle (optional)"
 )
 # libraries / fonts / packages without a command to test: arch-package:what-for   (a|b = first one the repositories have)
@@ -288,6 +289,7 @@ LIBS=(
     "qt6-wayland:Qt Wayland support"
     "qt6-svg:SVG app icons"
     "qt6-shadertools:shader tools"
+    "portaudio:audio I/O library for microphone input in Siri"
     "inter-font|ttf-inter:the Inter font"
     "noto-fonts:fallback fonts"
     "noto-fonts-emoji:emoji font"
@@ -326,6 +328,7 @@ pkg_for() {
         dnf) case "$p" in
                 pipewire) echo pipewire-utils ;; pipewire-pulse) echo pipewire-pulseaudio ;;
                 python) echo python3 ;; python-pip) echo python3-pip ;;
+                portaudio) echo portaudio-devel ;; espeak-ng) echo espeak-ng ;;
                 qt6-shadertools) echo qt6-qtshadertools ;; qt6-declarative) echo qt6-qtdeclarative ;;
                 qt6-wayland) echo qt6-qtwayland ;; qt6-svg) echo qt6-qtsvg ;; networkmanager) echo NetworkManager ;;
                 bluez-utils) echo bluez ;; "inter-font|ttf-inter") echo rsms-inter-fonts ;;
@@ -335,6 +338,7 @@ pkg_for() {
         apt) case "$p" in
                 pipewire) echo pipewire-bin ;; pipewire-pulse) echo pipewire-pulse ;; qt6-shadertools) echo qt6-shader-baker ;;
                 python) echo python3 ;; python-pip) echo python3-pip ;;
+                portaudio) echo portaudio19-dev ;; espeak-ng) echo espeak-ng ;;
                 networkmanager) echo network-manager ;; bluez-utils) echo bluez ;; libnotify) echo libnotify-bin ;;
                 "inter-font|ttf-inter") echo fonts-inter ;; noto-fonts) echo fonts-noto-core ;;
                 noto-fonts-emoji) echo fonts-noto-color-emoji ;; qt6-declarative|qt6-wayland|qt6-svg) echo "" ;;
@@ -1059,28 +1063,36 @@ install_extras() {
 setup_python_deps() {
     [ "$SKIP_DEPS" = 1 ] && return 0
     if have python3; then
-        step "Python dependencies"
-        if python3 -c "import syncedlyrics" >/dev/null 2>&1; then
-            ok "syncedlyrics is already installed"
-            return 0
-        fi
-        say "Installing syncedlyrics for enhanced multi-source synchronized lyrics..."
-        local pip_cmd=""
-        if have pip3; then pip_cmd="pip3"
-        elif have pip; then pip_cmd="pip"
-        elif python3 -m pip --version >/dev/null 2>&1; then pip_cmd="python3 -m pip"
+        step "Python virtual environment & dependencies"
+        local venv_dir="$DEST/venv"
+
+        # 1. Create dedicated virtual environment if it does not exist
+        if [ ! -d "$venv_dir" ] || [ ! -x "$venv_dir/bin/python" ]; then
+            say "Creating isolated virtual environment at $venv_dir..."
+            python3 -m venv "$venv_dir" || {
+                warn "Failed to create python venv at $venv_dir (ensure python3-venv / python-virtualenv is installed)"
+                return 1
+            }
+            ok "Created virtual environment at $venv_dir"
+        else
+            ok "Virtual environment already exists at $venv_dir"
         fi
 
-        if [ -n "$pip_cmd" ]; then
-            if $pip_cmd install --user --upgrade syncedlyrics --break-system-packages >/dev/null 2>&1 \
-               || $pip_cmd install --user --upgrade syncedlyrics >/dev/null 2>&1; then
-                ok "syncedlyrics installed successfully"
+        # 2. Install required packages inside venv (never pollute global system environment)
+        if [ -x "$venv_dir/bin/pip" ]; then
+            say "Upgrading pip and installing required Python packages inside venv..."
+            "$venv_dir/bin/pip" install --upgrade pip >/dev/null 2>&1 || true
+
+            local py_pkgs=("google-genai" "speechrecognition" "sounddevice" "numpy" "syncedlyrics")
+            if "$venv_dir/bin/pip" install "${py_pkgs[@]}" >/dev/null 2>&1; then
+                ok "Python dependencies installed successfully inside venv (${py_pkgs[*]})"
             else
-                warn "could not install syncedlyrics automatically (lyrics will fall back to LRCLIB online API)"
+                warn "Could not install all Python dependencies inside venv. Try running: $venv_dir/bin/pip install ${py_pkgs[*]}"
             fi
-        else
-            warn "pip is not installed: install python-pip to enable multi-source lyrics (syncedlyrics)"
         fi
+
+        # 3. Ensure all helper scripts have execute permissions
+        chmod +x "$DEST"/scripts/*.py "$DEST"/scripts/*.sh 2>/dev/null || true
     fi
 }
 

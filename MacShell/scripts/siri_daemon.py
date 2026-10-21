@@ -607,6 +607,7 @@ def main():
     parser = argparse.ArgumentParser(description="MacShell Siri Voice Assistant Daemon")
     parser.add_argument("--daemon", action="store_true", help="Start continuous wake-word listener daemon")
     parser.add_argument("--trigger", action="store_true", help="Trigger a single listening cycle right now")
+    parser.add_argument("--awake", action="store_true", help="Awake Siri on-demand: open mic, listen, respond, and close mic immediately")
     parser.add_argument("--query", type=str, help="Send a text query to Gemini and test TTS/UI directly")
     parser.add_argument("--no-tts", action="store_true", help="Disable TTS speech output for text query")
     parser.add_argument("--test-api", action="store_true", help="Test Gemini API connectivity")
@@ -641,9 +642,11 @@ def main():
         handle_query_mode(args.query, enable_tts=not args.no_tts)
         return
 
-    if args.trigger:
+    if args.trigger or args.awake:
         import speech_recognition as sr
         r = sr.Recognizer()
+        r.dynamic_energy_threshold = True
+        r.pause_threshold = 0.6
         run_assistant_cycle(r)
         return
 
