@@ -21,6 +21,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
+import "modules"
 
 ShellRoot {
     // The UI font ("Open Runde") ships with MacShell: registered here, first, so every Text below can use it
@@ -288,6 +289,25 @@ ShellRoot {
     ClockApp { id: clockApp; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
+    SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub }
+
+    // qs -c MacShell ipc call siri activate true | false
+    // qs -c MacShell ipc call siri toggle
+    // qs -c MacShell ipc call siri state "listening" | "thinking" | "speaking" | "idle"
+    // qs -c MacShell ipc call siri prompt "<text>"
+    // qs -c MacShell ipc call siri response "<text>"
+    // qs -c MacShell ipc call siri audioLevel 0.75
+    // qs -c MacShell ipc call siri dismiss
+    IpcHandler {
+        target: "siri"
+        function activate(on: bool) { siriEdgeGlow.active = on; }
+        function toggle() { siriEdgeGlow.active = !siriEdgeGlow.active; }
+        function state(st: string) { siriEdgeGlow.siriState = st; }
+        function prompt(text: string) { siriEdgeGlow.userPrompt = text; }
+        function response(text: string) { siriEdgeGlow.siriResponse = text; }
+        function audioLevel(lvl: real) { siriEdgeGlow.audioLevel = lvl; }
+        function dismiss() { siriEdgeGlow.dismiss(); }
+    }
 
     // reopen settings even when both the Dock and the Menu Bar are disabled:
     //   qs -c macbar ipc call settings open
