@@ -144,14 +144,33 @@ Scope {
         }
     }
 
+    readonly property bool isTypingActive: typeToSiri && (typeToSiri.isOpen || typeToSiri.animProgress > 0.001)
+
+    Connections {
+        target: root.typeToSiri
+        function onIsOpenChanged() {
+            if (root.isTypingActive) {
+                // When user is typing into Siri, stop all auto-dismiss timers
+                dismissTimer.stop();
+            } else if (root.active) {
+                // When Type to Siri is closed but edge glow is still active, restart countdown
+                dismissTimer.restart();
+            }
+        }
+    }
+
     onActiveChanged: {
         if (active) {
             outroAnim.stop();
             isRenderActive = true;
             shrinkFactor = 1.0;
             introAnim.restart();
-            // Start 20-second auto-dismiss countdown (dismisses after 20s or on Esc)
-            dismissTimer.restart();
+            // Start auto-dismiss countdown if not typing (45s timeout)
+            if (!root.isTypingActive) {
+                dismissTimer.restart();
+            } else {
+                dismissTimer.stop();
+            }
         } else {
             dismissTimer.stop();
             introAnim.stop();
@@ -160,8 +179,8 @@ Scope {
     }
 
     onSiriResponseChanged: {
-        // Reset 20-second timer when new response arrives so user has full 20s to read
-        if (active && siriResponse !== "") {
+        // Reset auto-dismiss timer when new response arrives if not typing
+        if (active && siriResponse !== "" && !root.isTypingActive) {
             dismissTimer.restart();
         }
     }
@@ -182,7 +201,8 @@ Scope {
         ]
     }
 
-    function dismiss() {
+    function dismiss(force) {
+        if (!force && root.isTypingActive) return;
         if (!active && !isRenderActive) return;
         active = false;
         dismissTimer.stop();
@@ -192,20 +212,24 @@ Scope {
         }
     }
 
-    // Auto-dismiss timer: 20 seconds of inactivity before gracefully closing
+    // Auto-dismiss timer: 45 seconds of inactivity before gracefully closing (when not typing)
     Timer {
         id: dismissTimer
-        interval: 20000
+        interval: 45000
         repeat: false
         onTriggered: {
+            if (root.isTypingActive) {
+                dismissTimer.stop();
+                return;
+            }
             if (root.active) {
-                root.dismiss();
+                root.dismiss(true);
             }
         }
     }
 
     onSiriStateChanged: {
-        if (active && (siriState === "speaking" || siriState === "idle")) {
+        if (active && !root.isTypingActive && (siriState === "speaking" || siriState === "idle")) {
             dismissTimer.restart();
         }
     }
@@ -266,7 +290,7 @@ Scope {
 
                 Keys.onEscapePressed: event => {
                     event.accepted = true;
-                    root.dismiss();
+                    root.dismiss(true);
                 }
             }
 

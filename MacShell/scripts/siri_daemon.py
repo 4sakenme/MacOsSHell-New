@@ -633,7 +633,7 @@ def speak(text: str):
 
 
 # ── UNIFIED REAL-TIME AUDIO RECORDER & LEVEL STREAMER (ZERO-NUMPY PURE C AUDIOOP) ──
-def record_speech_with_levels(timeout=6.0, phrase_time_limit=10.0, silence_timeout=1.3):
+def record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_timeout=2.0):
     """
     Record speech using lightweight sounddevice and native C audioop (Zero numpy overhead).
     Continuously streams live microphone volume to QML edge glow waves.
@@ -723,19 +723,16 @@ def run_assistant_cycle(recognizer=None, mic=None):
     user_query = ""
 
     try:
-        audio = record_speech_with_levels(timeout=6.0, phrase_time_limit=10.0, silence_timeout=1.3)
+        audio = record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_timeout=2.0)
         if not audio:
             print("[Siri] No speech heard in time.")
-            SiriIPC.set_prompt("I didn't hear anything.")
-            time.sleep(1.2)
-            SiriIPC.activate(False)
+            SiriIPC.set_prompt("Listening timed out. Press Space to type.")
             SiriIPC.set_state("idle")
             return
     except Exception as e:
         print(f"[Siri] Microphone recording error: {e}")
         SiriIPC.set_prompt("Microphone unavailable.")
         time.sleep(1.2)
-        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
         return
 
@@ -774,11 +771,8 @@ def run_assistant_cycle(recognizer=None, mic=None):
             SiriIPC.set_state("speaking")
             SiriIPC.set_response(answer)
             speak(answer)
-            # Dismiss automatically after executing command
-            time.sleep(0.8)
-            SiriIPC.activate(False)
             SiriIPC.set_state("idle")
-            print("[Siri] Task completed successfully. Siri dismissed.\n")
+            print("[Siri] Task completed successfully.\n")
             return
         else:
             print("[Siri] 🌐 Forwarding to Gemini AI...")
@@ -792,11 +786,9 @@ def run_assistant_cycle(recognizer=None, mic=None):
         # Read answer aloud with Neural TTS
         speak(answer)
 
-        # Once speech has finished, auto-dismiss Siri so user doesn't have to wait or press Esc
-        time.sleep(1.2)
-        SiriIPC.activate(False)
+        # Once speech has finished, transition state to idle
         SiriIPC.set_state("idle")
-        print("[Siri] Response spoken completely. Siri dismissed automatically.\n")
+        print("[Siri] Response spoken completely.\n")
     finally:
         del user_query
         gc.collect()
@@ -912,13 +904,9 @@ def handle_query_mode(query_text: str, enable_tts: bool = True):
     if enable_tts:
         print("[TTS] Reading response aloud with Neural TTS...")
         speak(answer)
-        time.sleep(1.2)
-        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
-        print("[Siri] Query response finished. Siri dismissed automatically.")
+        print("[Siri] Query response finished.")
     else:
-        time.sleep(2.0)
-        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
     print("[Done] Query finished successfully.")
 

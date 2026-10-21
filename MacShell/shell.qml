@@ -305,8 +305,12 @@ ShellRoot {
     IpcHandler {
         target: "siri"
         function activate(on: bool) {
+            if (!on && typeToSiri && typeToSiri.isOpen) {
+                // Never auto-dismiss while user is typing in Type to Siri
+                return;
+            }
             siriEdgeGlow.active = on;
-            if (!on) typeToSiri.close();
+            if (!on && typeToSiri) typeToSiri.close();
         }
         function toggle() {
             if (siriEdgeGlow.active) {
