@@ -26,7 +26,7 @@ Scope {
         }
     }
 
-    // Running clock for GLSL flowing animations
+    // Running clock for GLSL flowing border animation
     property real animTime: 0.0
     FrameAnimation {
         running: root.animProgress > 0.001
@@ -61,6 +61,7 @@ Scope {
 
     function close() {
         isOpen = false;
+        prompt = "";
         response = "";
         isThinking = false;
         if (edgeGlow) edgeGlow.dismiss();
@@ -124,7 +125,7 @@ Scope {
 
             visible: root.animProgress > 0.001
 
-            // Click-through everywhere EXCEPT the pill and response bubble
+            // Click-through everywhere EXCEPT the pill and response popup
             mask: Region {
                 item: root.isOpen ? pillContainer : emptyMask
             }
@@ -137,17 +138,17 @@ Scope {
                 onClicked: root.close()
             }
 
-            // ── DRAGGABLE FLOATING CONTAINER ──
+            // ── DRAGGABLE FLOATING CONTAINER (Bottom-Centered, 110px above Dock) ──
             Item {
                 id: pillContainer
                 z: 10
 
-                // Default position: Centered horizontally, 20% down from top
-                x: (win.width - width) / 2 + dragOffset.x
-                y: Math.max(80, win.height * 0.18) + dragOffset.y
+                // Centered horizontally, 110px above screen bottom (above Dock)
+                width: 380
+                height: 44 + (bubbleBox.visible ? (bubbleBox.height + 10) : 0)
 
-                width: 440
-                height: pillBox.height + (bubbleBox.visible ? (bubbleBox.height + 12) : 0)
+                x: (win.width - width) / 2 + dragOffset.x
+                y: (win.height - 44 - 110) - (bubbleBox.visible ? (bubbleBox.height + 10) : 0) + dragOffset.y
 
                 // Drag offset tracking
                 QtObject {
@@ -158,70 +159,136 @@ Scope {
 
                 // Opacity & Scale entrance animation
                 opacity: root.animProgress
-                scale: 0.94 + 0.06 * root.animProgress
+                scale: 0.95 + 0.05 * root.animProgress
 
-                // MouseArea for dragging the entire pill window
-                MouseArea {
-                    id: dragHandler
-                    anchors.fill: pillBox
-                    z: 1
+                // ── 1. POPUP PHẢN HỒI (NẰM NGAY PHÍA TRÊN THANH VIÊN THUỐC) ──
+                Item {
+                    id: bubbleBox
+                    anchors.bottom: pillBox.top
+                    anchors.bottomMargin: 10
+                    width: parent.width
+                    height: Math.min(260, Math.max(68, bubbleCol.implicitHeight + 24))
+                    visible: root.response !== "" || root.isThinking
+                    z: 5
 
-                    drag.target: null // Handled manually for smooth offset
+                    // Glass Bubble Background (#E6121318 deep black glass)
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 16
+                        color: Qt.rgba(0.07, 0.075, 0.095, 0.90)
+                        border.color: Qt.rgba(1, 1, 1, 0.14)
+                        border.width: 1
 
-                    property real startMouseX: 0
-                    property real startMouseY: 0
-                    property real startOffsetX: 0
-                    property real startOffsetY: 0
-                    property bool isDragging: false
-
-                    onPressed: mouse => {
-                        isDragging = true;
-                        startMouseX = mouse.x;
-                        startMouseY = mouse.y;
-                        startOffsetX = dragOffset.x;
-                        startOffsetY = dragOffset.y;
-                    }
-
-                    onPositionChanged: mouse => {
-                        if (isDragging) {
-                            dragOffset.x = startOffsetX + (mouse.x - startMouseX);
-                            dragOffset.y = startOffsetY + (mouse.y - startMouseY);
+                        // Inner specular highlight
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 1
+                            height: 16
+                            radius: 16
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.09) }
+                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.00) }
+                            }
                         }
                     }
 
-                    onReleased: isDragging = false
-                    onCanceled: isDragging = false
+                    Column {
+                        id: bubbleCol
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 8
+
+                        // Header
+                        Item {
+                            width: parent.width
+                            height: 16
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 6
+
+                                Text {
+                                    text: "✨"
+                                    font.pixelSize: 11
+                                }
+
+                                Text {
+                                    text: "Apple Intelligence"
+                                    color: "#00F0FF"
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Text {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "✕"
+                                color: Qt.rgba(1, 1, 1, 0.45)
+                                font.pixelSize: 11
+
+                                TapHandler {
+                                    onTapped: root.response = ""
+                                }
+                            }
+                        }
+
+                        // Scrollable response text
+                        Flickable {
+                            width: parent.width
+                            height: Math.min(200, responseContent.implicitHeight)
+                            contentWidth: width
+                            contentHeight: responseContent.implicitHeight
+                            clip: true
+
+                            Text {
+                                id: responseContent
+                                width: parent.width
+                                text: root.response !== "" ? root.response : I18n.tr("Thinking and analyzing...")
+                                color: "white"
+                                font.family: "Open Runde"
+                                font.pixelSize: 13
+                                lineHeight: 1.35
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
                 }
 
-                // ── 1. LIQUID GLASS PILL BAR ──
+                // ── 2. MINIMAL LIQUID GLASS PILL BAR (Height: 44px, Width: 380px) ──
                 Item {
                     id: pillBox
+                    anchors.bottom: parent.bottom
                     width: parent.width
-                    height: 50
-                    z: 5
+                    height: 44
+                    z: 10
 
-                    // Flowing Gradient Border Shader Effect (Apple Intelligence)
+                    // Flowing Gradient Border Shader Effect (1px thin Apple Intelligence shimmer)
                     ShaderEffect {
                         id: flowingBorder
                         anchors.fill: parent
-                        anchors.margins: -2.0
+                        anchors.margins: -1.0
 
                         fragmentShader: Qt.resolvedUrl("flowingborder.frag.qsb")
 
                         property vector2d itemSize: Qt.vector2d(width, height)
                         property real u_time: root.animTime
-                        property real borderWidth: 2.2
+                        property real borderWidth: 1.2
                         property real borderRadius: height * 0.5
                         property real isThinking: root.isThinking ? 1.0 : 0.0
                     }
 
-                    // Main Glass Pill Background
+                    // Main Glass Pill Background (#E6121318 deep black glass)
                     Rectangle {
                         id: glassBg
                         anchors.fill: parent
                         radius: height / 2
-                        color: Qt.rgba(0.08, 0.08, 0.11, 0.82)
-                        border.color: Qt.rgba(1, 1, 1, 0.18)
+                        color: Qt.rgba(0.07, 0.075, 0.095, 0.90)
+                        border.color: Qt.rgba(1, 1, 1, 0.16)
                         border.width: 1
 
                         // Inner subtle specular highlight at top
@@ -230,36 +297,67 @@ Scope {
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.margins: 1
-                            height: 22
+                            height: 20
                             radius: height / 2
                             gradient: Gradient {
-                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.12) }
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.10) }
                                 GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.00) }
                             }
                         }
                     }
 
-                    // Content Row: Siri Orb + TextInput + Action Button
+                    // MouseArea for dragging the entire pill window
+                    MouseArea {
+                        id: dragHandler
+                        anchors.fill: parent
+                        z: 1
+
+                        property real startMouseX: 0
+                        property real startMouseY: 0
+                        property real startOffsetX: 0
+                        property real startOffsetY: 0
+                        property bool isDragging: false
+
+                        onPressed: mouse => {
+                            isDragging = true;
+                            startMouseX = mouse.x;
+                            startMouseY = mouse.y;
+                            startOffsetX = dragOffset.x;
+                            startOffsetY = dragOffset.y;
+                        }
+
+                        onPositionChanged: mouse => {
+                            if (isDragging) {
+                                dragOffset.x = startOffsetX + (mouse.x - startMouseX);
+                                dragOffset.y = startOffsetY + (mouse.y - startMouseY);
+                            }
+                        }
+
+                        onReleased: isDragging = false
+                        onCanceled: isDragging = false
+                    }
+
+                    // Content Row: Dynamic SiriOrb Icon (28x28) + TextInput + Action Button
                     Row {
                         anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 10
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 10
+                        spacing: 8
                         z: 10
 
-                        // Siri Orb (3D Fluid Plasma Shader)
+                        // Dynamic 3D Fluid Plasma SiriOrb (28x28px)
                         SiriOrb {
-                            id: siriOrb
-                            width: 30; height: 30
+                            id: siriOrbIcon
+                            width: 28; height: 28
                             anchors.verticalCenter: parent.verticalCenter
                             isProcessing: root.isThinking || (root.edgeGlow && root.edgeGlow.siriState === "speaking")
                             audioLevel: root.edgeGlow ? root.edgeGlow.effectiveAudioLevel : 0.0
                         }
 
-                        // Text Input Field
+                        // Text Input Field (Dual Mode: Voice Stream & Type Input)
                         Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - siriOrb.width - actionBtn.width - 32
+                            width: parent.width - siriOrbIcon.width - actionBtn.width - 26
                             height: parent.height
 
                             TextInput {
@@ -269,14 +367,20 @@ Scope {
                                 clip: true
 
                                 font.family: "Open Runde"
-                                font.pixelSize: 14
+                                font.pixelSize: 13
                                 font.weight: Font.Normal
                                 color: "white"
                                 selectionColor: "#00F0FF"
                                 selectedTextColor: "#000000"
 
+                                // Voice Streaming: Stream STT text automatically into input
                                 Connections {
                                     target: root
+                                    function onPromptChanged() {
+                                        if (root.prompt !== "" && (!mainInput.activeFocus || mainInput.text === "")) {
+                                            mainInput.text = root.prompt;
+                                        }
+                                    }
                                     function onIsOpenChanged() {
                                         if (root.isOpen) {
                                             inputFocusTimer.restart();
@@ -296,7 +400,7 @@ Scope {
                                     verticalAlignment: Text.AlignVCenter
                                     text: I18n.tr("Ask Siri or type a command...")
                                     font.family: "Open Runde"
-                                    font.pixelSize: 14
+                                    font.pixelSize: 13
                                     color: Qt.rgba(1, 1, 1, 0.38)
                                     visible: mainInput.text.length === 0 && !mainInput.inputMethodComposing
                                 }
@@ -318,9 +422,9 @@ Scope {
                         // Action Button (Send / Close)
                         Rectangle {
                             id: actionBtn
-                            width: 26; height: 26; radius: 13
+                            width: 24; height: 24; radius: 12
                             anchors.verticalCenter: parent.verticalCenter
-                            color: btnHover.hovered ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.08)
+                            color: btnHover.hovered ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.08)
                             border.color: Qt.rgba(1, 1, 1, 0.12)
                             border.width: 1
 
@@ -329,7 +433,7 @@ Scope {
                                 text: root.isThinking ? "⋯" : (mainInput.text.length > 0 ? "↑" : "✕")
                                 color: "white"
                                 font.family: "Open Runde"
-                                font.pixelSize: 13
+                                font.pixelSize: 12
                                 font.weight: Font.Bold
                             }
 
@@ -349,119 +453,7 @@ Scope {
                         }
                     }
                 }
-
-                // ── 2. RESPONSE BUBBLE (GEMINI STREAMING / ANSWER BOX) ──
-                Item {
-                    id: bubbleBox
-                    anchors.top: pillBox.bottom
-                    anchors.topMargin: 10
-                    width: parent.width
-                    height: Math.min(280, Math.max(76, bubbleCol.implicitHeight + 28))
-                    visible: root.response !== "" || root.isThinking
-
-                    z: 5
-
-                    // Glass Bubble Background
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 20
-                        color: Qt.rgba(0.08, 0.08, 0.11, 0.88)
-                        border.color: Qt.rgba(1, 1, 1, 0.15)
-                        border.width: 1
-
-                        // Header top specular
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.margins: 1
-                            height: 18
-                            radius: 18
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.08) }
-                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.00) }
-                            }
-                        }
-                    }
-
-                    Column {
-                        id: bubbleCol
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 8
-
-                        // Response Header
-                        Item {
-                            width: parent.width
-                            height: 18
-
-                            Row {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 6
-
-                                Text {
-                                    text: "✨"
-                                    font.pixelSize: 12
-                                }
-
-                                Text {
-                                    text: "Gemini Intelligence"
-                                    color: "#00F0FF"
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-
-                            Text {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "✕"
-                                color: Qt.rgba(1, 1, 1, 0.45)
-                                font.pixelSize: 11
-
-                                TapHandler {
-                                    onTapped: root.response = ""
-                                }
-                            }
-                        }
-
-                        // Scrollable response body
-                        Flickable {
-                            width: parent.width
-                            height: Math.min(220, responseContent.implicitHeight)
-                            contentWidth: width
-                            contentHeight: responseContent.implicitHeight
-                            clip: true
-
-                            Text {
-                                id: responseContent
-                                width: parent.width
-                                text: root.response !== "" ? root.response : I18n.tr("Thinking and analyzing...")
-                                color: "white"
-                                font.family: "Open Runde"
-                                font.pixelSize: 13
-                                lineHeight: 1.38
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-                }
             }
-        }
-    }
-
-    // Pulse timer for breathing animation
-    property real pulsePhase: 0.0
-    Timer {
-        id: pulsingTimer
-        interval: 33
-        repeat: true
-        running: root.isOpen && root.isThinking
-        onTriggered: {
-            root.pulsePhase += 0.15;
-            if (root.pulsePhase > 62.8) root.pulsePhase = 0.0;
         }
     }
 }

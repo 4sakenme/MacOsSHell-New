@@ -209,6 +209,102 @@ def search_files(keyword: str) -> str:
         return f"Error searching files: {e}"
 
 
+# ── LOCAL-FIRST INTENT ROUTER (0 AI TOKENS) ──
+def normalize_text(text: str) -> str:
+    """Normalize text by converting to lowercase and stripping accents."""
+    import unicodedata
+    n = "".join(c for c in unicodedata.normalize("NFD", text.lower().strip()) if unicodedata.category(c) != "Mn")
+    return n.replace("đ", "d").replace("Đ", "D")
+
+def handle_local_intent(query: str):
+    """
+    Local-First Intent Router:
+    Execute system tasks locally with 0 AI tokens.
+    Returns response string if handled, or None to fallback to Gemini AI.
+    """
+    raw_q = query.strip()
+    norm_q = normalize_text(raw_q)
+    if not norm_q:
+        return None
+
+    # 1. THỜI TIẾT (Weather API)
+    weather_keywords = ["thoi tiet", "nhiet do", "weather"]
+    if any(k in norm_q for k in weather_keywords):
+        loc = "Danang"
+        m = re.search(r'(?:thoi tiet|nhiet do|weather)(?:\s+(?:tai|o|in|cua|tai tinh|tp))?\s+([a-zA-Z0-9\s]+)', norm_q)
+        if m and m.group(1).strip():
+            candidate = m.group(1).strip()
+            candidate = re.sub(r'\b(hom nay|ngay mai|the nao|ra sao|bay gio|today|now)\b', '', candidate).strip()
+            if candidate:
+                loc = candidate
+        try:
+            loc_param = loc.replace(" ", "+")
+            req = urllib.request.Request(f"https://wttr.in/{loc_param}?format=3", headers={"User-Agent": "curl/8.0"})
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                data = resp.read().decode("utf-8").strip()
+                if data and not data.startswith("<"):
+                    return f"Thời tiết tại {loc.title()}: {data}"
+        except Exception:
+            pass
+        return f"Hiện tại không thể lấy dữ liệu thời tiết cho {loc.title()}."
+
+    # 2. MỞ NHẠC (Music Playback)
+    music_keywords = ["mo nhac", "bat nhac", "nghe nhac", "nghe bai", "play music", "play"]
+    for mk in music_keywords:
+        if norm_q.startswith(mk) or f" {mk} " in f" {norm_q} ":
+            track = re.sub(rf'^.*?{mk}\s*', '', norm_q).strip()
+            is_spotify = "spotify" in norm_q
+            track = re.sub(r'\b(tren|on)?\s*(youtube|spotify)\b', '', track).strip()
+            if not track:
+                track = "lofi chill"
+            if is_spotify:
+                return play_music("spotify", track)
+            else:
+                return play_music("youtube", track)
+
+    # 3. TÌM KIẾM GOOGLE (Web Search)
+    search_keywords = ["tim kiem", "search", "google"]
+    for sk in search_keywords:
+        if norm_q.startswith(sk):
+            term = re.sub(rf'^{sk}\s*', '', raw_q).strip()
+            if term:
+                open_url(f"https://www.google.com/search?q={urllib.parse.quote(term)}")
+                return f"Đang tìm kiếm '{term}' trên Google cho bạn."
+
+    # 4. MỞ ỨNG DỤNG (Launch App)
+    app_keywords = ["mo ung dung", "chay ung dung", "mo app", "chay app", "mo", "chay", "launch", "bat"]
+    for ak in app_keywords:
+        if norm_q.startswith(ak + " "):
+            app_target = norm_q[len(ak):].strip()
+            if app_target.startswith(("nhac", "bai", "web", "trang")):
+                continue
+            app_map = {
+                "trinh duyet": "firefox",
+                "web": "firefox",
+                "terminal": "kitty",
+                "console": "kitty",
+                "vs code": "code",
+                "vscode": "code",
+                "quan ly file": "dolphin",
+                "file manager": "dolphin",
+                "tep tin": "dolphin",
+                "nhac": "spotify"
+            }
+            exec_name = app_map.get(app_target, app_target)
+            return launch_app(exec_name)
+
+    # 5. TÌM FILE (Search Files)
+    file_keywords = ["tim file", "tim tep", "tim tap tin", "search file", "find file"]
+    for fk in file_keywords:
+        if fk in norm_q:
+            kw = re.sub(rf'^.*?{fk}\s*', '', norm_q).strip()
+            if kw:
+                return search_files(kw)
+
+    # Fallback to Gemini AI for reasoning, code, translation, etc.
+    return None
+
+
 # ── GEMINI API INTEGRATION ──
 def query_gemini(prompt: str) -> str:
     """Send question to Gemini model and return text response with Function Calling tools enabled."""
@@ -369,8 +465,14 @@ def run_assistant_cycle(recognizer, mic=None):
     SiriIPC.set_prompt(user_query)
     SiriIPC.set_state("thinking")
 
-    # Ask Gemini
-    answer = query_gemini(user_query)
+    # Check Local-First Intent Router (0 AI Tokens)
+    local_ans = handle_local_intent(user_query)
+    if local_ans:
+        print(f"[Local Router] ⚡ Handled locally (0 tokens): \"{local_ans}\"")
+        answer = local_ans
+    else:
+        print("[Siri] 🌐 Forwarding to Gemini AI...")
+        answer = query_gemini(user_query)
     print(f"[Siri] 💬 \"{answer}\"")
 
     SiriIPC.set_state("speaking")
@@ -455,10 +557,18 @@ def handle_query_mode(query_text: str, enable_tts: bool = True):
     SiriIPC.activate(True)
     SiriIPC.set_state("thinking")
     SiriIPC.set_prompt(query_text)
-    SiriIPC.set_response("Connecting to Gemini...")
+    SiriIPC.set_response("Processing request...")
 
-    answer = query_gemini(query_text)
-    print(f"[Gemini Response] {answer}")
+    # Check Local-First Intent Router (0 AI Tokens)
+    local_ans = handle_local_intent(query_text)
+    if local_ans:
+        print(f"[Local Router] ⚡ Handled locally (0 tokens): \"{local_ans}\"")
+        answer = local_ans
+    else:
+        print("[Siri] 🌐 Forwarding to Gemini AI...")
+        answer = query_gemini(query_text)
+
+    print(f"[Response] {answer}")
 
     SiriIPC.set_state("speaking" if enable_tts else "idle")
     SiriIPC.set_response(answer)

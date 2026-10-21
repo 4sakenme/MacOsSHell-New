@@ -79,3 +79,4 @@ void main()
     float alpha = stroke * (isThinking > 0.5 ? 0.95 : 0.75) * qt_Opacity;
     fragColor = vec4(col * alpha, alpha);
 }
+

@@ -9,8 +9,8 @@ Item {
     property bool isProcessing: false  // true when AI is thinking or speaking
     property real animSpeed: 1.0       // base speed multiplier
 
-    implicitWidth: 32
-    implicitHeight: 32
+    implicitWidth: 28
+    implicitHeight: 28
 
     // Internal animation time
     property real animTime: 0.0
@@ -58,3 +58,4 @@ Item {
         Behavior on scale { NumberAnimation { duration: 80 } }
     }
 }
+

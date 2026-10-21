@@ -26,6 +26,7 @@ Scope {
     // Animation progress & smooth transitions
     readonly property real targetProgress: active ? 1.0 : 0.0
     property real smoothProgress: 0.0
+    property real bloomProgress: 0.0
 
     Behavior on smoothProgress {
         NumberAnimation {
@@ -34,10 +35,25 @@ Scope {
         }
     }
 
+    NumberAnimation {
+        id: bloomAnim
+        target: root
+        property: "bloomProgress"
+        from: 0.0
+        to: 1.0
+        duration: 320
+        easing.type: Easing.OutCubic
+    }
+
     onActiveChanged: {
         smoothProgress = active ? 1.0 : 0.0;
-        if (!active) {
+        if (active) {
+            bloomProgress = 0.0;
+            bloomAnim.restart();
+        } else {
             dismissTimer.stop();
+            bloomAnim.stop();
+            bloomProgress = 0.0;
         }
     }
 
@@ -123,6 +139,8 @@ Scope {
                 property real glowWidth: 36.0
                 property real audioLevel: root.effectiveAudioLevel
                 property real animProgress: root.smoothProgress
+                property vector2d u_origin: Qt.vector2d(0.96, 0.02)
+                property real u_bloomProgress: root.bloomProgress
             }
 
             // ── FLOATING APPLE INTELLIGENCE SIRI SPEECH CARD ──

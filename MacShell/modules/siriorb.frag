@@ -1,8 +1,9 @@
 #version 440
 
-// Apple Intelligence Siri Orb 3D Fluid Plasma Shader
+// Apple Intelligence Siri Orb - Soft Fluid Plasma 3D Shader
 // Colors: Cyan (#00f0ff), Magenta (#ff2d55), Purple (#8a2be2), Amber (#ff9f0a)
-// Features: 3D Spherical projection, 3D fluid rotation curl, Fresnel rim glow, audio pulsation
+// Features: Soft Gaussian feathered edge, multi-layer fluid noise (NO CD ray artifacts),
+// dynamic breathing with audioLevel and processing state.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -16,34 +17,11 @@ layout(std140, binding = 0) uniform buf {
     float isProcessing;
 };
 
-const float PI = 3.14159265358979323846;
-
-// Apple Intelligence Palette
+// Apple Intelligence 4-color palette
 const vec3 COLOR_CYAN    = vec3(0.000, 0.941, 1.000); // #00F0FF
-const vec3 COLOR_PURPLE  = vec3(0.541, 0.169, 0.886); // #8A2BE2
 const vec3 COLOR_MAGENTA = vec3(1.000, 0.176, 0.333); // #FF2D55
+const vec3 COLOR_PURPLE  = vec3(0.541, 0.169, 0.886); // #8A2BE2
 const vec3 COLOR_AMBER   = vec3(1.000, 0.624, 0.039); // #FF9F0A
-
-// Rotation matrix around an axis
-mat3 rotateY(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat3(
-        c, 0.0, s,
-        0.0, 1.0, 0.0,
-        -s, 0.0, c
-    );
-}
-
-mat3 rotateX(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat3(
-        1.0, 0.0, 0.0,
-        0.0, c, -s,
-        0.0, s, c
-    );
-}
 
 void main()
 {
@@ -52,71 +30,58 @@ void main()
         return;
     }
 
-    // Normalized coordinates from -1.0 to 1.0
+    // Normalized UV: [-1.0, 1.0] centered
     vec2 uv = (qt_TexCoord0 - 0.5) * 2.0;
     float r = length(uv);
 
-    // Smooth circular boundary
-    float circleAlpha = 1.0 - smoothstep(0.92, 1.0, r);
-    if (circleAlpha <= 0.0) {
+    // Soft Gaussian feathered boundary (completely eliminates jagged or hard circular edge)
+    float edgeSoftness = smoothstep(1.0, 0.72, r);
+    if (edgeSoftness <= 0.001) {
         fragColor = vec4(0.0);
         return;
     }
 
-    // Dynamic animation speed based on audio level and processing state
-    float speedMultiplier = 1.0 + isProcessing * 2.2 + u_audioLevel * 1.8;
-    float t = u_time * speedMultiplier;
+    // Dynamic animation speed based on audio and processing
+    float speed = 0.8 + isProcessing * 1.5 + u_audioLevel * 1.2;
+    float t = u_time * speed;
 
-    // 3D Spherical normal projection
+    // 3D spherical depth projection
     float z = sqrt(max(0.0, 1.0 - r * r));
-    vec3 normal = vec3(uv.x, uv.y, z);
+    vec3 p = vec3(uv.x, uv.y, z);
 
-    // Apply fluid 3D spatial rotation to sample position
-    mat3 rot = rotateY(t * 0.8) * rotateX(t * 0.5);
-    vec3 p = rot * normal;
+    // Multi-octave continuous 3D fluid turbulence (NO angular division / NO CD rays)
+    float n1 = sin(p.x * 2.4 + t * 0.9) * cos(p.y * 2.4 + t * 0.7) + sin(p.z * 2.0 + t * 0.5);
+    float n2 = sin(p.y * 3.6 - t * 1.1) * cos(p.z * 3.6 + t * 0.8) + cos(p.x * 3.0 - t * 0.6);
+    float n3 = sin(p.z * 4.5 + t * 1.3) * cos(p.x * 4.5 + t * 1.0);
 
-    // Multi-octave fluid plasma displacement
-    float wave1 = sin(p.x * 3.5 + t * 1.4) * cos(p.y * 3.5 - t * 1.1) + sin(p.z * 3.5 + t);
-    float wave2 = cos(p.y * 5.0 - t * 1.8) * sin(p.z * 5.0 + t * 1.5) + cos(p.x * 5.0 - t * 0.8);
-    float wave3 = sin(p.z * 7.0 + t * 2.2) * cos(p.x * 7.0 - t * 1.6);
+    // Soft continuous color weights
+    float wCyan    = pow(max(0.0, sin(p.x * 1.6 + n1 * 0.7 + t * 0.6)), 1.5);
+    float wMagenta = pow(max(0.0, cos(p.y * 1.6 + n2 * 0.7 - t * 0.5)), 1.5);
+    float wPurple  = pow(max(0.0, sin(p.z * 1.6 + n3 * 0.7 + t * 0.7)), 1.5);
+    float wAmber   = pow(max(0.0, cos(p.x * 1.4 - p.y * 1.4 + t * 0.4)), 1.5);
 
-    float fluid = (wave1 * 0.5 + wave2 * 0.35 + wave3 * 0.15) * 0.5 + 0.5; // range ~0..1
+    float sumW = wCyan + wMagenta + wPurple + wAmber + 0.001;
+    vec3 fluidColor = (COLOR_CYAN * wCyan + COLOR_MAGENTA * wMagenta + COLOR_PURPLE * wPurple + COLOR_AMBER * wAmber) / sumW;
 
-    // Additional chromatic swirl angle
-    float angle = atan(uv.y, uv.x) + t * 0.7 + fluid * 1.5;
-    float colorPhase = fract((angle / (2.0 * PI)) + 0.5);
+    // Luminescence variation
+    float lum = 0.85 + 0.35 * sin(n1 * 2.0 + t);
+    fluidColor *= lum;
 
-    // Blend between Apple Intelligence 4-color palette
-    vec3 fluidColor;
-    if (colorPhase < 0.25) {
-        fluidColor = mix(COLOR_CYAN, COLOR_PURPLE, colorPhase / 0.25);
-    } else if (colorPhase < 0.50) {
-        fluidColor = mix(COLOR_PURPLE, COLOR_MAGENTA, (colorPhase - 0.25) / 0.25);
-    } else if (colorPhase < 0.75) {
-        fluidColor = mix(COLOR_MAGENTA, COLOR_AMBER, (colorPhase - 0.50) / 0.25);
-    } else {
-        fluidColor = mix(COLOR_AMBER, COLOR_CYAN, (colorPhase - 0.75) / 0.25);
-    }
-
-    // Enhance fluid luminosity
-    fluidColor *= 0.85 + 0.35 * sin(fluid * PI);
-
-    // Fresnel rim glow (glowing atmospheric edge of Siri orb)
+    // Soft Fresnel rim glow (glows gently at edges)
     float fresnel = pow(1.0 - z, 2.2);
-    vec3 rimColor = mix(COLOR_CYAN, COLOR_MAGENTA, 0.5 + 0.5 * sin(t + uv.x * 2.0));
-    vec3 finalColor = mix(fluidColor, rimColor, fresnel * 0.75);
+    vec3 rimColor = mix(COLOR_CYAN, COLOR_MAGENTA, 0.5 + 0.5 * sin(t + p.x));
+    fluidColor = mix(fluidColor, rimColor, fresnel * 0.45);
 
-    // Hot central core (breathing nucleus)
-    float coreRadius = 0.35 + (u_audioLevel * 0.2) + (isProcessing * 0.15);
-    float coreGlow = smoothstep(coreRadius, 0.0, r);
-    vec3 coreColor = vec3(1.0, 1.0, 1.0) * (0.55 + 0.45 * sin(t * 3.0));
-    finalColor += coreColor * coreGlow * 0.85;
+    // Breathing inner core highlight
+    float coreRadius = 0.32 + u_audioLevel * 0.18 + isProcessing * 0.10;
+    float coreGlow = exp(-r * r / max(coreRadius * coreRadius, 0.02));
+    fluidColor += vec3(1.0, 1.0, 1.0) * (coreGlow * (0.35 + 0.25 * sin(t * 2.5)));
 
-    // Outer edge aura
-    float edgeBloom = smoothstep(0.7, 0.95, r) * (0.3 + 0.2 * u_audioLevel);
-    finalColor += rimColor * edgeBloom;
+    // Outer bloom aura
+    float outerAura = smoothstep(0.65, 0.95, r) * (0.2 + 0.15 * u_audioLevel);
+    fluidColor += rimColor * outerAura;
 
-    // Apply circular mask and Qt opacity
-    float alpha = circleAlpha * (0.88 + 0.12 * fresnel) * qt_Opacity;
-    fragColor = vec4(finalColor * alpha, alpha);
+    // Premultiplied alpha output with Gaussian softness
+    float finalAlpha = edgeSoftness * qt_Opacity;
+    fragColor = vec4(fluidColor * finalAlpha, finalAlpha);
 }

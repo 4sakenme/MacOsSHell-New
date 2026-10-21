@@ -83,6 +83,15 @@ Column {
             api_key: root.apiKey !== "" ? root.apiKey : "YOUR_GEMINI_API_KEY_HERE",
             model: root.geminiModel
         }, null, 2));
+
+        // Send IPC sync signal
+        reloadProc.command = ["qs", "-c", "MacShell", "ipc", "call", "siri", "state", "idle"];
+        reloadProc.running = true;
+    }
+
+    Process {
+        id: reloadProc
+        running: false
     }
 
     FileView {
@@ -434,3 +443,4 @@ Column {
         }
     }
 }
+
