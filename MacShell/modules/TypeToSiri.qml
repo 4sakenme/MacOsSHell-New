@@ -26,6 +26,16 @@ Scope {
         }
     }
 
+    // Running clock for GLSL flowing animations
+    property real animTime: 0.0
+    FrameAnimation {
+        running: root.animProgress > 0.001
+        onTriggered: {
+            root.animTime += 0.016;
+            if (root.animTime > 10000.0) root.animTime = 0.0;
+        }
+    }
+
     onIsOpenChanged: {
         animProgress = isOpen ? 1.0 : 0.0;
         if (isOpen) {
@@ -190,24 +200,19 @@ Scope {
                     height: 50
                     z: 5
 
-                    // Outer Animated Apple Intelligence Gradient Border Glow
-                    Rectangle {
+                    // Flowing Gradient Border Shader Effect (Apple Intelligence)
+                    ShaderEffect {
+                        id: flowingBorder
                         anchors.fill: parent
-                        anchors.margins: -1.5
-                        radius: height / 2
-                        color: "transparent"
-                        border.width: 1.5
-                        opacity: root.isThinking ? 0.95 : 0.65
+                        anchors.margins: -2.0
 
-                        gradient: Gradient {
-                            orientation: Gradient.Horizontal
-                            GradientStop { position: 0.00; color: "#00F0FF" } // Cyan
-                            GradientStop { position: 0.33; color: "#9B51E0" } // Purple
-                            GradientStop { position: 0.66; color: "#FF2D55" } // Magenta
-                            GradientStop { position: 1.00; color: "#FF9500" } // Orange
-                        }
+                        fragmentShader: Qt.resolvedUrl("flowingborder.frag.qsb")
 
-                        Behavior on opacity { NumberAnimation { duration: 250 } }
+                        property vector2d itemSize: Qt.vector2d(width, height)
+                        property real u_time: root.animTime
+                        property real borderWidth: 2.2
+                        property real borderRadius: height * 0.5
+                        property real isThinking: root.isThinking ? 1.0 : 0.0
                     }
 
                     // Main Glass Pill Background
@@ -242,27 +247,13 @@ Scope {
                         spacing: 10
                         z: 10
 
-                        // Siri Animated Orb Icon (Breathing Gradient Sphere)
-                        Rectangle {
+                        // Siri Orb (3D Fluid Plasma Shader)
+                        SiriOrb {
                             id: siriOrb
-                            width: 28; height: 28; radius: 14
+                            width: 30; height: 30
                             anchors.verticalCenter: parent.verticalCenter
-
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: "#00F0FF" }
-                                GradientStop { position: 0.5; color: "#9B51E0" }
-                                GradientStop { position: 1.0; color: "#FF2D55" }
-                            }
-
-                            // Pulsing inner nucleus
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: root.isThinking ? (12 + 6 * Math.sin(pulsingTimer.pulsePhase)) : 14
-                                height: width
-                                radius: width / 2
-                                color: Qt.rgba(1, 1, 1, 0.85)
-                            }
+                            isProcessing: root.isThinking || (root.edgeGlow && root.edgeGlow.siriState === "speaking")
+                            audioLevel: root.edgeGlow ? root.edgeGlow.effectiveAudioLevel : 0.0
                         }
 
                         // Text Input Field

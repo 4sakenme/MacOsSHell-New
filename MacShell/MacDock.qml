@@ -30,6 +30,7 @@ import Quickshell.Wayland
 import Quickshell.Services.Pipewire
 import Quickshell.Services.UPower
 import "I18n.js" as I18n
+import "modules"
 
 Scope {
     id: root
@@ -517,6 +518,20 @@ Scope {
                     Rectangle { x: -6.5; width: 13; height: 13; radius: 6.5; color: "white" }
                 }
             }
+            // siri (apple intelligence glowing orb)
+            Item {
+                visible: gl.kind === "siri"; anchors.fill: parent
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 12; height: 12; radius: 6
+                    color: "white"
+                }
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 6; height: 6; radius: 3
+                    color: gl.c2
+                }
+            }
             // behavior (two toggles)
             Item {
                 visible: gl.kind === "behavior"; anchors.fill: parent
@@ -640,6 +655,7 @@ Scope {
             // 2 · System
             { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#8E8E93", c2: "#636366", keys: "language shell enable disable dock menu bar panel show hide off on" },
             { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#3A3A3C", c2: "#1C1C1E", keys: "theme dark light auto mode accent color glass liquid apple style translucency blur corner radius font spotlight top bar menus" },
+            { id: "siri",       sec: 2, name: "Apple Intelligence & Siri", glyph: "siri", c1: "#00F0FF", c2: "#FF2D55", keys: "siri voice assistant ai gemini intelligence wake word edge glow type to siri" },
             { id: "wallpaper",  sec: 2, name: "Wallpaper",       glyph: "wallpaper", c1: "#5AC8FA", c2: "#007AFF", keys: "wallpaper background picture image video animated live motion desktop dynamic" },
             { id: "displays",   sec: 2, name: "Displays",        wg: "sun",        c1: "#3D9BFF", c2: "#0A6CFF", keys: "brightness night shift monitor resolution refresh scale" },
             { id: "battery",    sec: 2, name: "Battery",         wg: "bolt",       c1: "#4CD964", c2: "#28A745", keys: "power energy charge profile performance game mode gaming fullscreen" },
@@ -1273,7 +1289,7 @@ Scope {
                     width: flick.width - 44
                     sourceComponent: ({
                         wifi: paneWifi, bluetooth: paneBt, network: paneNetwork, battery: paneBattery,
-                        general: paneGeneral, appearance: paneAppearance, controlcenter: paneCC, dock: paneDesktopDock,
+                        general: paneGeneral, appearance: paneAppearance, siri: paneSiri, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
                         widgets: paneWidgets, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
@@ -1296,6 +1312,15 @@ Scope {
         }
 
         // ═════════════ PANES ═════════════
+
+        // ── Apple Intelligence & Siri ──
+        Component {
+            id: paneSiri
+            AppleIntelligenceSettings {
+                t: pal
+                hub: root.hub
+            }
+        }
 
         // ── General ──
         Component {

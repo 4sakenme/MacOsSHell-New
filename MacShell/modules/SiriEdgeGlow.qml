@@ -197,26 +197,12 @@ Scope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: 10
 
-                                // Siri Orb (Animated breathing chromatic gradient sphere)
-                                Rectangle {
-                                    width: 26; height: 26; radius: 13
+                                // Siri Orb (3D Fluid Plasma Shader)
+                                SiriOrb {
+                                    width: 28; height: 28
                                     anchors.verticalCenter: parent.verticalCenter
-                                    gradient: Gradient {
-                                        orientation: Gradient.Horizontal
-                                        GradientStop { position: 0.0; color: "#00F0FF" }
-                                        GradientStop { position: 0.5; color: "#9B51E0" }
-                                        GradientStop { position: 1.0; color: "#FF2D55" }
-                                    }
-
-                                    // Inner pulse
-                                    Rectangle {
-                                        anchors.centerIn: parent
-                                        width: 14 + root.effectiveAudioLevel * 8
-                                        height: width
-                                        radius: width / 2
-                                        color: Qt.rgba(1, 1, 1, 0.75)
-                                        Behavior on width { NumberAnimation { duration: 60 } }
-                                    }
+                                    isProcessing: root.isThinking || root.isSpeaking
+                                    audioLevel: root.effectiveAudioLevel
                                 }
 
                                 Column {

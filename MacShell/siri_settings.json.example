@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "wake_word_enabled": true,
+  "wake_words": [
+    "hey siri",
+    "siri",
+    "ơi siri"
+  ],
+  "language": "vi-VN",
+  "voice": "vi",
+  "edge_glow_intensity": 1.0,
+  "model": "gemini-2.5-flash-lite",
+  "api_key": "YOUR_GEMINI_API_KEY_HERE"
+}
