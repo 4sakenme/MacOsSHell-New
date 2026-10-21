@@ -9,6 +9,7 @@ Scope {
 
     // Shared Hub reference from shell.qml
     property var hub: null
+    property var typeToSiri: null
 
     // ══════════════════════════════════════════════════════════════════
     // PUBLIC IPC PROPERTIES & STATE
@@ -35,15 +36,15 @@ Scope {
         }
     }
 
-    // 750ms OutBack: Slow elegant bloom spreading from top-right Menu Bar with edge bounce
+    // 650ms OutCubic: Apple Intelligence perimeter shockwave burst
     NumberAnimation {
         id: bloomAnim
         target: root
         property: "bloomProgress"
         from: 0.0
         to: 1.0
-        duration: 750
-        easing.type: Easing.OutBack
+        duration: 650
+        easing.type: Easing.OutCubic
     }
 
     onActiveChanged: {
@@ -58,11 +59,20 @@ Scope {
         }
     }
 
+    function switchToType() {
+        if (typeToSiri) {
+            typeToSiri.open();
+        }
+    }
+
     function dismiss() {
         active = false;
         siriState = "idle";
         userPrompt = "";
         siriResponse = "";
+        if (typeToSiri && typeToSiri.isOpen) {
+            typeToSiri.close();
+        }
     }
 
     // Auto-dismiss timer after speaking has finished
@@ -117,7 +127,7 @@ Scope {
 
             WlrLayershell.namespace: "siri-glow"
             WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            WlrLayershell.keyboardFocus: (root.active && (!root.typeToSiri || !root.typeToSiri.isOpen)) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
             visible: root.smoothProgress > 0.001
 
@@ -126,6 +136,22 @@ Scope {
                 item: emptyMask
             }
             Item { id: emptyMask; width: 0; height: 0 }
+
+            // Voice-First Mode Key Handling (Step 1 -> Press Space to switch to Type Mode, Esc to dismiss)
+            FocusScope {
+                anchors.fill: parent
+                focus: root.active && (!root.typeToSiri || !root.typeToSiri.isOpen)
+
+                Keys.onSpacePressed: event => {
+                    event.accepted = true;
+                    root.switchToType();
+                }
+
+                Keys.onEscapePressed: event => {
+                    event.accepted = true;
+                    root.dismiss();
+                }
+            }
 
             // ── SHADEREFFECT: SCREEN EDGE GLOW WAVE ──
             ShaderEffect {
@@ -137,7 +163,7 @@ Scope {
                 property vector2d itemSize: Qt.vector2d(width, height)
                 property real u_time: root.animTime
                 property real screenRadius: 28.0
-                property real glowWidth: 16.0       // Refined slim 16px edge bezel hugging
+                property real glowWidth: 26.0       // Balanced 26px Apple Intelligence glow width with diffused aura
                 property real audioLevel: root.effectiveAudioLevel
                 property real animProgress: root.smoothProgress
                 property vector2d u_origin: Qt.vector2d(0.96, 0.02)

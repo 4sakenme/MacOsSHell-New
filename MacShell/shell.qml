@@ -289,11 +289,12 @@ ShellRoot {
     ClockApp { id: clockApp; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
-    SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub }
+    SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub; typeToSiri: typeToSiri }
     TypeToSiri { id: typeToSiri; edgeGlow: siriEdgeGlow }
 
     // qs -c MacShell ipc call siri activate true | false
     // qs -c MacShell ipc call siri toggle
+    // qs -c MacShell ipc call siri space
     // qs -c MacShell ipc call siri toggle_type
     // qs -c MacShell ipc call siri ask "<query>"
     // qs -c MacShell ipc call siri state "listening" | "thinking" | "speaking" | "idle"
@@ -303,8 +304,18 @@ ShellRoot {
     // qs -c MacShell ipc call siri dismiss
     IpcHandler {
         target: "siri"
-        function activate(on: bool) { siriEdgeGlow.active = on; }
-        function toggle() { siriEdgeGlow.active = !siriEdgeGlow.active; }
+        function activate(on: bool) {
+            siriEdgeGlow.active = on;
+            if (!on) typeToSiri.close();
+        }
+        function toggle() {
+            if (siriEdgeGlow.active) {
+                siriEdgeGlow.dismiss();
+            } else {
+                siriEdgeGlow.active = true;
+            }
+        }
+        function space() { siriEdgeGlow.switchToType(); }
         function toggle_type() { typeToSiri.toggle(); }
         function open_type() { typeToSiri.open(); }
         function close_type() { typeToSiri.close(); }
@@ -315,6 +326,7 @@ ShellRoot {
             siriEdgeGlow.siriResponse = text;
             typeToSiri.response = text;
             typeToSiri.isThinking = false;
+            if (text && text !== "") typeToSiri.open();
         }
         function audioLevel(lvl: real) { siriEdgeGlow.audioLevel = lvl; }
         function dismiss() {

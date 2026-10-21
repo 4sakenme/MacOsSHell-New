@@ -41,15 +41,11 @@ Scope {
         if (isOpen) {
             if (edgeGlow) {
                 edgeGlow.active = true;
-                edgeGlow.siriState = "listening";
-                edgeGlow.userPrompt = "";
-                edgeGlow.siriResponse = "";
+                if (edgeGlow.siriState === "idle") {
+                    edgeGlow.siriState = "listening";
+                }
             }
         } else {
-            if (edgeGlow) {
-                edgeGlow.active = false;
-                edgeGlow.siriState = "idle";
-            }
             isThinking = false;
         }
     }
