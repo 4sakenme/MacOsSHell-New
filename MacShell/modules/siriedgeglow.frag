@@ -54,6 +54,16 @@ void main()
     vec2 halfSize = itemSize * 0.5;
     vec2 posFromCenter = p - halfSize;
 
+    // Distance to screen boundary: d == 0 at screen edge, < 0 inside screen
+    float d = sdRoundedBox(posFromCenter, halfSize, screenRadius);
+    float inwardDist = -d;
+
+    // Discard pixels strictly outside the screen bezel corner radius
+    if (inwardDist < 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
     // ── ORIGIN COORDINATES & PERIMETER PARAMETERS ──
     vec2 originPx = u_origin * itemSize;
     vec2 originFromCenter = originPx - halfSize;
@@ -72,29 +82,48 @@ void main()
     vec3 cPurple  = vec3(0.624, 0.235, 0.941);
     vec3 cAmber   = vec3(1.000, 0.580, 0.000);
 
-    // ── 1. FULLSCREEN VIVID CHROMATIC SHOCKWAVE BLOOM (iOS 18 APPLE INTELLIGENCE) ──
+    // ── 1. FULLSCREEN VIVID OCEAN WAVE & CORNER REFLECTION (KHÔNG CÓ HÌNH VUÔNG) ──
     vec4 shockwaveOutput = vec4(0.0);
     if (u_bloomProgress < 0.999 && animProgress > 0.01) {
         float distFromOrigin = length(p - originPx);
         float maxScreenDist = length(itemSize);
 
-        // Shockwave front expands rapidly across the entire display
-        float waveRadius = u_bloomProgress * maxScreenDist * 1.25;
-        float waveDelta = abs(distFromOrigin - waveRadius);
+        // 1. Primary Ocean Wave front expanding across the display from origin
+        float waveRadius = u_bloomProgress * maxScreenDist * 1.30;
+        float waveDelta = distFromOrigin - waveRadius;
 
-        // 1. Intense vibrant shockwave crest (vành sóng bung mạnh)
-        float crest = exp(-pow(waveDelta / 95.0, 2.0)) * 2.2;
+        // Leading crest (vành sóng chính bung mạnh)
+        float leadingCrest = exp(-pow(waveDelta / 85.0, 2.0)) * 2.2;
 
-        // 2. Trailing rich colorful haze inside the expanding wave front
-        float innerWake = smoothstep(waveRadius + 60.0, 0.0, distFromOrigin) * 0.55;
+        // Trailing ocean swells (các gợn sóng biển nối tiếp sau ngọn sóng chính)
+        float trailingSwells = 0.0;
+        if (waveDelta < 0.0) {
+            float swellOsc = sin(waveDelta * 0.045);
+            trailingSwells = max(0.0, swellOsc) * exp(waveDelta / 280.0) * 1.3;
+        }
 
-        // 3. Smooth dissipation: bursts strongly then fades out completely as energy settles to the border
+        // Inner luminous wake
+        float innerWake = smoothstep(waveRadius + 80.0, 0.0, distFromOrigin) * 0.40;
+
+        // 2. Natural corner reflection bounce (sóng dội nảy ngược từ góc đối diện)
+        // Opposite bottom-left corner acts as the primary reflective shoreline
+        vec2 bounceOrigin = vec2(0.0, itemSize.y);
+        float distFromBounce = length(p - bounceOrigin);
+        float bounceTime = clamp((u_bloomProgress - 0.42) / 0.58, 0.0, 1.0);
+        float bounceRadius = bounceTime * maxScreenDist * 0.75;
+        float bounceDelta = abs(distFromBounce - bounceRadius);
+        float bounceCrest = exp(-pow(bounceDelta / 110.0, 2.0)) * sin(bounceTime * PI) * 1.4;
+
+        // Total organic fluid wave field (100% tròn mượt, không hề có đường thẳng vuông)
+        float totalWaves = leadingCrest + trailingSwells + innerWake + bounceCrest;
+
+        // Smooth dissipation over the 1500ms duration
         float burstEnvelope = sin(clamp(u_bloomProgress * 1.15, 0.0, 1.0) * PI);
-        float shockIntensity = (crest + innerWake) * burstEnvelope * animProgress;
+        float shockIntensity = totalWaves * burstEnvelope * animProgress;
 
-        // Saturated chromatic spectrum matching the travelling line colors
+        // Saturated chromatic spectrum matching Apple Intelligence palette
         float angleOrigin = atan(p.y - originPx.y, p.x - originPx.x);
-        float shockHue = fract(angleOrigin / TWO_PI + distFromOrigin * 0.0012 - u_time * 0.4);
+        float shockHue = fract(angleOrigin / TWO_PI + distFromOrigin * 0.0010 - u_time * 0.35);
 
         vec3 shockColor;
         if (shockHue < 0.25) {
@@ -107,18 +136,17 @@ void main()
             shockColor = mix(cAmber * 1.30, cCyan * 1.35, (shockHue - 0.75) / 0.25);
         }
 
-        // Add soft white highlight along the crest peak
-        shockColor += vec3(1.0) * exp(-pow(waveDelta / 30.0, 2.0)) * 0.45;
+        // Luminous foam crest highlight along the wave peaks
+        float crestHighlight = exp(-pow(waveDelta / 28.0, 2.0)) * 0.45 
+                             + exp(-pow(bounceDelta / 38.0, 2.0)) * sin(bounceTime * PI) * 0.35;
+        shockColor += vec3(1.0) * crestHighlight;
 
-        // Clamped soft alpha: rich, vivid and translucent without black artifacts
+        // Clamped rich translucent alpha without dark clipping
         float shockAlpha = clamp(shockIntensity * 0.38, 0.0, 0.65) * qt_Opacity;
         shockwaveOutput = vec4(shockColor * shockAlpha, shockAlpha);
     }
 
     // ── 2. TWO-TIER WAVE DEFORMATION ALGORITHM ──
-    float d = sdRoundedBox(posFromCenter, halfSize, screenRadius);
-    float inwardDist = -d;
-
     // Perimeter coordinate (0.0 to 1.0 around the 4 edges)
     float perimeterCoord = (angleP / TWO_PI) + 0.5;
     float pRad = perimeterCoord * TWO_PI;

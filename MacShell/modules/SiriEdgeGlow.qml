@@ -44,27 +44,27 @@ Scope {
     property real introMist: 0.0
     property real shrinkFactor: 1.0
 
-    // ── 1. INTRO ANIMATION: PHASE 1 (180ms MIST FLASH) -> PHASE 2 (250ms SETTLE TO EDGE) ──
+    // ── 1. INTRO ANIMATION: OCEAN WAVE SWELL & SHORELINE REFLECTION (1500ms) ──
     ParallelAnimation {
         id: introAnim
 
         SequentialAnimation {
-            // Phase 1: Screen Flash / Vignette mist bloom from top-right origin (180ms)
+            // Wave swell emergence
             NumberAnimation {
                 target: root
                 property: "introMist"
                 from: 0.0
                 to: 1.0
-                duration: 180
+                duration: 450
                 easing.type: Easing.OutQuad
             }
-            // Phase 2: Fade out mist in center as energy settles into the perimeter edge (250ms)
+            // Wave dissipation as ripples bounce and settle into perimeter
             NumberAnimation {
                 target: root
                 property: "introMist"
                 from: 1.0
                 to: 0.0
-                duration: 250
+                duration: 1050
                 easing.type: Easing.InQuad
             }
         }
@@ -74,7 +74,7 @@ Scope {
             property: "bloomProgress"
             from: 0.0
             to: 1.0
-            duration: 580
+            duration: 1500
             easing.type: Easing.OutCubic
         }
 
@@ -83,7 +83,7 @@ Scope {
             property: "smoothProgress"
             from: 0.0
             to: 1.0
-            duration: 280
+            duration: 350
             easing.type: Easing.OutCubic
         }
 
@@ -92,7 +92,7 @@ Scope {
             property: "shrinkFactor"
             from: 0.75
             to: 1.0
-            duration: 350
+            duration: 450
             easing.type: Easing.OutCubic
         }
     }
