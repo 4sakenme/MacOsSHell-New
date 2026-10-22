@@ -148,7 +148,7 @@ Scope {
             screen: modelData
 
             anchors { top: true; bottom: true; left: true }
-            width: 250
+            width: 340
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "macshell-stagemanager"
@@ -159,7 +159,7 @@ Scope {
 
             property bool isRevealed: false
 
-            readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 230)
+            readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 280)
 
             Timer {
                 id: hideTimer
@@ -206,19 +206,19 @@ Scope {
             // ── 3D Stage Cards Container ──
             Item {
                 id: stageContainer
-                width: 210
-                height: cardsColumn.implicitHeight + 40
+                width: 290
+                height: cardsColumn.implicitHeight + 50
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
                 // Slide in/out animation
-                x: win.stageVisible ? 14 : -175
+                x: win.stageVisible ? 18 : -260
                 Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
 
                 Column {
                     id: cardsColumn
                     anchors.centerIn: parent
-                    spacing: 16
+                    spacing: 20
 
                     Repeater {
                         model: root.backgroundWindows
@@ -228,49 +228,59 @@ Scope {
                             required property var modelData
                             required property int index
 
-                            width: 148
-                            height: 94
+                            width: 240
+                            height: 150
                             z: cardHover.hovered ? 50 : (20 - index)
 
                             property bool isFlying: false
                             property real hoverProg: cardHover.hovered ? 1.0 : 0.0
                             Behavior on hoverProg { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                            // ── 3D Perspective Skew & Stack Transform ──
+                            // ── 3D Perspective Tilt & Foreshortening ──
+                            property real pK: cardHover.hovered ? 0.0003 : 0.0016
+                            Behavior on pK { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
                             transform: [
+                                Matrix4x4 {
+                                    matrix: Qt.matrix4x4(
+                                        1, 0, 0, 0,
+                                        0, 1, 0, 0,
+                                        0, 0, 1, 0,
+                                        cardWrapper.pK, 0, 0, 1
+                                    )
+                                },
                                 Rotation {
-                                    origin.x: cardWrapper.width * 0.45
-                                    origin.y: cardWrapper.height * 0.5
+                                    origin.x: 0
+                                    origin.y: cardWrapper.height / 2
                                     axis { x: 0; y: 1; z: 0 }
-                                    angle: cardHover.hovered ? -4 : -22
+                                    angle: cardHover.hovered ? -6 : -28
                                     Behavior on angle { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 },
                                 Translate {
-                                    x: (cardHover.hovered ? 14 : 0) + (cardWrapper.isFlying ? 150 : 0)
-                                    Behavior on x { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    x: (cardHover.hovered ? 20 : 0) + (cardWrapper.isFlying ? 180 : 0)
+                                    Behavior on x { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                                 },
                                 Scale {
-                                    origin.x: cardWrapper.width * 0.5
-                                    origin.y: cardWrapper.height * 0.5
-                                    xScale: (cardHover.hovered ? 1.08 : 1.0) * (cardWrapper.isFlying ? 1.35 : 1.0)
+                                    origin.x: 0
+                                    origin.y: cardWrapper.height / 2
+                                    xScale: (cardHover.hovered ? 1.05 : 0.95) * (cardWrapper.isFlying ? 1.25 : 1.0)
                                     yScale: xScale
-                                    Behavior on xScale { NumberAnimation { duration: 250; easing.type: Easing.OutBack; easing.overshoot: 1.4 } }
+                                    Behavior on xScale { NumberAnimation { duration: 200 } }
+                                    Behavior on yScale { NumberAnimation { duration: 200 } }
                                 }
                             ]
 
-                            // ── 3D Depth Shadow ──
+                            // ── 3D Deep Shadow ──
                             Rectangle {
                                 anchors.fill: cardFrame
                                 radius: cardFrame.radius
-                                color: "black"
-                                opacity: 0.36 + 0.18 * cardWrapper.hoverProg
-                                scale: 0.96
-                                transform: Translate { y: 6; x: 4 }
+                                color: "#90000000"
+                                transform: Translate { x: 8; y: 12 }
                                 layer.enabled: true
                                 layer.effect: MultiEffect {
                                     blurEnabled: true
-                                    blurMax: 28
-                                    blur: 0.65
+                                    blurMax: 32
+                                    blur: 0.6
                                 }
                             }
 
@@ -278,25 +288,29 @@ Scope {
                             Rectangle {
                                 id: cardFrame
                                 anchors.fill: parent
-                                radius: 10
-                                color: Qt.rgba(0.12, 0.12, 0.15, 0.78)
+                                radius: 12
+                                color: Qt.rgba(0.12, 0.12, 0.15, 0.85)
                                 clip: true
-                                border.width: 1.2
-                                border.color: cardHover.hovered ? Qt.rgba(1, 1, 1, 0.48) : Qt.rgba(1, 1, 1, 0.18)
+                                border.width: 1
+                                border.color: cardHover.hovered ? "#60ffffff" : "#30ffffff"
                                 Behavior on border.color { ColorAnimation { duration: 200 } }
 
                                 // Wayland screencopy capture of the background window
-                                ScreencopyView {
-                                    id: scView
+                                Loader {
+                                    id: scLoader
                                     anchors.fill: parent
-                                    captureSource: cardWrapper.modelData.tl
-                                    live: false
-                                    visible: hasContent
+                                    active: cardWrapper.modelData && cardWrapper.modelData.tl !== null
+                                    sourceComponent: ScreencopyView {
+                                        anchors.fill: parent
+                                        captureSource: cardWrapper.modelData ? cardWrapper.modelData.tl : null
+                                        live: false
+                                        visible: hasContent
+                                    }
                                 }
 
                                 // Fallback frosted card with app icon if screencopy is not ready yet
                                 Item {
-                                    visible: !scView.hasContent
+                                    visible: !scLoader.item || !scLoader.item.hasContent
                                     anchors.fill: parent
 
                                     Rectangle {
@@ -309,7 +323,7 @@ Scope {
 
                                     Image {
                                         anchors.centerIn: parent
-                                        width: 38; height: 38
+                                        width: 48; height: 48
                                         sourceSize: Qt.size(64, 64)
                                         source: cardWrapper.modelData.iconPath
                                         smooth: true
@@ -321,7 +335,7 @@ Scope {
                                         text: cardWrapper.modelData.name
                                         color: "white"
                                         font.family: "Open Runde"
-                                        font.pixelSize: 13
+                                        font.pixelSize: 15
                                         font.weight: Font.DemiBold
                                         visible: cardWrapper.modelData.iconPath === ""
                                     }
@@ -332,28 +346,38 @@ Scope {
                                     anchors.fill: parent
                                     radius: parent.radius
                                     gradient: Gradient {
-                                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.14) }
-                                        GradientStop { position: 0.5; color: Qt.rgba(1, 1, 1, 0.0) }
+                                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.12) }
+                                        GradientStop { position: 0.6; color: Qt.rgba(1, 1, 1, 0.0) }
                                     }
                                 }
                             }
 
-                            // ── App Icon Badge ──
+                            // ── App Icon Badge (32x32px, overlapping bottom-left corner) ──
                             Rectangle {
                                 id: appBadge
-                                width: 28; height: 28; radius: 14
-                                x: -6; y: cardWrapper.height - 22
+                                width: 32; height: 32; radius: 16
+                                anchors.bottom: cardFrame.bottom
+                                anchors.left: cardFrame.left
+                                anchors.bottomMargin: -6
+                                anchors.leftMargin: -6
                                 z: 30
-                                color: Qt.rgba(0.14, 0.14, 0.17, 0.90)
+                                color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
                                 border.width: 1
-                                border.color: Qt.rgba(1, 1, 1, 0.32)
-                                scale: cardHover.hovered ? 1.15 : 1.0
+                                border.color: Qt.rgba(1, 1, 1, 0.35)
+                                scale: cardHover.hovered ? 1.12 : 1.0
                                 Behavior on scale { NumberAnimation { duration: 200 } }
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    shadowEnabled: true
+                                    shadowColor: "#90000000"
+                                    shadowBlur: 0.4
+                                    shadowVerticalOffset: 2
+                                }
 
                                 Image {
                                     anchors.centerIn: parent
-                                    width: 18; height: 18
-                                    sourceSize: Qt.size(36, 36)
+                                    width: 20; height: 20
+                                    sourceSize: Qt.size(40, 40)
                                     source: cardWrapper.modelData.iconPath
                                     smooth: true
                                     visible: cardWrapper.modelData.iconPath !== ""
@@ -365,7 +389,7 @@ Scope {
                                     text: cardWrapper.modelData.name.charAt(0).toUpperCase()
                                     color: "white"
                                     font.family: "Open Runde"
-                                    font.pixelSize: 12
+                                    font.pixelSize: 13
                                     font.weight: Font.Bold
                                 }
                             }
@@ -376,17 +400,17 @@ Scope {
                                 z: 40
                                 opacity: cardHover.hovered ? 1.0 : 0.0
                                 Behavior on opacity { NumberAnimation { duration: 180 } }
-                                x: cardWrapper.width + 12
+                                x: cardWrapper.width + 16
                                 anchors.verticalCenter: cardWrapper.verticalCenter
-                                width: Math.min(200, tipText.implicitWidth + 22)
-                                height: 28
+                                width: Math.min(220, tipText.implicitWidth + 24)
+                                height: 30
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: 14
-                                    color: Qt.rgba(0.10, 0.10, 0.13, 0.88)
+                                    radius: 15
+                                    color: Qt.rgba(0.10, 0.10, 0.13, 0.90)
                                     border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.22)
+                                    border.color: Qt.rgba(1, 1, 1, 0.25)
                                 }
 
                                 Text {
@@ -396,7 +420,7 @@ Scope {
                                     text: cardWrapper.modelData.title || cardWrapper.modelData.name
                                     color: "white"
                                     font.family: "Open Runde"
-                                    font.pixelSize: 11
+                                    font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     elide: Text.ElideRight
                                     maximumLineCount: 1
@@ -410,8 +434,8 @@ Scope {
                                     if (hovered) {
                                         hideTimer.stop();
                                         win.isRevealed = true;
-                                        if (scView && typeof scView.captureFrame === "function") {
-                                            scView.captureFrame();
+                                        if (scLoader.item && typeof scLoader.item.captureFrame === "function") {
+                                            scLoader.item.captureFrame();
                                         }
                                     }
                                 }
