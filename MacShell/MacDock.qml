@@ -165,6 +165,15 @@ Scope {
     readonly property bool dockDark: true
     property string appearanceMode: "dark"      // light | dark | auto (kept in step with the Menu Bar, see setAppearance)
     property string dockStyle: "blur"   // "blur" = Normal Blur, "liquid" = Apple Liquid Glass
+    // new windows open floating (macOS-like) instead of tiling; written to a Lua file the session config reads
+    property bool windowsFloat: true
+    onWindowsFloatChanged: if (settingsReady) applyWindowsFloat()
+    function applyWindowsFloat() {
+        var rule = windowsFloat ? "hl.window_rule({ match = { class = \".*\" }, float = true })\n" : "";
+        Quickshell.execDetached(["sh", "-c",
+            "mkdir -p \"$HOME/.config/macshell\"; printf '%s' \"$1\" > \"$HOME/.config/macshell/windows.lua\"; "
+            + "if [ -n \"$1\" ]; then hyprctl eval \"$1\" >/dev/null 2>&1; else hyprctl reload >/dev/null 2>&1; fi", "sh", rule]);
+    }
     // Liquid Glass tuning (settings.json): rim = edge highlight, grain = noise, liquid = refraction depth
     property real glassRim: 0.45
     property real glassGrain: 0.03
@@ -2875,6 +2884,16 @@ Scope {
             Column {
                 spacing: 18
                 Loader { width: parent.width; sourceComponent: paneDock }
+                SLabel { t: pal; header: true; text: I18n.tr("Windows") }
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Open windows floating")
+                        subtitle: I18n.tr("New windows float like on macOS instead of tiling. Takes effect for windows opened from now on.")
+                        SSwitch { t: pal; checked: root.windowsFloat; onToggled: v => root.windowsFloat = v }
+                    }
+                }
                 SLabel { t: pal; header: true; text: I18n.tr("App Switcher (Alt + Tab)") }
                 SCard {
                     t: pal
@@ -4330,13 +4349,13 @@ Scope {
         iconTint = false; iconTintColor = "#0a84ff"; iconTintStrength = 1.0;
         hideMode = "smart"; hideDelay = 450; monitor = "";
         showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true; glassLive = true;
-        minimizeAnimation = "genie";
+        minimizeAnimation = "genie"; windowsFloat = true;
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
     readonly property string settingsSig: [dockEnabled, settingsEnabled, iconSize, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, appearanceMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
-        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, glassLive, iconTint, iconTintColor, iconTintStrength, minimizeAnimation].join("|")
+        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, glassLive, iconTint, iconTintColor, iconTintStrength, minimizeAnimation, windowsFloat].join("|")
     property bool settingsReady: false
     onSettingsSigChanged: if (settingsReady) saveTimer.restart()
     onShowTrashChanged: { rebuild(); if (showTrash) trashCheck(); }
@@ -4354,7 +4373,7 @@ Scope {
             showTrash: showTrash, showLabels: showLabels, showIndicators: showIndicators,
             bounceOnLaunch: bounceOnLaunch, showThumbs: showThumbs, windowCapture: windowCapture, glassLive: glassLive,
             iconTint: iconTint, iconTintColor: iconTintColor, iconTintStrength: iconTintStrength,
-            minimizeAnimation: minimizeAnimation
+            minimizeAnimation: minimizeAnimation, windowsFloat: windowsFloat
         };
         settingsStore.setText(JSON.stringify(o, null, 2));
     }
@@ -4363,7 +4382,7 @@ Scope {
         if (!o || typeof o !== "object") return;
         var keys = ["dockEnabled", "settingsEnabled", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "appearanceMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
-                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "glassLive", "iconTint", "iconTintColor", "iconTintStrength", "minimizeAnimation"];
+                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "glassLive", "iconTint", "iconTintColor", "iconTintStrength", "minimizeAnimation", "windowsFloat"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }

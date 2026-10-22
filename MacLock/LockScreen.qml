@@ -20,6 +20,40 @@ Item {
     readonly property string famDisplay: fam
     readonly property bool leaving: st.unlocking
 
+    HoverHandler { id: lightHover }
+
+    // ═════════════ SPATIAL 3D DEPTH (iOS 26 / visionOS) ═════════════
+    readonly property bool spatial3D: ls.st.spatial3D !== undefined ? ls.st.spatial3D : true
+    property real targetSX: 0
+    property real targetSY: 0
+    property real sX: spatial3D ? targetSX : 0
+    property real sY: spatial3D ? targetSY : 0
+    Behavior on sX { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+    Behavior on sY { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+
+    property real spatialDrift: 0
+    Timer {
+        id: spatialTimer
+        interval: 30
+        repeat: true
+        running: ls.shown && ls.spatial3D
+        onTriggered: {
+            ls.spatialDrift += 0.03;
+            var driftX = Math.sin(ls.spatialDrift * 1.35) * 0.06;
+            var driftY = Math.cos(ls.spatialDrift * 0.95) * 0.045;
+            if (lightHover.hovered) {
+                var pos = lightHover.point.position;
+                var nx = Math.max(-1.0, Math.min(1.0, (pos.x - ls.width * 0.5) / (ls.width * 0.5)));
+                var ny = Math.max(-1.0, Math.min(1.0, (pos.y - ls.height * 0.5) / (ls.height * 0.5)));
+                ls.targetSX = nx + driftX * 0.25;
+                ls.targetSY = ny + driftY * 0.25;
+            } else {
+                ls.targetSX = driftX;
+                ls.targetSY = driftY;
+            }
+        }
+    }
+
     focus: true
 
     // ── entrance: start once the wallpaper is decoded (or after a short timeout), so it never fades in from black
@@ -39,6 +73,10 @@ Item {
     Item {
         id: scene
         anchors.fill: parent
+        transform: Translate {
+            x: -ls.sX * 18 * ls.u
+            y: -ls.sY * 12 * ls.u
+        }
         Image {
             id: wall
             anchors.fill: parent
@@ -50,7 +88,7 @@ Item {
             // A 2.5K decode is plenty for a blurred full-screen background and avoids decoding huge 4K/8K originals.
             sourceSize.width: Math.max(1, Math.min(ls.width * 1.15, 2560))
             // slow settle-in zoom, and a gentle zoom-out as the lock lifts
-            scale: ls.leaving ? 1.06 : (ls.shown ? 1.0 : 1.09)
+            scale: (ls.leaving ? 1.06 : (ls.shown ? 1.0 : 1.09)) * (ls.spatial3D ? 1.05 : 1.0)
             Behavior on scale { NumberAnimation { duration: ls.leaving ? 520 : 650; easing.type: Easing.OutQuint } }
         }
         // animated wallpaper: the same video MacShell plays on the desktop, muted and looping
@@ -69,7 +107,7 @@ Item {
                 VideoOutput { id: vo; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectCrop }
             }
         }
-        // the wallpaper softens (no darkening) while you are entering the password
+        // the wallpaper softens and dims while you're entering the password
         MultiEffect {
             source: wallVideo.active ? wallVideo : wall
             anchors.fill: wall
@@ -77,9 +115,11 @@ Item {
             blurEnabled: true
             blurMax: 48
             blur: ls.st.engaged ? 0.55 : 0.0
+            brightness: ls.st.engaged ? -0.10 : 0.0
             opacity: ls.st.engaged ? 1 : 0
             visible: opacity > 0.002
             Behavior on blur { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+            Behavior on brightness { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
             Behavior on opacity { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
         }
         // Album background: while the cover is enlarged the wallpaper gives way to a heavily blurred, slightly
@@ -87,44 +127,58 @@ Item {
         Item {
             id: artBg
             anchors.fill: parent
+            scale: ls.spatial3D ? 1.05 : 1.0
+            Behavior on scale { NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
             opacity: ls.st.artBg ? ls.clamp01(ls.artT) : 0
             visible: opacity > 0.003
             Rectangle { anchors.fill: parent; color: "#0c0c10" }
 
-            // Animated Canvas Video (Spotify supported music)
+            // ── Fullscreen Animated Canvas Background ──
             Loader {
-                id: canvasLoader
+                id: canvasBgLoader
                 anchors.fill: parent
-                active: ls.canvasVideo !== "" && ls.artT > 0.01
+                active: ls.canvasVideo !== "" && ls.artT > 0.005
+                opacity: ls.canvasVideo !== "" ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 550; easing.type: Easing.OutCubic } }
+                z: 3
                 sourceComponent: Item {
-                    anchors.fill: parent
                     MediaPlayer {
-                        id: canvasMp
-                        source: "file://" + ls.canvasVideo
+                        id: bgMp
+                        source: ls.canvasVideo !== "" ? "file://" + ls.canvasVideo : ""
                         loops: MediaPlayer.Infinite
-                        videoOutput: canvasVo
+                        videoOutput: bgVo
+                        audioOutput: null
                         Component.onCompleted: play()
+                        onSourceChanged: {
+                            if (source !== "") {
+                                play();
+                            }
+                        }
                     }
                     VideoOutput {
-                        id: canvasVo
+                        id: bgVo
                         anchors.fill: parent
                         fillMode: VideoOutput.PreserveAspectCrop
                     }
+                    // Cinematic dark overlay so clock and text stay perfectly readable
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Qt.rgba(0, 0, 0, 0.20)
+                    }
+                    TapHandler {
+                        onTapped: {
+                            if (ls.st.npMode === "art") {
+                                ls.st.npMode = "";
+                                ls.st.poke();
+                            }
+                        }
+                    }
                 }
-            }
-            MultiEffect {
-                anchors.fill: parent
-                source: canvasLoader.active ? canvasLoader : null
-                visible: canvasLoader.active
-                scale: 1.15
-                blurEnabled: true; blurMax: 48; blur: 0.55
-                saturation: 0.35
-                brightness: -0.15
             }
 
             // old and new album, each blurred; the new one fades in over the old one during a hand-over
             Repeater {
-                model: canvasLoader.active ? 0 : 2
+                model: 2
                 delegate: MultiEffect {
                     required property int index
                     readonly property Item img: index === 0 ? ls.coverOld : ls.coverNew
@@ -136,7 +190,8 @@ Item {
                     saturation: 0.25
                     brightness: -0.16
                     // new: fades in with the hand-over; old: only there while it's being covered
-                    opacity: index === 1 ? ls.bgProg : (ls.bgProg < 1 ? 1 : 0)
+                    opacity: (ls.canvasVideo !== "" ? 0 : 1) * (index === 1 ? ls.bgProg : (ls.bgProg < 1 ? 1 : 0))
+                    Behavior on opacity { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
                     visible: img.status === Image.Ready && opacity > 0.003
                     z: index
                 }
@@ -160,13 +215,13 @@ Item {
         sourceItem: scene
         // with a video wallpaper the scene changes every frame: the glass copy refreshes at 12 fps instead
         // (blur + every glass shader re-running 30-60x a second was the main GPU cost on the lock screen)
-        live: !wallVideo.active && !canvasLoader.active
+        live: !wallVideo.active && !(ls.canvasVideo !== "" && ls.artT > 0.05)
         visible: false
         textureSize: Qt.size(Math.max(1, Math.round(ls.width / 2)), Math.max(1, Math.round(ls.height / 2)))
     }
     Timer {
         interval: 83; repeat: true
-        running: (wallVideo.active || canvasLoader.active) && ls.shown && !ls.leaving
+        running: (wallVideo.active || (ls.canvasVideo !== "" && ls.artT > 0.05)) && ls.shown && !ls.leaving
         onTriggered: sceneTex.scheduleUpdate()
     }
     MultiEffect {
@@ -312,6 +367,10 @@ Item {
         y: 48 * ls.u
         width: 340 * ls.u
         spacing: 8 * ls.u
+        transform: Translate {
+            x: ls.sX * 12 * ls.u
+            y: ls.sY * 8 * ls.u
+        }
         // cards below a cleared one glide up into its place
         move: Transition { NumberAnimation { properties: "y"; duration: 420; easing.type: Easing.OutQuint } }
         opacity: ls.shown && !ls.leaving ? 1 : 0
@@ -499,12 +558,26 @@ Item {
                 y: -ls.pressTop * 0.45
                 Behavior on y { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
             },
+            Translate {
+                x: ls.sX * 12 * ls.u
+                y: ls.sY * 8 * ls.u
+            },
             Scale {
                 origin.x: clock.width / 2; origin.y: 0
                 xScale: 1 + 0.06 * ls.squishK(ls.pressTop)
                 yScale: 1 - 0.14 * ls.squishK(ls.pressTop)
                 Behavior on xScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
                 Behavior on yScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+            },
+            Rotation {
+                origin.x: clock.width / 2; origin.y: clock.height / 2
+                axis.x: 0; axis.y: 1; axis.z: 0
+                angle: ls.sX * 3.5
+            },
+            Rotation {
+                origin.x: clock.width / 2; origin.y: clock.height / 2
+                axis.x: 1; axis.y: 0; axis.z: 0
+                angle: -ls.sY * 2.8
             }
         ]
         height: dateTxt.implicitHeight + timeItem.y - dateTxt.height + timeItem.height
@@ -635,16 +708,22 @@ Item {
     // Two picture slots. A new cover loads into the back slot; once it's there (or after 1.5 s) the bubble's cover
     // "burns" over to it (burn.frag) and the blurred album background cross-fades, both in step.
     readonly property string coverUrl: media.pl && media.pl.trackArtUrl ? media.pl.trackArtUrl : ""
+    property string localCoverUrl: ""
+    readonly property string effectiveCoverUrl: {
+        if (localCoverUrl !== "") return localCoverUrl;
+        if (coverUrl.startsWith("file://") || coverUrl.startsWith("/")) return coverUrl;
+        return "";
+    }
     property int coverIdx: 0
     property real coverProg: 1
     property real coverSeed: 0
     property bool coverPending: false
-    onCoverUrlChanged: {
-        if (coverUrl === "" || !ls.isPrimary) return;
+    onEffectiveCoverUrlChanged: {
+        if (effectiveCoverUrl === "" || !ls.isPrimary) return;
         var cur = coverIdx === 0 ? coverA : coverB;
-        if (cur.source.toString() === coverUrl) return;
-        if (cur.source.toString() === "") { cur.source = coverUrl; return; }     // first cover: just show it
-        (coverIdx === 0 ? coverB : coverA).source = coverUrl;
+        if (cur.source.toString() === effectiveCoverUrl) return;
+        if (cur.source.toString() === "") { cur.source = effectiveCoverUrl; return; }     // first cover: just show it
+        (coverIdx === 0 ? coverB : coverA).source = effectiveCoverUrl;
         coverPending = true;
         coverWait.restart();
         coverTry();
@@ -665,8 +744,8 @@ Item {
     // the blurred album background: its own, quicker hand-over (0.65 s ease-out)
     property real bgProg: 1
     NumberAnimation { id: bgAnim; target: ls; property: "bgProg"; from: 0; to: 1; duration: 650; easing.type: Easing.OutCubic }
-    Image { id: coverA; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
-    Image { id: coverB; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
+    Image { id: coverA; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: false; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
+    Image { id: coverB; visible: false; width: 600; height: 600; fillMode: Image.PreserveAspectCrop; asynchronous: false; mipmap: true; sourceSize: Qt.size(600, 600); onStatusChanged: ls.coverTry() }
     readonly property Item coverNew: coverIdx === 0 ? coverA : coverB
     readonly property Item coverOld: coverIdx === 0 ? coverB : coverA
 
@@ -723,7 +802,6 @@ Item {
     readonly property color ckTint: (typeof ckCfg.c === "string" && ckCfg.c !== "") ? ckCfg.c : "#FFFFFF"
     readonly property bool ckLiquid: ckGlass && ckIntensity < 0.35
     // the light on the glass follows the pointer (tilting a phone); rests at the top-left
-    HoverHandler { id: lightHover }
     property real lightX: -0.6
     property real lightY: -0.8
     Behavior on lightX { NumberAnimation { duration: 900; easing.type: Easing.OutCubic } }
@@ -782,14 +860,29 @@ Item {
         Timer { running: ls.shown; interval: 900; onTriggered: media.settled = true }
         opacity: on ? 1 : 0
         scale: !on ? 0.94 : (dragging ? 1.04 : 1)
-        // the bubble squashes too where it presses into the clock / the login
-        transform: Scale {
-            origin.x: media.width / 2; origin.y: ls.pressTop > 0 ? 0 : media.height
-            xScale: 1 + 0.05 * ls.squishK(Math.max(ls.pressTop, ls.pressBottom))
-            yScale: 1 - 0.10 * ls.squishK(Math.max(ls.pressTop, ls.pressBottom))
-            Behavior on xScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
-            Behavior on yScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
-        }
+        transform: [
+            Scale {
+                origin.x: media.width / 2; origin.y: ls.pressTop > 0 ? 0 : media.height
+                xScale: 1 + 0.05 * ls.squishK(Math.max(ls.pressTop, ls.pressBottom))
+                yScale: 1 - 0.10 * ls.squishK(Math.max(ls.pressTop, ls.pressBottom))
+                Behavior on xScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+                Behavior on yScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+            },
+            Translate {
+                x: ls.sX * 24 * ls.u
+                y: ls.sY * 16 * ls.u
+            },
+            Rotation {
+                origin.x: media.width / 2; origin.y: media.height / 2
+                axis.x: 0; axis.y: 1; axis.z: 0
+                angle: ls.sX * 5.2
+            },
+            Rotation {
+                origin.x: media.width / 2; origin.y: media.height / 2
+                axis.x: 1; axis.y: 0; axis.z: 0
+                angle: -ls.sY * 4.4
+            }
+        ]
         z: dragging ? 10 : 0
         Behavior on y { enabled: media.settled && !media.dragging && !media.settling && !ls.npAnimating; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
 
@@ -830,8 +923,8 @@ Item {
 
         // keep the latest track info while fading out, so the card doesn't go blank mid-animation
         property var pl: null
-        Connections { target: ls; function onPlayerChanged() { if (ls.player) media.pl = ls.player; } }
-        Component.onCompleted: pl = ls.player
+        Connections { target: ls; function onPlayerChanged() { if (ls.player) { media.pl = ls.player; ls.fetchCanvas(); } } }
+        Component.onCompleted: { pl = ls.player; ls.fetchCanvas(); }
 
         Glass {
             anchors.fill: parent
@@ -854,13 +947,31 @@ Item {
             // the cover leaves the glass bubble: it is drawn on the screen itself, above the bubble
             parent: ls
             z: media.z + 1
-            visible: media.visible
-            opacity: media.opacity
+            readonly property bool hideCenterArt: ls.canvasVideo !== "" && (ls.canvasSource === "applemusic" || ls.canvasOfficial)
+            visible: media.visible && opacity > 0.001
+            opacity: media.opacity * (hideCenterArt ? (1 - ls.artT) : 1)
+            Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
             readonly property real r: (11 * ls.u) + ((28 * ls.u) - (11 * ls.u)) * ls.artT
             x: (media.x + 16 * ls.u) + ((media.x) - (media.x + 16 * ls.u)) * ls.artT
             y: (media.y + 16 * ls.u) + ((media.y - media.bigArt - 24 * ls.u) - (media.y + 16 * ls.u)) * ls.artT
             width: (58 * ls.u) + ((media.bigArt) - (58 * ls.u)) * ls.artT
             height: width
+            transform: [
+                Translate {
+                    x: ls.sX * (24 + 8 * ls.artT) * ls.u
+                    y: ls.sY * (16 + 6 * ls.artT) * ls.u
+                },
+                Rotation {
+                    origin.x: art.width / 2; origin.y: art.height / 2
+                    axis.x: 0; axis.y: 1; axis.z: 0
+                    angle: ls.sX * (5.2 + 2.0 * ls.artT)
+                },
+                Rotation {
+                    origin.x: art.width / 2; origin.y: art.height / 2
+                    axis.x: 1; axis.y: 0; axis.z: 0
+                    angle: -ls.sY * (4.4 + 1.6 * ls.artT)
+                }
+            ]
             RectangularShadow {
                 anchors.fill: parent
                 radius: art.r
@@ -1104,115 +1215,122 @@ Item {
         onTriggered: ls.estPos = ls.posBase + (ls.posPlaying ? (Date.now() - ls.posAt) / 1000 : 0)
     }
 
-    // Spotify Canvas: short looping video artwork for supported tracks
+    // ═════════════ CANVAS VIDEO (Animated Album / Spotify Canvas / Apple Music Motion) ═════════════
     property string canvasVideo: ""
-    readonly property string spotifyTrackId: {
-        if (!media.pl) return "";
-        // MPRIS trackId is often a generic D-Bus object path; do not let it mask the Spotify URL.
-        // Quickshell's MprisPlayer has no trackId / url property: the raw MPRIS fields live in `metadata`
-        var md = media.pl.metadata || {};
-        var candidates = [String(md["xesam:url"] || ""), String(md["mpris:trackid"] || ""), String(media.pl.uniqueId || "")];
-        for (var i = 0; i < candidates.length; i++) {
-            var m = candidates[i].match(/(?:spotify:track:|open\.spotify\.com\/track\/|\/com\/spotify\/track\/)([a-zA-Z0-9]{22})/i);
-            if (m) return m[1];
+    property bool canvasOfficial: false
+    property string canvasSource: ""
+    readonly property string canvasScript: decodeURIComponent(Qt.resolvedUrl("canvas_fetcher.py").toString().replace(/^file:\/\//, ""))
+    function fetchCanvas() {
+        if (!ls.isPrimary || !media.pl || !(media.pl.trackTitle || "")) {
+            canvasVideo = "";
+            canvasSource = "";
+            return;
         }
-        return "";
-    }
-    onTrackKeyChanged: { lyrFetchDelay.restart(); canvasDelay.restart(); }
-    Timer {
-        id: canvasDelay; interval: 500
-        onTriggered: {
-            ls.canvasVideo = "";
-            if (media.pl && (ls.spotifyTrackId !== "" || (media.pl.identity || "").toLowerCase().indexOf("spotify") >= 0)) {
-                canvasProc.running = false;
-                var arg = ls.spotifyTrackId !== "" ? ls.spotifyTrackId : ((media.pl.trackArtist || "") + " " + (media.pl.trackTitle || ""));
-                canvasProc.command = ["python3", Quickshell.env("HOME") + "/.config/quickshell/MacLock/spotify-canvas.py", arg];
-                canvasProc.running = true;
-            }
+        var cm = (ls.st && ls.st.canvasMode) ? ls.st.canvasMode : "both";
+        if (cm === "off" || cm === "none") {
+            canvasVideo = "";
+            canvasSource = "";
+            return;
         }
+        var art = ls.coverUrl || "";
+        canvasProc.running = false;
+        canvasProc.command = ["python3", ls.canvasScript, media.pl.trackTitle || "", media.pl.trackArtist || "", media.pl.trackAlbum || "", art, "", "--mode", cm];
+        canvasProc.running = true;
     }
     Process {
         id: canvasProc
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var p = (text || "").trim();
-                if (p.length > 0) ls.canvasVideo = p;
+        stdout: SplitParser {
+            onRead: line => {
+                var s = line.trim();
+                if (s === "") return;
+                var o;
+                try {
+                    var b1 = s.indexOf("{"), b2 = s.lastIndexOf("}");
+                    o = (b1 >= 0 && b2 > b1) ? JSON.parse(s.substring(b1, b2 + 1)) : JSON.parse(s);
+                } catch (e) { return; }
+                if (!o) return;
+
+                if (o.type === "art" || o.localArt) {
+                    if (o.localArt) {
+                        ls.localCoverUrl = "file://" + o.localArt;
+                    }
+                }
+                if (o.type === "video" || o.videoPath !== undefined) {
+                    if (o.success && o.videoPath) {
+                        ls.canvasVideo = o.videoPath;
+                        ls.canvasOfficial = !!o.isOfficial;
+                        ls.canvasSource = o.source || "";
+                    } else {
+                        ls.canvasVideo = "";
+                        ls.canvasOfficial = false;
+                        ls.canvasSource = "";
+                    }
+                }
             }
         }
     }
 
-    // lyrics for the current track: NetEase, LRCLIB, and Genius, cached in ~/.cache/maclock/lyrics
+    // lyrics for the current track: LRCLIB (free, synced LRC), cached in ~/.cache/maclock/lyrics
     property var lyrLines: []              // [{ t: seconds (-1 = unsynced), text }]
     property string lyrStatus: "idle"      // idle | loading | synced | plain | none
-    readonly property string trackKey: media.pl ? (media.pl.trackArtist || "") + "\u0001" + (media.pl.trackTitle || "") : ""
+    property string lastCoverUrl: ""
+    readonly property string trackKey: (media.pl ? (media.pl.trackArtist || "") + "\u0001" + (media.pl.trackTitle || "") : "") + "\u0001" + ls.coverUrl
+    onTrackKeyChanged: {
+        var currentCover = ls.coverUrl || "";
+        var sameArt = currentCover !== "" && currentCover === ls.lastCoverUrl;
+        ls.lastCoverUrl = currentCover;
+
+        // If the next track uses the exact same album artwork, keep playing the current
+        // cached canvas video seamlessly instead of blanking out while fetching!
+        if (!sameArt) {
+            ls.canvasVideo = "";
+            ls.canvasSource = "";
+            ls.canvasOfficial = false;
+            ls.localCoverUrl = "";
+        }
+        lyrFetchDelay.restart();
+        canvasFetchDelay.restart();
+    }
     Timer { id: lyrFetchDelay; interval: 400; onTriggered: { ls.lyrTries = 0; ls.fetchLyrics(); } }
+    Timer { id: canvasFetchDelay; interval: 20; onTriggered: ls.fetchCanvas() }
     property int lyrTries: 0
     Timer { id: lyrRetry; interval: 12000; onTriggered: ls.fetchLyrics() }
+    readonly property string lyricsScript: decodeURIComponent(Qt.resolvedUrl("lyrics_fetcher.py").toString().replace(/^file:\/\//, ""))
     function fetchLyrics() {
         if (!ls.isPrimary || !media.pl || !(media.pl.trackTitle || "")) { lyrLines = []; lyrStatus = "idle"; return; }
         lyrLines = []; lyrStatus = "loading";
         var len = media.pl.lengthSupported ? Math.round(media.pl.length) : 0;
         lyrProc.running = false;
-        lyrProc.command = ["sh", "-c", ls.lyrScript, "sh", media.pl.trackArtist || "", media.pl.trackTitle || "", media.pl.trackAlbum || "", len > 0 ? String(len) : ""];
+        lyrProc.command = ["python3", ls.lyricsScript, media.pl.trackTitle || "", media.pl.trackArtist || "", media.pl.trackAlbum || "", len > 0 ? String(len) : "0"];
         lyrProc.running = true;
     }
-    readonly property string lyrScript: [
-        'a="$1"; t="$2"; al="$3"; d="${4:-0}"; c="$HOME/.cache/maclock/lyrics"; mkdir -p "$c"',
-        'k=$(printf "%s|%s" "$a" "$t" | md5sum | cut -c1-16); f="$c/$k.json"',
-        '[ -s "$f" ] && { cat "$f"; exit 0; }',
-        'tmp=$(mktemp); answered=0; r=""',
-        // titles like "Song (feat. X)" / "Song - Remastered 2011": also try the bare title
-        'bare=$(printf "%s" "$t" | sed -E "s/ *[(\\[][^)\\]]*[)\\]]//g; s/ +- +(.*[Rr]emaster.*|[Ll]ive.*|[Rr]adio [Ee]dit.*)$//")',
-        // ── 1. NetEase Cloud Music: fast, not rate-limited. Same title + same length (±4 s) or it doesn't count.
-        'ne() { code=$(curl -s --max-time 6 -A "Mozilla/5.0" -o "$tmp" -w "%{http_code}" -G "https://music.163.com/api/search/get" --data-urlencode "s=$1" -d type=1 -d limit=10); [ "$code" = 200 ] || return 1; answered=1',
-        '  id=$(jq -r --arg t "$bare" --argjson d "$d" \'def n: ascii_downcase | gsub("[^\\\\p{L}\\\\p{N}]"; ""); ($t | n) as $q | [.result.songs[]? | select((.name | n) as $nm | ($nm == $q) or ($nm | startswith($q)) or ($q | startswith($nm))) | select($d == 0 or (((.duration / 1000) - $d) | fabs) <= 4)][0].id // empty\' "$tmp")',
-        '  [ -n "$id" ] || return 1',
-        '  curl -s --max-time 6 -A "Mozilla/5.0" -o "$tmp" "https://music.163.com/api/song/lyric?id=$id&lv=1" || return 1',
-        '  l=$(jq -r ".lrc.lyric // empty" "$tmp"); case "$l" in *"[0"*|*"[1"*) ;; *) return 1;; esac',
-        '  r=$(jq -nc --arg l "$l" "{syncedLyrics: \\$l}"); }',
-        'ne "$a $bare" || ne "$bare"',
-        // ── 2. LRCLIB (rate-limited per second: wait and retry briefly), length-checked too
-        'ua="MacLock/1.0 (https://github.com/0-ss/Macshell)"; api=https://lrclib.net/api',
-        'req() { n=0; while [ $n -lt 2 ]; do code=$(curl -s --max-time 8 -A "$ua" -o "$tmp" -w "%{http_code}" -G "$@"); case "$code" in 200) answered=1; return 0;; 404) answered=1; return 1;; 429) n=$((n+1)); sleep 1.5;; *) return 1;; esac; done; return 1; }',
-        'pick=\'[.[] | select(.syncedLyrics != null or .plainLyrics != null) | select($d == 0 or (((.duration // 0) - $d) | fabs) <= 4)] | ([.[] | select(.syncedLyrics != null)][0] // .[0]) // empty\'',
-        'lsearch() { req "$api/search" "$@" && r=$(jq -c --argjson d "$d" "$pick" "$tmp"); }',
-        '[ -z "$r" ] && lsearch --data-urlencode "track_name=$t" --data-urlencode "artist_name=$a"',
-        '[ -z "$r" ] && [ "$bare" != "$t" ] && lsearch --data-urlencode "track_name=$bare" --data-urlencode "artist_name=$a"',
-        '[ -z "$r" ] && lsearch --data-urlencode "q=$a $bare"',
-        'rm -f "$tmp"',
-        // ── 3. Genius: token-free, rich lyrics source
-        'if [ -z "$r" ] || [ "$(printf "%s" "$r" | jq -r ".syncedLyrics // empty" 2>/dev/null)" = "" ]; then',
-        '  g=$(python3 "$HOME/.config/quickshell/MacLock/genius-lyrics.py" "$a" "$bare" "$c" 2>/dev/null || true)',
-        '  if [ -n "$g" ] && [ "$g" != "{}" ]; then',
-        '    gp=$(printf "%s" "$g" | jq -r ".plain // empty" 2>/dev/null)',
-        '    if [ -n "$gp" ]; then r=$(jq -nc --arg p "$gp" "{plainLyrics: \\$p}"); answered=1; fi',
-        '  fi',
-        'fi',
-        'if [ -n "$r" ]; then printf "%s" "$r" | jq -c "{synced: .syncedLyrics, plain: .plainLyrics, instrumental: .instrumental}" | tee "$f"',
-        // a source really answered and nobody has it: remember; otherwise (offline / still limited) let the UI retry
-        'elif [ "$answered" = 1 ]; then echo "{}" | tee "$f"',
-        'else echo "{\\"retry\\":true}"; fi'
-    ].join("\n")
     Process {
         id: lyrProc
         stdout: StdioCollector {
             onStreamFinished: {
                 var o = {};
-                try { o = JSON.parse(text || "{}"); } catch (e) { o = {}; }
+                try {
+                    var s = String(text || "{}").trim();
+                    var b1 = s.indexOf("{"), b2 = s.lastIndexOf("}");
+                    if (b1 >= 0 && b2 > b1) o = JSON.parse(s.substring(b1, b2 + 1));
+                    else o = JSON.parse(s);
+                } catch (e) { o = {}; }
                 var out = [], i, m;
-                if (o.synced) {
-                    var ls2 = o.synced.split("\n");
+                var syncedText = o.synced || o.syncedLyrics;
+                var plainText = o.plain || o.plainLyrics;
+                if (syncedText) {
+                    var ls2 = syncedText.split("\n");
                     for (i = 0; i < ls2.length; i++) {
                         var line = ls2[i], tags = [], re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
                         while ((m = re.exec(line)) !== null) tags.push(parseInt(m[1]) * 60 + parseFloat(m[2]));
-                        var txt = line.replace(/\[[^\]]*\]/g, "").trim();
+                        var txt = line.replace(/\[[^\]]*\]/g, "").replace(/<[^>]*>/g, "").trim();
                         if (/^(制作人|作词|作曲|编曲|混音|母带|制作|和声|吉他|贝斯|鼓|录音|监制|出品|发行|OP|SP|Producer|Lyricist|Composer|Lyrics|Composed|Written)\s*[:：]/i.test(txt)) continue;
                         for (var j = 0; j < tags.length; j++) out.push({ t: tags[j], text: txt });
                     }
                     out.sort(function (a, b) { return a.t - b.t; });
                     ls.lyrLines = out; ls.lyrStatus = out.length > 0 ? "synced" : "none";
-                } else if (o.plain) {
-                    var pl = o.plain.split("\n");
+                } else if (plainText) {
+                    var pl = plainText.split("\n");
                     for (i = 0; i < pl.length; i++) out.push({ t: -1, text: pl[i].trim() });
                     ls.lyrLines = out; ls.lyrStatus = "plain";
                 } else if (o.retry) {
@@ -1258,6 +1376,22 @@ Item {
         opacity: ls.clamp01(ls.lyrT) * media.opacity
         scale: 0.94 + 0.06 * ls.lyrT
         transformOrigin: ls.sideMode ? Item.Left : (ls.lyricsBelow ? Item.Top : Item.Bottom)
+        transform: [
+            Translate {
+                x: ls.sX * 20 * ls.u
+                y: ls.sY * 14 * ls.u
+            },
+            Rotation {
+                origin.x: lyr.width / 2; origin.y: lyr.height / 2
+                axis.x: 0; axis.y: 1; axis.z: 0
+                angle: ls.sX * 4.0
+            },
+            Rotation {
+                origin.x: lyr.width / 2; origin.y: lyr.height / 2
+                axis.x: 1; axis.y: 0; axis.z: 0
+                angle: -ls.sY * 3.4
+            }
+        ]
 
         // manual scroll (wheel); synced lyrics snap back to the current line a few seconds later
         property real manual: 0
@@ -1296,33 +1430,83 @@ Item {
                         id: ln
                         required property var modelData
                         required property int index
-                        readonly property int rel: ls.lyrCur < 0 ? 0 : index - ls.lyrCur
                         readonly property bool cur: ls.lyrStatus === "synced" && index === ls.lyrCur
+                        readonly property int rel: ls.lyrCur < 0 ? 0 : index - ls.lyrCur
+                        readonly property bool hovered: hov.hovered
                         readonly property bool gap: (modelData.text || "") === ""
+                        readonly property var words: !gap ? modelData.text.trim().split(/\s+/) : []
+                        readonly property real lineStart: modelData.t
+                        readonly property real lineEnd: (index + 1 < ls.lyrLines.length && ls.lyrLines[index + 1].t > lineStart)
+                                                        ? ls.lyrLines[index + 1].t
+                                                        : (lineStart + Math.max(2.8, words.length * 0.45))
+                        readonly property real lineDur: Math.max(0.6, lineEnd - lineStart)
+
                         width: lyrCol.width
-                        height: gap ? 34 * ls.u : lt.implicitHeight
+                        height: gap ? 34 * ls.u : (flowWrap.implicitHeight + 12 * ls.u)
                         // Apple Music's wave: every line follows the scroll on its own spring, lines further down a little later
                         transform: Translate {
                             id: lnTr
                             y: -lyr.target
                             Behavior on y { NumberAnimation { duration: 500 + Math.max(0, Math.min(8, ln.rel)) * 20; easing.type: Easing.OutQuint } }
                         }
-                        opacity: ls.lyrStatus !== "synced" ? 0.9 : (cur ? 1 : (Math.abs(rel) === 1 ? 0.42 : 0.26))
+                        opacity: ls.lyrStatus !== "synced" ? 0.9 : (ln.cur ? 1 : (hovered ? 0.85 : (Math.abs(rel) === 1 ? 0.42 : 0.22)))
                         Behavior on opacity { NumberAnimation { duration: 380 } }
-                        Text {
-                            id: lt
+
+                        Item {
+                            id: lineWrap
                             visible: !ln.gap
                             width: parent.width
-                            text: ln.modelData.text
-                            wrapMode: Text.WordWrap
-                            color: "white"
-                            font.family: ls.fam; font.pixelSize: 31 * ls.u; font.weight: Font.Bold
-                            lineHeight: 1.08
+                            height: flowWrap.implicitHeight
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: ln.cur ? 8 * ls.u : 0
+                            scale: ln.cur || ls.lyrStatus !== "synced" ? 1.0 : (ln.hovered ? 0.98 : 0.94)
                             transformOrigin: Item.Left
-                            scale: ln.cur || ls.lyrStatus !== "synced" ? 1 : 0.965
+                            Behavior on x { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
                             Behavior on scale { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
+
+                            Flow {
+                                id: flowWrap
+                                width: parent.width
+                                spacing: 8 * ls.u
+
+                                Repeater {
+                                    model: ln.words
+                                    delegate: Text {
+                                        id: wTxt
+                                        required property var modelData
+                                        required property int index
+
+                                        readonly property real wFrac: ln.words.length > 0 ? (index / ln.words.length) : 0
+                                        readonly property real wStart: ln.lineStart + wFrac * ln.lineDur
+                                        readonly property real wDur: ln.words.length > 0 ? (ln.lineDur / ln.words.length) : 0.4
+                                        readonly property real rawProg: ln.cur ? ((ls.estPos - wStart) / Math.max(0.18, wDur)) : (ln.index < ls.lyrCur ? 1.0 : 0.0)
+                                        readonly property real prog: Math.max(0.0, Math.min(1.0, rawProg))
+                                        readonly property bool activeNow: ln.cur && prog > 0.05 && prog < 0.96
+
+                                        text: modelData
+                                        font.family: ls.fam
+                                        font.pixelSize: (ln.cur ? 33 : 30) * ls.u
+                                        font.weight: ln.cur ? (prog > 0.1 ? Font.Bold : Font.DemiBold) : Font.DemiBold
+
+                                        color: (ls.lyrStatus !== "synced" || !ln.cur) ? "white" : (prog > 0.05 ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.42))
+                                        opacity: {
+                                            if (ls.lyrStatus !== "synced") return 0.9;
+                                            if (!ln.cur) return ln.hovered ? 0.90 : 1.0;
+                                            return 0.42 + 0.58 * prog;
+                                        }
+
+                                        scale: activeNow ? 1.06 : 1.0
+                                        transformOrigin: Item.Left
+                                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                    }
+                                }
+                            }
+
                             // lines away from the current one go soft, like Apple Music (only near lines get a blur layer)
-                            layer.enabled: ls.lyrStatus === "synced" && !ln.cur && Math.abs(ln.rel) <= 6
+                            layer.enabled: ls.lyrStatus === "synced" && !ln.cur && !ln.hovered && Math.abs(ln.rel) <= 6 && height > 0
+                            layer.sourceRect: Qt.rect(-12, -8, width + 24, height + 16)
                             layer.effect: MultiEffect { blurEnabled: true; blurMax: 16; blur: Math.min(0.55, 0.14 * Math.abs(ln.rel)) }
                         }
                         // instrumental break: three breathing dots
@@ -1358,7 +1542,7 @@ Item {
                                 lyr.manual = 0; ls.st.poke();
                             }
                         }
-                        HoverHandler { enabled: ln.inBand && ls.lyrStatus === "synced"; cursorShape: Qt.PointingHandCursor }
+                        HoverHandler { id: hov; enabled: ln.inBand && ls.lyrStatus === "synced"; cursorShape: Qt.PointingHandCursor }
                     }
                 }
             }
@@ -1384,12 +1568,26 @@ Item {
                 y: ls.pressBottom * 0.45
                 Behavior on y { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
             },
+            Translate {
+                x: ls.sX * 15 * ls.u
+                y: ls.sY * 10 * ls.u
+            },
             Scale {
                 origin.x: login.width / 2; origin.y: login.height
                 xScale: 1 + 0.06 * ls.squishK(ls.pressBottom)
                 yScale: 1 - 0.14 * ls.squishK(ls.pressBottom)
                 Behavior on xScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
                 Behavior on yScale { enabled: !media.dragging; NumberAnimation { duration: 650; easing.type: Easing.OutQuint } }
+            },
+            Rotation {
+                origin.x: login.width / 2; origin.y: login.height / 2
+                axis.x: 0; axis.y: 1; axis.z: 0
+                angle: ls.sX * 2.8
+            },
+            Rotation {
+                origin.x: login.width / 2; origin.y: login.height / 2
+                axis.x: 1; axis.y: 0; axis.z: 0
+                angle: -ls.sY * 2.2
             }
         ]
         anchors.horizontalCenter: parent.horizontalCenter
@@ -1690,6 +1888,118 @@ Item {
             ls.st.message = "";
         }
         event.accepted = true;
+    }
+
+    // ═════════════ SPATIAL 3D TOGGLE BUTTON (bottom right) ═════════════
+    Item {
+        id: spatialBtn
+        visible: ls.isPrimary
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 36 * ls.u
+        anchors.bottomMargin: 32 * ls.u
+        width: 44 * ls.u
+        height: 44 * ls.u
+        z: 50
+
+        opacity: ls.shown && !ls.leaving ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutQuint } }
+
+        scale: spatialMa.pressed ? 0.90 : (spatialHover.hovered ? 1.08 : 1.0)
+        Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+
+        // Liquid Glass circular container
+        Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            color: spatialMa.pressed ? Qt.rgba(1, 1, 1, 0.38)
+                 : (spatialHover.hovered ? Qt.rgba(1, 1, 1, ls.spatial3D ? 0.30 : 0.20)
+                 : Qt.rgba(1, 1, 1, ls.spatial3D ? 0.20 : 0.10))
+            border.color: ls.spatial3D
+                ? (spatialHover.hovered ? Qt.rgba(1, 1, 1, 0.70) : Qt.rgba(1, 1, 1, 0.45))
+                : (spatialHover.hovered ? Qt.rgba(1, 1, 1, 0.32) : Qt.rgba(1, 1, 1, 0.18))
+            border.width: 1.2 * ls.u
+            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on border.color { ColorAnimation { duration: 200 } }
+
+            // Drop shadow
+            RectangularShadow {
+                anchors.fill: parent
+                radius: parent.radius
+                blur: 16 * ls.u
+                spread: 0
+                offset.y: 4 * ls.u
+                color: Qt.rgba(0, 0, 0, 0.35)
+                opacity: spatialHover.hovered ? 0.9 : 0.6
+                Behavior on opacity { NumberAnimation { duration: 200 } }
+            }
+        }
+
+        // Active cyan-blue glow ring when Spatial 3D is ON
+        Rectangle {
+            anchors.fill: parent
+            radius: width / 2
+            color: "transparent"
+            border.color: Qt.rgba(0.42, 0.82, 1.0, 0.75)
+            border.width: 1.5 * ls.u
+            opacity: ls.spatial3D ? 1 : 0
+            scale: ls.spatial3D ? 1 : 0.85
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+            Behavior on scale { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
+        }
+
+        // Layers icon (isometric 3D stack)
+        Glyph {
+            anchors.centerIn: parent
+            width: 22 * ls.u
+            height: 22 * ls.u
+            kind: "layers"
+            color: ls.spatial3D ? "#ffffff" : Qt.rgba(1, 1, 1, 0.45)
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
+
+        // Floating tooltip badge to the left of the button
+        Rectangle {
+            id: spatialTip
+            anchors.right: parent.left
+            anchors.rightMargin: 12 * ls.u
+            anchors.verticalCenter: parent.verticalCenter
+            height: 28 * ls.u
+            width: tipTxt.implicitWidth + 20 * ls.u
+            radius: height / 2
+            color: Qt.rgba(0.08, 0.08, 0.12, 0.85)
+            border.color: Qt.rgba(1, 1, 1, 0.18)
+            border.width: 1 * ls.u
+            opacity: spatialHover.hovered ? 1 : 0
+            scale: spatialHover.hovered ? 1 : 0.85
+            transformOrigin: Item.Right
+            Behavior on opacity { NumberAnimation { duration: 180 } }
+            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+
+            Text {
+                id: tipTxt
+                anchors.centerIn: parent
+                text: ls.spatial3D ? "Spatial 3D • On" : "Spatial 3D • Off"
+                color: "white"
+                font.family: ls.fam
+                font.pixelSize: 11 * ls.u
+                font.weight: Font.Medium
+            }
+        }
+
+        HoverHandler { id: spatialHover }
+
+        MouseArea {
+            id: spatialMa
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                ls.st.poke();
+                if (typeof ls.st.setSpatial3D === "function") {
+                    ls.st.setSpatial3D(!ls.spatial3D);
+                }
+            }
+        }
     }
 
     MouseArea {
