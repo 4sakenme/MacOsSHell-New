@@ -302,7 +302,7 @@ Scope {
                 id: hideTimer
                 interval: 500
                 onTriggered: {
-                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !edgeHover.hovered && !win.draggingAddr) {
+                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !win.draggingAddr) {
                         win.isRevealed = false;
                     }
                 }
@@ -319,27 +319,12 @@ Scope {
                 item: swapOverlay.running ? null : inputArea
             }
 
-            // ── Left edge trigger strip (26px wide) ──
+            // ── Unified hover area across the stage panel (auto-clipped to 26px by Wayland mask when hidden) ──
             Item {
-                id: triggerStrip
-                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 26
-
-                HoverHandler {
-                    id: edgeHover
-                    onHoveredChanged: {
-                        if (hovered) {
-                            hideTimer.stop();
-                            win.isRevealed = true;
-                        }
-                    }
-                }
-            }
-
-            // ── Global hover area across the stage panel to avoid jitter ──
-            Item {
+                id: panelHoverArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
                 width: 360
+
                 HoverHandler {
                     id: panelHover
                     onHoveredChanged: {
@@ -480,12 +465,13 @@ Scope {
                                             readonly property var safeTl: {
                                                 if (!win.stageVisible) return null;
                                                 var a = deckLayer.modelData ? deckLayer.modelData.address : "";
-                                                if (root.hub && a && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
-                                                if (root.hub && typeof root.hub.tlFor === "function" && a) {
-                                                    var res = root.hub.tlFor(a);
-                                                    if (res) return res;
+                                                if (!a) return null;
+                                                if (root.hub && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
+                                                if (root.hub && typeof root.hub.tlFor === "function") {
+                                                    var t = root.hub.tlTick;
+                                                    return root.hub.tlFor(a);
                                                 }
-                                                return (deckLayer.modelData && deckLayer.modelData.tl) ? deckLayer.modelData.tl : null;
+                                                return null;
                                             }
 
                                             // Wayland live capture
