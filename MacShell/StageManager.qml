@@ -2,7 +2,8 @@
 //
 // Shows a perspective-angled vertical stack of background windows along the left screen edge.
 // Auto-reveals on left-edge mouse hover or when free desktop space allows.
-// Clicking a card brings that window onto the main stage and swaps the current active window out.
+// Features genuine 3D perspective foreshortening, squircle app badges, title labels,
+// and a full-stage Swap & Zoom transition when switching windows.
 
 import QtQuick
 import QtQuick.Effects
@@ -23,6 +24,7 @@ Scope {
     // List of inactive/background windows on the system
     property var backgroundWindows: []
     property string activeAddress: ""
+    property var activeIpcObject: null
 
     function updateWindows() {
         if (!root.enabled) {
@@ -34,18 +36,24 @@ Scope {
 
         var atl = ToplevelManager.activeToplevel;
         var hts = Hyprland.toplevels.values;
+        var actAddr = "";
         var activeLeft = 9999;
+        var actObj = null;
 
         if (atl) {
             for (var i = 0; i < hts.length; i++) {
                 if (hts[i].wayland === atl) {
+                    actAddr = String(hts[i].address || "").toLowerCase();
                     var obj = hts[i].lastIpcObject || {};
                     if (obj.at && obj.at[0] !== undefined) activeLeft = obj.at[0];
+                    actObj = obj;
                     break;
                 }
             }
         }
+        root.activeAddress = actAddr;
         root.activeWindowLeft = activeLeft;
+        root.activeIpcObject = actObj;
 
         var vals = ToplevelManager.toplevels.values;
         var list = [];
@@ -91,7 +99,7 @@ Scope {
             });
         }
 
-        root.backgroundWindows = list.slice(0, 6);
+        root.backgroundWindows = list.slice(0, 5);
     }
 
     Timer {
@@ -130,6 +138,9 @@ Scope {
         }
         lua += "hl.dispatch(hl.dsp.window.bring_to_top())";
         Quickshell.execDetached(["hyprctl", "eval", lua]);
+        if (a !== "") {
+            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + a]);
+        }
         if (tl && typeof tl.activate === "function") {
             try { tl.activate(); } catch (e) {}
         }
@@ -147,30 +158,29 @@ Scope {
             required property var modelData
             screen: modelData
 
-            anchors { top: true; bottom: true; left: true }
-            width: 340
+            anchors { top: true; bottom: true; left: true; right: true }
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "macshell-stagemanager"
             WlrLayershell.layer: WlrLayer.Top
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-            visible: root.enabled && root.backgroundWindows.length > 0
+            visible: root.enabled && (root.backgroundWindows.length > 0 || swapOverlay.running)
 
             property bool isRevealed: false
-
             readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 280)
 
             Timer {
                 id: hideTimer
-                interval: 320
+                interval: 340
                 onTriggered: win.isRevealed = false
             }
 
-            // Click-through mask: when hidden only the 18px edge strip intercepts hover;
-            // when revealed the cards container handles clicks and everything else is 100% click-through.
+            // Click-through mask:
+            // When swap is running: 100% click-through.
+            // When idle: only stageContainer or the 18px left edge trigger intercepts events.
             mask: Region {
-                item: win.stageVisible ? stageContainer : triggerStrip
+                item: swapOverlay.running ? null : (win.stageVisible ? stageContainer : triggerStrip)
             }
 
             // ── Left edge trigger strip (18px wide) ──
@@ -191,23 +201,32 @@ Scope {
             }
 
             // ── Global hover area across the stage panel to avoid jitter ──
-            HoverHandler {
-                id: panelHover
-                onHoveredChanged: {
-                    if (hovered) {
-                        hideTimer.stop();
-                        win.isRevealed = true;
-                    } else {
-                        hideTimer.restart();
+            Item {
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: 280
+                HoverHandler {
+                    id: panelHover
+                    onHoveredChanged: {
+                        if (hovered) {
+                            hideTimer.stop();
+                            win.isRevealed = true;
+                        } else {
+                            hideTimer.restart();
+                        }
                     }
                 }
+            }
+
+            // ── Helper math function for swap interpolation ──
+            function lerp(a, b, t) {
+                return a + (b - a) * t;
             }
 
             // ── 3D Stage Cards Container ──
             Item {
                 id: stageContainer
-                width: 290
-                height: cardsColumn.implicitHeight + 50
+                width: 270
+                height: cardsColumn.implicitHeight + 40
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
@@ -218,7 +237,7 @@ Scope {
                 Column {
                     id: cardsColumn
                     anchors.centerIn: parent
-                    spacing: 20
+                    spacing: 24
 
                     Repeater {
                         model: root.backgroundWindows
@@ -228,103 +247,171 @@ Scope {
                             required property var modelData
                             required property int index
 
-                            width: 240
-                            height: 150
+                            width: 220
+                            height: 172
                             z: cardHover.hovered ? 50 : (20 - index)
 
-                            property bool isFlying: false
                             property real hoverProg: cardHover.hovered ? 1.0 : 0.0
                             Behavior on hoverProg { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                            // ── 3D Perspective Tilt & Foreshortening ──
-                            property real pK: cardHover.hovered ? 0.0003 : 0.0016
-                            Behavior on pK { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                            transform: [
-                                Matrix4x4 {
-                                    matrix: Qt.matrix4x4(
-                                        1, 0, 0, 0,
-                                        0, 1, 0, 0,
-                                        0, 0, 1, 0,
-                                        cardWrapper.pK, 0, 0, 1
-                                    )
-                                },
-                                Rotation {
-                                    origin.x: 0
-                                    origin.y: cardWrapper.height / 2
-                                    axis { x: 0; y: 1; z: 0 }
-                                    angle: cardHover.hovered ? -6 : -28
-                                    Behavior on angle { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                },
-                                Translate {
-                                    x: (cardHover.hovered ? 20 : 0) + (cardWrapper.isFlying ? 180 : 0)
-                                    Behavior on x { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                                },
-                                Scale {
-                                    origin.x: 0
-                                    origin.y: cardWrapper.height / 2
-                                    xScale: (cardHover.hovered ? 1.05 : 0.95) * (cardWrapper.isFlying ? 1.25 : 1.0)
-                                    yScale: xScale
-                                    Behavior on xScale { NumberAnimation { duration: 200 } }
-                                    Behavior on yScale { NumberAnimation { duration: 200 } }
+                            // ── Safe Wayland Handle Check ──
+                            readonly property var safeTl: {
+                                if (!win.stageVisible) return null;
+                                var a = cardWrapper.modelData ? cardWrapper.modelData.address : "";
+                                if (root.hub && a && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
+                                if (root.hub && typeof root.hub.tlFor === "function" && a) {
+                                    return root.hub.tlFor(a);
                                 }
-                            ]
-
-                            // ── 3D Deep Shadow ──
-                            Rectangle {
-                                anchors.fill: cardFrame
-                                radius: cardFrame.radius
-                                color: "#90000000"
-                                transform: Translate { x: 8; y: 12 }
-                                layer.enabled: true
-                                layer.effect: MultiEffect {
-                                    blurEnabled: true
-                                    blurMax: 32
-                                    blur: 0.6
-                                }
+                                return cardWrapper.modelData ? cardWrapper.modelData.tl : null;
                             }
 
-                            // ── Window Thumbnail Card ──
-                            Rectangle {
-                                id: cardFrame
-                                anchors.fill: parent
-                                radius: 12
-                                color: Qt.rgba(0.12, 0.12, 0.15, 0.85)
-                                clip: true
-                                border.width: 1
-                                border.color: cardHover.hovered ? "#60ffffff" : "#30ffffff"
-                                Behavior on border.color { ColorAnimation { duration: 200 } }
+                            // ── 3D Card Thumbnail with Perspective Tilt ──
+                            Item {
+                                id: cardItem
+                                width: 220
+                                height: 138
 
-                                // Wayland screencopy capture of the background window
-                                Loader {
-                                    id: scLoader
-                                    anchors.fill: parent
-                                    active: cardWrapper.modelData && cardWrapper.modelData.tl !== null
-                                    sourceComponent: ScreencopyView {
-                                        anchors.fill: parent
-                                        captureSource: cardWrapper.modelData ? cardWrapper.modelData.tl : null
-                                        live: false
-                                        visible: hasContent
+                                property real pK: cardHover.hovered ? 0.0003 : 0.0016
+                                Behavior on pK { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+
+                                transform: [
+                                    Matrix4x4 {
+                                        matrix: Qt.matrix4x4(
+                                            1, 0, 0, 0,
+                                            0, 1, 0, 0,
+                                            0, 0, 1, 0,
+                                            cardItem.pK, 0, 0, 1
+                                        )
+                                    },
+                                    Rotation {
+                                        origin.x: 0
+                                        origin.y: cardItem.height / 2
+                                        axis { x: 0; y: 1; z: 0 }
+                                        angle: cardHover.hovered ? -6 : -26
+                                        Behavior on angle { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                                    },
+                                    Translate {
+                                        x: cardHover.hovered ? 18 : 0
+                                        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                    },
+                                    Scale {
+                                        origin.x: 0
+                                        origin.y: cardItem.height / 2
+                                        xScale: cardHover.hovered ? 1.05 : 0.96
+                                        yScale: xScale
+                                        Behavior on xScale { NumberAnimation { duration: 200 } }
+                                        Behavior on yScale { NumberAnimation { duration: 200 } }
+                                    }
+                                ]
+
+                                // ── 3D Deep Shadow ──
+                                Rectangle {
+                                    anchors.fill: cardFrame
+                                    radius: cardFrame.radius
+                                    color: "#90000000"
+                                    transform: Translate { x: 8; y: 12 }
+                                    layer.enabled: true
+                                    layer.effect: MultiEffect {
+                                        blurEnabled: true
+                                        blurMax: 32
+                                        blur: 0.6
                                     }
                                 }
 
-                                // Fallback frosted card with app icon if screencopy is not ready yet
-                                Item {
-                                    visible: !scLoader.item || !scLoader.item.hasContent
+                                // ── Window Thumbnail Card ──
+                                Rectangle {
+                                    id: cardFrame
                                     anchors.fill: parent
+                                    radius: 12
+                                    color: Qt.rgba(0.12, 0.12, 0.15, 0.85)
+                                    clip: true
+                                    border.width: 1
+                                    border.color: cardHover.hovered ? "#60ffffff" : "#30ffffff"
+                                    Behavior on border.color { ColorAnimation { duration: 180 } }
 
+                                    // Wayland screencopy capture of the background window
+                                    Loader {
+                                        id: scLoader
+                                        anchors.fill: parent
+                                        active: win.stageVisible && cardWrapper.safeTl !== null
+                                        sourceComponent: ScreencopyView {
+                                            anchors.fill: parent
+                                            captureSource: win.stageVisible ? cardWrapper.safeTl : null
+                                            live: false
+                                            visible: hasContent
+                                        }
+                                    }
+
+                                    // Fallback frosted card with app icon if screencopy is not ready yet
+                                    Item {
+                                        visible: !scLoader.item || !scLoader.item.hasContent
+                                        anchors.fill: parent
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            gradient: Gradient {
+                                                GradientStop { position: 0.0; color: Qt.rgba(0.24, 0.24, 0.28, 0.88) }
+                                                GradientStop { position: 1.0; color: Qt.rgba(0.13, 0.13, 0.16, 0.92) }
+                                            }
+                                        }
+
+                                        Image {
+                                            anchors.centerIn: parent
+                                            width: 44; height: 44
+                                            sourceSize: Qt.size(64, 64)
+                                            source: cardWrapper.modelData.iconPath
+                                            smooth: true
+                                            visible: cardWrapper.modelData.iconPath !== ""
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: cardWrapper.modelData.name
+                                            color: "white"
+                                            font.family: "Open Runde"
+                                            font.pixelSize: 14
+                                            font.weight: Font.DemiBold
+                                            visible: cardWrapper.modelData.iconPath === ""
+                                        }
+                                    }
+
+                                    // Soft top sheen
                                     Rectangle {
                                         anchors.fill: parent
+                                        radius: parent.radius
                                         gradient: Gradient {
-                                            GradientStop { position: 0.0; color: Qt.rgba(0.24, 0.24, 0.28, 0.88) }
-                                            GradientStop { position: 1.0; color: Qt.rgba(0.13, 0.13, 0.16, 0.92) }
+                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.14) }
+                                            GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0.0) }
                                         }
+                                    }
+                                }
+
+                                // ── Squircle App Icon Badge (34x34px, radius: 8, overlapping bottom-left) ──
+                                Rectangle {
+                                    id: appBadge
+                                    width: 34; height: 34; radius: 8
+                                    anchors.left: cardFrame.left
+                                    anchors.bottom: cardFrame.bottom
+                                    anchors.leftMargin: -8
+                                    anchors.bottomMargin: -8
+                                    z: 30
+                                    color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.35)
+                                    scale: cardHover.hovered ? 1.12 : 1.0
+                                    Behavior on scale { NumberAnimation { duration: 200 } }
+                                    layer.enabled: true
+                                    layer.effect: MultiEffect {
+                                        shadowEnabled: true
+                                        shadowColor: "#90000000"
+                                        shadowBlur: 0.4
+                                        shadowVerticalOffset: 2
                                     }
 
                                     Image {
                                         anchors.centerIn: parent
-                                        width: 48; height: 48
-                                        sourceSize: Qt.size(64, 64)
+                                        width: 22; height: 22
+                                        sourceSize: Qt.size(44, 44)
                                         source: cardWrapper.modelData.iconPath
                                         smooth: true
                                         visible: cardWrapper.modelData.iconPath !== ""
@@ -332,102 +419,35 @@ Scope {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: cardWrapper.modelData.name
+                                        visible: cardWrapper.modelData.iconPath === ""
+                                        text: cardWrapper.modelData.name.charAt(0).toUpperCase()
                                         color: "white"
                                         font.family: "Open Runde"
-                                        font.pixelSize: 15
-                                        font.weight: Font.DemiBold
-                                        visible: cardWrapper.modelData.iconPath === ""
-                                    }
-                                }
-
-                                // Soft top sheen
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: parent.radius
-                                    gradient: Gradient {
-                                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.12) }
-                                        GradientStop { position: 0.6; color: Qt.rgba(1, 1, 1, 0.0) }
+                                        font.pixelSize: 14
+                                        font.weight: Font.Bold
                                     }
                                 }
                             }
 
-                            // ── App Icon Badge (32x32px, overlapping bottom-left corner) ──
-                            Rectangle {
-                                id: appBadge
-                                width: 32; height: 32; radius: 16
-                                anchors.bottom: cardFrame.bottom
-                                anchors.left: cardFrame.left
-                                anchors.bottomMargin: -6
-                                anchors.leftMargin: -6
-                                z: 30
-                                color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
-                                border.width: 1
-                                border.color: Qt.rgba(1, 1, 1, 0.35)
-                                scale: cardHover.hovered ? 1.12 : 1.0
-                                Behavior on scale { NumberAnimation { duration: 200 } }
-                                layer.enabled: true
-                                layer.effect: MultiEffect {
-                                    shadowEnabled: true
-                                    shadowColor: "#90000000"
-                                    shadowBlur: 0.4
-                                    shadowVerticalOffset: 2
-                                }
-
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: 20; height: 20
-                                    sourceSize: Qt.size(40, 40)
-                                    source: cardWrapper.modelData.iconPath
-                                    smooth: true
-                                    visible: cardWrapper.modelData.iconPath !== ""
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    visible: cardWrapper.modelData.iconPath === ""
-                                    text: cardWrapper.modelData.name.charAt(0).toUpperCase()
-                                    color: "white"
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 13
-                                    font.weight: Font.Bold
-                                }
+                            // ── Text Label Underneath (macOS Stage Manager style) ──
+                            Text {
+                                anchors.top: cardItem.bottom
+                                anchors.topMargin: 8
+                                anchors.horizontalCenter: cardItem.horizontalCenter
+                                width: cardItem.width - 16
+                                horizontalAlignment: Text.AlignHCenter
+                                text: cardWrapper.modelData.title || cardWrapper.modelData.name
+                                color: Qt.rgba(1, 1, 1, 0.95)
+                                font.family: "Open Runde"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                                style: Text.Outline
+                                styleColor: Qt.rgba(0, 0, 0, 0.75)
                             }
 
-                            // ── Floating Title Tooltip ──
-                            Item {
-                                id: titleTooltip
-                                z: 40
-                                opacity: cardHover.hovered ? 1.0 : 0.0
-                                Behavior on opacity { NumberAnimation { duration: 180 } }
-                                x: cardWrapper.width + 16
-                                anchors.verticalCenter: cardWrapper.verticalCenter
-                                width: Math.min(220, tipText.implicitWidth + 24)
-                                height: 30
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 15
-                                    color: Qt.rgba(0.10, 0.10, 0.13, 0.90)
-                                    border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.25)
-                                }
-
-                                Text {
-                                    id: tipText
-                                    anchors.centerIn: parent
-                                    width: parent.width - 20
-                                    text: cardWrapper.modelData.title || cardWrapper.modelData.name
-                                    color: "white"
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                    maximumLineCount: 1
-                                }
-                            }
-
-                            // ── Hover & Click interaction ──
+                            // ── Hover & Tap interaction ──
                             HoverHandler {
                                 id: cardHover
                                 onHoveredChanged: {
@@ -443,20 +463,194 @@ Scope {
 
                             TapHandler {
                                 onTapped: {
-                                    cardWrapper.isFlying = true;
-                                    flyTimer.restart();
-                                }
-                            }
-
-                            Timer {
-                                id: flyTimer
-                                interval: 140
-                                onTriggered: {
-                                    root.activateWindow(cardWrapper.modelData.address, cardWrapper.modelData.workspace, cardWrapper.modelData.tl);
-                                    cardWrapper.isFlying = false;
+                                    swapOverlay.startSwap(cardWrapper.modelData, cardItem);
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // ════════════════════════════════════════════════════════════════════
+            // SWAP & ZOOM-OUT TRANSITION OVERLAY (macOS Stage Manager Window Swap)
+            // ════════════════════════════════════════════════════════════════════
+            Item {
+                id: swapOverlay
+                anchors.fill: parent
+                visible: running
+                property bool running: false
+                property real progress: 0.0
+
+                property var incoming: null
+                property var outgoing: null
+
+                NumberAnimation {
+                    id: swapAnim
+                    target: swapOverlay
+                    property: "progress"
+                    from: 0.0
+                    to: 1.0
+                    duration: 280
+                    easing.type: Easing.OutCubic
+                    onFinished: {
+                        swapOverlay.running = false;
+                        var inc = swapOverlay.incoming;
+                        if (inc) {
+                            root.activateWindow(inc.address, inc.workspace, inc.tl);
+                        }
+                        swapOverlay.incoming = null;
+                        swapOverlay.outgoing = null;
+                    }
+                }
+
+                function startSwap(modelData, cardItem) {
+                    var atl = ToplevelManager.activeToplevel;
+                    var actAddr = root.activeAddress;
+                    var actObj = root.activeIpcObject || {};
+
+                    var actRect = {
+                        x: (actObj.at && actObj.at[0] !== undefined) ? actObj.at[0] : 140,
+                        y: (actObj.at && actObj.at[1] !== undefined) ? actObj.at[1] : 45,
+                        width: (actObj.size && actObj.size[0] !== undefined) ? actObj.size[0] : (win.width - 280),
+                        height: (actObj.size && actObj.size[1] !== undefined) ? actObj.size[1] : (win.height - 90)
+                    };
+
+                    var actIcon = "";
+                    var actTitle = "";
+                    if (actObj.class) {
+                        var de = DesktopEntries.heuristicLookup(actObj.class);
+                        if (de && de.icon) actIcon = Quickshell.iconPath(de.icon, true) || "";
+                        actTitle = actObj.title || actObj.class;
+                    }
+
+                    var p = cardItem.mapToItem(win, 0, 0);
+                    var cardRect = { x: p.x, y: p.y, width: cardItem.width, height: cardItem.height };
+
+                    incoming = {
+                        address: modelData.address,
+                        workspace: modelData.workspace,
+                        tl: modelData.tl,
+                        iconPath: modelData.iconPath,
+                        title: modelData.title || modelData.name,
+                        startRect: cardRect,
+                        targetRect: actRect
+                    };
+
+                    outgoing = {
+                        address: actAddr,
+                        tl: atl,
+                        iconPath: actIcon,
+                        title: actTitle,
+                        startRect: actRect,
+                        targetRect: cardRect
+                    };
+
+                    progress = 0.0;
+                    running = true;
+                    swapAnim.restart();
+                }
+
+                // ── Pha 2: Cửa sổ hiện tại (outgoing) co nhỏ, nghiêng dần về 3D và trượt lùi về cột Stage ──
+                Rectangle {
+                    id: outCard
+                    visible: swapOverlay.outgoing !== null
+                    radius: 12
+                    color: Qt.rgba(0.12, 0.12, 0.15, 0.88)
+                    border.width: 1
+                    border.color: "#30ffffff"
+                    clip: true
+                    z: 80
+
+                    property real p: swapOverlay.progress
+                    property var o: swapOverlay.outgoing || ({ startRect: {x:0,y:0,width:1,height:1}, targetRect: {x:0,y:0,width:1,height:1} })
+
+                    x: win.lerp(o.startRect.x, o.targetRect.x, p)
+                    y: win.lerp(o.startRect.y, o.targetRect.y, p)
+                    width: Math.max(1, win.lerp(o.startRect.width, o.targetRect.width, p))
+                    height: Math.max(1, win.lerp(o.startRect.height, o.targetRect.height, p))
+                    opacity: 1.0 - 0.25 * p
+
+                    transform: [
+                        Matrix4x4 {
+                            matrix: Qt.matrix4x4(
+                                1, 0, 0, 0,
+                                0, 1, 0, 0,
+                                0, 0, 1, 0,
+                                win.lerp(0.0, 0.0016, outCard.p), 0, 0, 1
+                            )
+                        },
+                        Rotation {
+                            origin.x: 0
+                            origin.y: outCard.height / 2
+                            axis { x: 0; y: 1; z: 0 }
+                            angle: win.lerp(0, -26, outCard.p)
+                        }
+                    ]
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 48; height: 48
+                        sourceSize: Qt.size(64, 64)
+                        source: outCard.o.iconPath || ""
+                        smooth: true
+                        visible: outCard.o.iconPath !== ""
+                    }
+                }
+
+                // ── Pha 1: Thẻ được chọn (incoming) xoay từ nghiêng 3D về phẳng, phóng to và bay ra giữa màn hình ──
+                Rectangle {
+                    id: inCard
+                    visible: swapOverlay.incoming !== null
+                    radius: 12
+                    color: Qt.rgba(0.12, 0.12, 0.15, 0.92)
+                    border.width: 1
+                    border.color: inCard.p < 0.8 ? "#50ffffff" : Qt.rgba(1, 1, 1, 1.0 - inCard.p)
+                    clip: true
+                    z: 100
+
+                    property real p: swapOverlay.progress
+                    property var inc: swapOverlay.incoming || ({ startRect: {x:0,y:0,width:1,height:1}, targetRect: {x:0,y:0,width:1,height:1} })
+
+                    x: win.lerp(inc.startRect.x, inc.targetRect.x, p)
+                    y: win.lerp(inc.startRect.y, inc.targetRect.y, p)
+                    width: Math.max(1, win.lerp(inc.startRect.width, inc.targetRect.width, p))
+                    height: Math.max(1, win.lerp(inc.startRect.height, inc.targetRect.height, p))
+                    opacity: 1.0
+
+                    transform: [
+                        Matrix4x4 {
+                            matrix: Qt.matrix4x4(
+                                1, 0, 0, 0,
+                                0, 1, 0, 0,
+                                0, 0, 1, 0,
+                                win.lerp(0.0016, 0.0, inCard.p), 0, 0, 1
+                            )
+                        },
+                        Rotation {
+                            origin.x: 0
+                            origin.y: inCard.height / 2
+                            axis { x: 0; y: 1; z: 0 }
+                            angle: win.lerp(-26, 0, inCard.p)
+                        }
+                    ]
+
+                    Image {
+                        anchors.centerIn: parent
+                        width: 56; height: 56
+                        sourceSize: Qt.size(64, 64)
+                        source: inCard.inc.iconPath || ""
+                        smooth: true
+                        visible: inCard.inc.iconPath !== ""
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: inCard.inc.title || ""
+                        color: "white"
+                        font.family: "Open Runde"
+                        font.pixelSize: 16
+                        font.weight: Font.DemiBold
+                        visible: inCard.inc.iconPath === ""
                     }
                 }
             }
