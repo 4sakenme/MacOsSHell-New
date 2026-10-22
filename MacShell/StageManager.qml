@@ -1,9 +1,12 @@
 // StageManager.qml — macOS Ventura / Sonoma / Sequoia style 3D Stage Manager for Hyprland
 //
-// Shows a perspective-angled vertical stack of background windows along the left screen edge.
-// Auto-reveals on left-edge mouse hover or when free desktop space allows.
-// Features genuine 3D perspective foreshortening, squircle app badges, title labels,
-// and a full-stage Swap & Zoom transition when switching windows.
+// Features:
+// 1. Group Stacking / Multi-window Clusters (1-3 windows per slot) with 3D stacked deck visual
+// 2. Hover Fan-out: Background windows in a cluster fan out when hovered for preview peeking
+// 3. Multi-icon squircle badges overlapping at bottom-left and group title labels underneath
+// 4. Genuine 3D Perspective Skew & Foreshortening via Matrix4x4 + Y-Rotation
+// 5. Drag & Drop grouping: drag windows between clusters to merge or separate them
+// 6. Full-stage Swap & Zoom transition when activating a group onto the workspace
 
 import QtQuick
 import QtQuick.Effects
@@ -21,14 +24,15 @@ Scope {
     property bool forceReveal: false          // true = force open panel (e.g. via gesture or IPC)
     property real activeWindowLeft: 9999
 
-    // List of inactive/background windows on the system
-    property var backgroundWindows: []
+    // Grouping: maps window address -> cluster ID
+    property var customGroups: ({})
+    property var clusters: []
     property string activeAddress: ""
     property var activeIpcObject: null
 
     function updateWindows() {
         if (!root.enabled) {
-            root.backgroundWindows = [];
+            root.clusters = [];
             return;
         }
 
@@ -56,7 +60,7 @@ Scope {
         root.activeIpcObject = actObj;
 
         var vals = ToplevelManager.toplevels.values;
-        var list = [];
+        var bgWindows = [];
 
         for (var j = 0; j < vals.length; j++) {
             var w = vals[j];
@@ -88,7 +92,7 @@ Scope {
             var iconPath = "";
             if (de && de.icon) iconPath = Quickshell.iconPath(de.icon, true) || "";
 
-            list.push({
+            bgWindows.push({
                 address: addr,
                 title: title,
                 appId: id,
@@ -99,7 +103,55 @@ Scope {
             });
         }
 
-        root.backgroundWindows = list.slice(0, 5);
+        // ── Group windows into Multi-Window Clusters (1 to 3 windows per cluster) ──
+        var clusterMap = {};
+        var clusterOrder = [];
+
+        for (var n = 0; n < bgWindows.length; n++) {
+            var win = bgWindows[n];
+            var gid = root.customGroups[win.address];
+            if (!gid) {
+                // Default grouping: by workspace ID or appId
+                gid = "ws_" + win.workspace;
+            }
+
+            if (!clusterMap[gid]) {
+                clusterMap[gid] = {
+                    id: gid,
+                    name: win.name,
+                    title: win.title,
+                    workspace: win.workspace,
+                    windows: []
+                };
+                clusterOrder.push(gid);
+            }
+
+            // Cap at 3 windows per cluster stack
+            if (clusterMap[gid].windows.length < 3) {
+                clusterMap[gid].windows.push(win);
+            }
+        }
+
+        var resultClusters = [];
+        for (var c = 0; c < clusterOrder.length && resultClusters.length < 5; c++) {
+            var cl = clusterMap[clusterOrder[c]];
+            if (cl && cl.windows.length > 0) {
+                // Determine display name for cluster
+                if (cl.windows.length > 1) {
+                    var names = [];
+                    for (var wIdx = 0; wIdx < cl.windows.length; wIdx++) {
+                        var nm = cl.windows[wIdx].name || cl.windows[wIdx].appId;
+                        if (names.indexOf(nm) < 0) names.push(nm);
+                    }
+                    cl.name = names.join(" & ") + " (" + cl.windows.length + ")";
+                } else {
+                    cl.name = cl.windows[0].name;
+                }
+                resultClusters.push(cl);
+            }
+        }
+
+        root.clusters = resultClusters;
     }
 
     Timer {
@@ -122,31 +174,64 @@ Scope {
 
     onEnabledChanged: {
         if (enabled) updateWindows();
-        else backgroundWindows = [];
+        else clusters = [];
     }
 
     Component.onCompleted: updateWindows()
 
-    function activateWindow(addr, winWs, tl) {
-        var a = String(addr || "").replace(/^0x/, "");
+    function activateCluster(cluster) {
+        if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
+
+        var curWs = 1;
+        if (Hyprland.focusedMonitor && Hyprland.focusedMonitor.activeWorkspace) {
+            curWs = Hyprland.focusedMonitor.activeWorkspace.id;
+        }
+
         var lua = "";
-        if (winWs && winWs > 0) {
-            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + winWs + "\" })); ";
+        if (curWs > 0) {
+            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + curWs + "\" })); ";
         }
-        if (a !== "") {
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + a + "\" })); ";
+
+        // Pull each window in cluster to active workspace
+        for (var i = cluster.windows.length - 1; i >= 0; i--) {
+            var winObj = cluster.windows[i];
+            var a = String(winObj.address || "").replace(/^0x/, "");
+            if (curWs > 0 && winObj.workspace !== curWs) {
+                lua += "hl.dispatch(hl.dsp.window.move({ workspace = " + curWs + ", follow = false, window = \"address:0x" + a + "\" })); ";
+            }
         }
-        lua += "hl.dispatch(hl.dsp.window.bring_to_top())";
+
+        // Focus front window of the cluster
+        var topAddr = String(cluster.windows[0].address || "").replace(/^0x/, "");
+        if (topAddr !== "") {
+            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + topAddr + "\" })); ";
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top())";
+            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + topAddr]);
+        }
+
         Quickshell.execDetached(["hyprctl", "eval", lua]);
-        if (a !== "") {
-            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + a]);
+        if (cluster.windows[0].tl && typeof cluster.windows[0].tl.activate === "function") {
+            try { cluster.windows[0].tl.activate(); } catch (e) {}
         }
-        if (tl && typeof tl.activate === "function") {
-            try { tl.activate(); } catch (e) {}
-        }
+
         if (root.hub && root.hub.bar && typeof root.hub.bar.playSound === "function") {
             root.hub.bar.playSound("tink", 0.4);
         }
+        root.updateWindows();
+    }
+
+    // Merge or separate window via drag-and-drop
+    function assignWindowToGroup(winAddr, targetClusterId) {
+        if (!winAddr) return;
+        var map = {};
+        for (var k in root.customGroups) map[k] = root.customGroups[k];
+        if (targetClusterId) {
+            map[winAddr] = targetClusterId;
+        } else {
+            // Detach to its own unique cluster
+            map[winAddr] = "solo_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+        }
+        root.customGroups = map;
         root.updateWindows();
     }
 
@@ -165,20 +250,23 @@ Scope {
             WlrLayershell.layer: WlrLayer.Top
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-            visible: root.enabled && (root.backgroundWindows.length > 0 || swapOverlay.running)
+            visible: root.enabled && (root.clusters.length > 0 || swapOverlay.running)
 
             property bool isRevealed: false
-            readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 280)
+            readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 320)
+
+            // Drag and drop state across clusters
+            property string draggingAddr: ""
+            property var draggingWinObj: null
+            property string hoverTargetClusterId: ""
 
             Timer {
                 id: hideTimer
-                interval: 340
+                interval: 360
                 onTriggered: win.isRevealed = false
             }
 
-            // Click-through mask:
-            // When swap is running: 100% click-through.
-            // When idle: only stageContainer or the 18px left edge trigger intercepts events.
+            // Click-through mask
             mask: Region {
                 item: swapOverlay.running ? null : (win.stageVisible ? stageContainer : triggerStrip)
             }
@@ -203,21 +291,20 @@ Scope {
             // ── Global hover area across the stage panel to avoid jitter ──
             Item {
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 280
+                width: 320
                 HoverHandler {
                     id: panelHover
                     onHoveredChanged: {
                         if (hovered) {
                             hideTimer.stop();
                             win.isRevealed = true;
-                        } else {
+                        } else if (!win.draggingAddr) {
                             hideTimer.restart();
                         }
                     }
                 }
             }
 
-            // ── Helper math function for swap interpolation ──
             function lerp(a, b, t) {
                 return a + (b - a) * t;
             }
@@ -225,53 +312,41 @@ Scope {
             // ── 3D Stage Cards Container ──
             Item {
                 id: stageContainer
-                width: 270
+                width: 300
                 height: cardsColumn.implicitHeight + 40
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
                 // Slide in/out animation
-                x: win.stageVisible ? 18 : -260
+                x: win.stageVisible ? 20 : -280
                 Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
 
                 Column {
                     id: cardsColumn
                     anchors.centerIn: parent
-                    spacing: 24
+                    spacing: 26
 
                     Repeater {
-                        model: root.backgroundWindows
+                        model: root.clusters
 
                         delegate: Item {
-                            id: cardWrapper
+                            id: clusterWrapper
                             required property var modelData
                             required property int index
 
-                            width: 220
-                            height: 172
-                            z: cardHover.hovered ? 50 : (20 - index)
+                            width: 250
+                            height: 185
+                            z: clusterHover.hovered ? 60 : (20 - index)
 
-                            property real hoverProg: cardHover.hovered ? 1.0 : 0.0
-                            Behavior on hoverProg { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            readonly property bool isTargetDrop: win.hoverTargetClusterId === clusterWrapper.modelData.id && win.draggingAddr !== ""
 
-                            // ── Safe Wayland Handle Check ──
-                            readonly property var safeTl: {
-                                if (!win.stageVisible) return null;
-                                var a = cardWrapper.modelData ? cardWrapper.modelData.address : "";
-                                if (root.hub && a && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
-                                if (root.hub && typeof root.hub.tlFor === "function" && a) {
-                                    return root.hub.tlFor(a);
-                                }
-                                return cardWrapper.modelData ? cardWrapper.modelData.tl : null;
-                            }
-
-                            // ── 3D Card Thumbnail with Perspective Tilt ──
+                            // ── 3D Cluster Stack Item ──
                             Item {
-                                id: cardItem
-                                width: 220
-                                height: 138
+                                id: stackContainer
+                                width: 248
+                                height: 154
 
-                                property real pK: cardHover.hovered ? 0.0003 : 0.0016
+                                property real pK: clusterHover.hovered ? 0.0003 : 0.0016
                                 Behavior on pK { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
                                 transform: [
@@ -280,163 +355,213 @@ Scope {
                                             1, 0, 0, 0,
                                             0, 1, 0, 0,
                                             0, 0, 1, 0,
-                                            cardItem.pK, 0, 0, 1
+                                            stackContainer.pK, 0, 0, 1
                                         )
                                     },
                                     Rotation {
                                         origin.x: 0
-                                        origin.y: cardItem.height / 2
+                                        origin.y: stackContainer.height / 2
                                         axis { x: 0; y: 1; z: 0 }
-                                        angle: cardHover.hovered ? -6 : -26
+                                        angle: clusterHover.hovered ? -5 : -26
                                         Behavior on angle { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                                     },
                                     Translate {
-                                        x: cardHover.hovered ? 18 : 0
+                                        x: (clusterHover.hovered ? 18 : 0) + (clusterWrapper.isTargetDrop ? 10 : 0)
                                         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                     },
                                     Scale {
                                         origin.x: 0
-                                        origin.y: cardItem.height / 2
-                                        xScale: cardHover.hovered ? 1.05 : 0.96
+                                        origin.y: stackContainer.height / 2
+                                        xScale: (clusterHover.hovered ? 1.05 : 0.96) * (clusterWrapper.isTargetDrop ? 1.06 : 1.0)
                                         yScale: xScale
                                         Behavior on xScale { NumberAnimation { duration: 200 } }
                                         Behavior on yScale { NumberAnimation { duration: 200 } }
                                     }
                                 ]
 
-                                // ── 3D Deep Shadow ──
-                                Rectangle {
-                                    anchors.fill: cardFrame
-                                    radius: cardFrame.radius
-                                    color: "#90000000"
-                                    transform: Translate { x: 8; y: 12 }
-                                    layer.enabled: true
-                                    layer.effect: MultiEffect {
-                                        blurEnabled: true
-                                        blurMax: 32
-                                        blur: 0.6
-                                    }
-                                }
+                                // ── Stacked Deck Repeater (renders up to 3 windows in reverse z-order) ──
+                                Repeater {
+                                    model: clusterWrapper.modelData.windows
 
-                                // ── Window Thumbnail Card ──
-                                Rectangle {
-                                    id: cardFrame
-                                    anchors.fill: parent
-                                    radius: 12
-                                    color: Qt.rgba(0.12, 0.12, 0.15, 0.85)
-                                    clip: true
-                                    border.width: 1
-                                    border.color: cardHover.hovered ? "#60ffffff" : "#30ffffff"
-                                    Behavior on border.color { ColorAnimation { duration: 180 } }
+                                    delegate: Item {
+                                        id: deckLayer
+                                        required property var modelData
+                                        required property int index
 
-                                    // Wayland screencopy capture of the background window
-                                    Loader {
-                                        id: scLoader
-                                        anchors.fill: parent
-                                        active: win.stageVisible && cardWrapper.safeTl !== null
-                                        sourceComponent: ScreencopyView {
-                                            anchors.fill: parent
-                                            captureSource: win.stageVisible ? cardWrapper.safeTl : null
-                                            live: false
-                                            visible: hasContent
-                                        }
-                                    }
+                                        // index 0 is front window; 1 is mid; 2 is back
+                                        readonly property int depth: index
+                                        z: 10 - depth
 
-                                    // Fallback frosted card with app icon if screencopy is not ready yet
-                                    Item {
-                                        visible: !scLoader.item || !scLoader.item.hasContent
-                                        anchors.fill: parent
+                                        // Hover Fan-out: cards spread out horizontally and vertically on hover
+                                        property real fanSpread: clusterHover.hovered ? 1.0 : 0.0
+                                        Behavior on fanSpread { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
+                                        x: depth * (clusterHover.hovered ? 26 : 12)
+                                        y: -depth * (clusterHover.hovered ? 14 : 7)
+                                        width: 248
+                                        height: 154
+                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (0.84 + 0.12 * fanSpread) : (0.72 + 0.18 * fanSpread))
+
+                                        // 3D Shadow per deck layer
                                         Rectangle {
-                                            anchors.fill: parent
-                                            gradient: Gradient {
-                                                GradientStop { position: 0.0; color: Qt.rgba(0.24, 0.24, 0.28, 0.88) }
-                                                GradientStop { position: 1.0; color: Qt.rgba(0.13, 0.13, 0.16, 0.92) }
+                                            anchors.fill: layerFrame
+                                            radius: layerFrame.radius
+                                            color: "#90000000"
+                                            transform: Translate { x: 8 + depth * 3; y: 12 + depth * 2 }
+                                            layer.enabled: true
+                                            layer.effect: MultiEffect {
+                                                blurEnabled: true
+                                                blurMax: 32
+                                                blur: 0.6
                                             }
                                         }
 
-                                        Image {
-                                            anchors.centerIn: parent
-                                            width: 44; height: 44
-                                            sourceSize: Qt.size(64, 64)
-                                            source: cardWrapper.modelData.iconPath
-                                            smooth: true
-                                            visible: cardWrapper.modelData.iconPath !== ""
-                                        }
+                                        // Window Thumbnail Frame
+                                        Rectangle {
+                                            id: layerFrame
+                                            anchors.fill: parent
+                                            radius: 12
+                                            color: Qt.rgba(0.12, 0.12, 0.15, 0.88)
+                                            clip: true
+                                            border.width: clusterWrapper.isTargetDrop ? 2 : 1
+                                            border.color: clusterWrapper.isTargetDrop ? "#38bdf8" : (clusterHover.hovered ? "#60ffffff" : "#30ffffff")
+                                            Behavior on border.color { ColorAnimation { duration: 180 } }
 
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: cardWrapper.modelData.name
-                                            color: "white"
-                                            font.family: "Open Runde"
-                                            font.pixelSize: 14
-                                            font.weight: Font.DemiBold
-                                            visible: cardWrapper.modelData.iconPath === ""
-                                        }
-                                    }
+                                            // Safe Wayland handle check
+                                            readonly property var safeTl: {
+                                                if (!win.stageVisible) return null;
+                                                var a = deckLayer.modelData ? deckLayer.modelData.address : "";
+                                                if (root.hub && a && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
+                                                if (root.hub && typeof root.hub.tlFor === "function" && a) {
+                                                    return root.hub.tlFor(a);
+                                                }
+                                                return deckLayer.modelData ? deckLayer.modelData.tl : null;
+                                            }
 
-                                    // Soft top sheen
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: parent.radius
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.14) }
-                                            GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0.0) }
+                                            // Wayland live capture
+                                            Loader {
+                                                id: scLoader
+                                                anchors.fill: parent
+                                                active: win.stageVisible && deckLayer.safeTl !== null
+                                                sourceComponent: ScreencopyView {
+                                                    anchors.fill: parent
+                                                    captureSource: win.stageVisible ? deckLayer.safeTl : null
+                                                    live: false
+                                                    visible: hasContent
+                                                }
+                                            }
+
+                                            // Fallback frosted card with app icon
+                                            Item {
+                                                visible: !scLoader.item || !scLoader.item.hasContent
+                                                anchors.fill: parent
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    gradient: Gradient {
+                                                        GradientStop { position: 0.0; color: Qt.rgba(0.24, 0.24, 0.28, 0.88) }
+                                                        GradientStop { position: 1.0; color: Qt.rgba(0.13, 0.13, 0.16, 0.92) }
+                                                    }
+                                                }
+
+                                                Image {
+                                                    anchors.centerIn: parent
+                                                    width: 46; height: 46
+                                                    sourceSize: Qt.size(64, 64)
+                                                    source: deckLayer.modelData.iconPath
+                                                    smooth: true
+                                                    visible: deckLayer.modelData.iconPath !== ""
+                                                }
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: deckLayer.modelData.name
+                                                    color: "white"
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 14
+                                                    font.weight: Font.DemiBold
+                                                    visible: deckLayer.modelData.iconPath === ""
+                                                }
+                                            }
+
+                                            // Soft top sheen
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: parent.radius
+                                                gradient: Gradient {
+                                                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.14) }
+                                                    GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0.0) }
+                                                }
+                                            }
                                         }
                                     }
                                 }
 
-                                // ── Squircle App Icon Badge (34x34px, radius: 8, overlapping bottom-left) ──
-                                Rectangle {
-                                    id: appBadge
-                                    width: 34; height: 34; radius: 8
-                                    anchors.left: cardFrame.left
-                                    anchors.bottom: cardFrame.bottom
+                                // ── Multi-Icon Badges Row (Overlapping at bottom-left corner) ──
+                                Row {
+                                    id: multiIconRow
+                                    anchors.left: stackContainer.left
+                                    anchors.bottom: stackContainer.bottom
                                     anchors.leftMargin: -8
                                     anchors.bottomMargin: -8
-                                    z: 30
-                                    color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
-                                    border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.35)
-                                    scale: cardHover.hovered ? 1.12 : 1.0
-                                    Behavior on scale { NumberAnimation { duration: 200 } }
-                                    layer.enabled: true
-                                    layer.effect: MultiEffect {
-                                        shadowEnabled: true
-                                        shadowColor: "#90000000"
-                                        shadowBlur: 0.4
-                                        shadowVerticalOffset: 2
-                                    }
+                                    spacing: -10
+                                    z: 40
 
-                                    Image {
-                                        anchors.centerIn: parent
-                                        width: 22; height: 22
-                                        sourceSize: Qt.size(44, 44)
-                                        source: cardWrapper.modelData.iconPath
-                                        smooth: true
-                                        visible: cardWrapper.modelData.iconPath !== ""
-                                    }
+                                    Repeater {
+                                        model: clusterWrapper.modelData.windows
 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: cardWrapper.modelData.iconPath === ""
-                                        text: cardWrapper.modelData.name.charAt(0).toUpperCase()
-                                        color: "white"
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 14
-                                        font.weight: Font.Bold
+                                        delegate: Rectangle {
+                                            id: appBadge
+                                            required property var modelData
+                                            required property int index
+                                            z: 30 - index
+
+                                            width: 32; height: 32; radius: 8
+                                            color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
+                                            border.width: 1
+                                            border.color: Qt.rgba(1, 1, 1, 0.35)
+                                            scale: clusterHover.hovered ? 1.12 : 1.0
+                                            Behavior on scale { NumberAnimation { duration: 200 } }
+
+                                            layer.enabled: true
+                                            layer.effect: MultiEffect {
+                                                shadowEnabled: true
+                                                shadowColor: "#90000000"
+                                                shadowBlur: 0.4
+                                                shadowVerticalOffset: 2
+                                            }
+
+                                            Image {
+                                                anchors.centerIn: parent
+                                                width: 20; height: 20
+                                                sourceSize: Qt.size(40, 40)
+                                                source: appBadge.modelData.iconPath
+                                                smooth: true
+                                                visible: appBadge.modelData.iconPath !== ""
+                                            }
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                visible: appBadge.modelData.iconPath === ""
+                                                text: appBadge.modelData.name.charAt(0).toUpperCase()
+                                                color: "white"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 13
+                                                font.weight: Font.Bold
+                                            }
+                                        }
                                     }
                                 }
                             }
 
-                            // ── Text Label Underneath (macOS Stage Manager style) ──
+                            // ── Text Label Underneath (Group / Window Title) ──
                             Text {
-                                anchors.top: cardItem.bottom
-                                anchors.topMargin: 8
-                                anchors.horizontalCenter: cardItem.horizontalCenter
-                                width: cardItem.width - 16
+                                anchors.top: stackContainer.bottom
+                                anchors.topMargin: 10
+                                anchors.horizontalCenter: stackContainer.horizontalCenter
+                                width: stackContainer.width - 16
                                 horizontalAlignment: Text.AlignHCenter
-                                text: cardWrapper.modelData.title || cardWrapper.modelData.name
+                                text: clusterWrapper.modelData.name || clusterWrapper.modelData.title
                                 color: Qt.rgba(1, 1, 1, 0.95)
                                 font.family: "Open Runde"
                                 font.pixelSize: 12
@@ -447,27 +572,104 @@ Scope {
                                 styleColor: Qt.rgba(0, 0, 0, 0.75)
                             }
 
-                            // ── Hover & Tap interaction ──
+                            // ── Hover interaction ──
                             HoverHandler {
-                                id: cardHover
+                                id: clusterHover
                                 onHoveredChanged: {
                                     if (hovered) {
                                         hideTimer.stop();
                                         win.isRevealed = true;
-                                        if (scLoader.item && typeof scLoader.item.captureFrame === "function") {
-                                            scLoader.item.captureFrame();
+                                        if (win.draggingAddr !== "") {
+                                            win.hoverTargetClusterId = clusterWrapper.modelData.id;
+                                        }
+                                    } else {
+                                        if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
+                                            win.hoverTargetClusterId = "";
                                         }
                                     }
                                 }
                             }
 
+                            // ── Tap to Activate / Swap ──
                             TapHandler {
                                 onTapped: {
-                                    swapOverlay.startSwap(cardWrapper.modelData, cardItem);
+                                    swapOverlay.startSwap(clusterWrapper.modelData, stackContainer);
+                                }
+                            }
+
+                            // ── Drag to Group / Ungroup ──
+                            MouseArea {
+                                anchors.fill: parent
+                                drag.target: dragProxy
+                                drag.axis: Drag.XAndYAxis
+                                propagateComposedEvents: true
+
+                                onPressed: {
+                                    if (clusterWrapper.modelData.windows.length > 0) {
+                                        win.draggingAddr = clusterWrapper.modelData.windows[0].address;
+                                        win.draggingWinObj = clusterWrapper.modelData.windows[0];
+                                        var p = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        dragProxy.x = p.x - 30;
+                                        dragProxy.y = p.y - 30;
+                                        dragProxy.visible = true;
+                                    }
+                                }
+
+                                onPositionChanged: {
+                                    if (win.draggingAddr !== "") {
+                                        var p = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        dragProxy.x = p.x - 30;
+                                        dragProxy.y = p.y - 30;
+                                    }
+                                }
+
+                                onReleased: {
+                                    if (win.draggingAddr !== "") {
+                                        dragProxy.visible = false;
+                                        var dropP = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        if (dropP.x > 320) {
+                                            // Dropped out onto desktop: detach into own cluster
+                                            root.assignWindowToGroup(win.draggingAddr, null);
+                                        } else if (win.hoverTargetClusterId && win.hoverTargetClusterId !== clusterWrapper.modelData.id) {
+                                            // Merged into target cluster
+                                            root.assignWindowToGroup(win.draggingAddr, win.hoverTargetClusterId);
+                                        }
+                                        win.draggingAddr = "";
+                                        win.draggingWinObj = null;
+                                        win.hoverTargetClusterId = "";
+                                    }
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            // ── Floating Drag Proxy (follows cursor while dragging a thumbnail) ──
+            Rectangle {
+                id: dragProxy
+                width: 60; height: 60; radius: 14
+                color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
+                border.width: 1.5
+                border.color: "#38bdf8"
+                visible: false
+                z: 200
+
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: "#90000000"
+                    shadowBlur: 0.6
+                    shadowVerticalOffset: 6
+                }
+
+                Image {
+                    anchors.centerIn: parent
+                    width: 36; height: 36
+                    sourceSize: Qt.size(64, 64)
+                    source: win.draggingWinObj ? win.draggingWinObj.iconPath : ""
+                    smooth: true
+                    visible: win.draggingWinObj && win.draggingWinObj.iconPath !== ""
                 }
             }
 
@@ -481,7 +683,7 @@ Scope {
                 property bool running: false
                 property real progress: 0.0
 
-                property var incoming: null
+                property var incomingCluster: null
                 property var outgoing: null
 
                 NumberAnimation {
@@ -490,20 +692,20 @@ Scope {
                     property: "progress"
                     from: 0.0
                     to: 1.0
-                    duration: 280
+                    duration: 290
                     easing.type: Easing.OutCubic
                     onFinished: {
                         swapOverlay.running = false;
-                        var inc = swapOverlay.incoming;
-                        if (inc) {
-                            root.activateWindow(inc.address, inc.workspace, inc.tl);
+                        var cl = swapOverlay.incomingCluster;
+                        if (cl) {
+                            root.activateCluster(cl);
                         }
-                        swapOverlay.incoming = null;
+                        swapOverlay.incomingCluster = null;
                         swapOverlay.outgoing = null;
                     }
                 }
 
-                function startSwap(modelData, cardItem) {
+                function startSwap(clusterData, cardItem) {
                     var atl = ToplevelManager.activeToplevel;
                     var actAddr = root.activeAddress;
                     var actObj = root.activeIpcObject || {};
@@ -523,19 +725,10 @@ Scope {
                         actTitle = actObj.title || actObj.class;
                     }
 
-                    var p = cardItem.mapToItem(win, 0, 0);
+                    var p = cardItem.mapToItem(swapOverlay, 0, 0);
                     var cardRect = { x: p.x, y: p.y, width: cardItem.width, height: cardItem.height };
 
-                    incoming = {
-                        address: modelData.address,
-                        workspace: modelData.workspace,
-                        tl: modelData.tl,
-                        iconPath: modelData.iconPath,
-                        title: modelData.title || modelData.name,
-                        startRect: cardRect,
-                        targetRect: actRect
-                    };
-
+                    incomingCluster = clusterData;
                     outgoing = {
                         address: actAddr,
                         tl: atl,
@@ -550,7 +743,7 @@ Scope {
                     swapAnim.restart();
                 }
 
-                // ── Pha 2: Cửa sổ hiện tại (outgoing) co nhỏ, nghiêng dần về 3D và trượt lùi về cột Stage ──
+                // ── Pha 2: Cụm cửa sổ active ở giữa (outgoing) co nhỏ, nghiêng dần về 3D và trượt lùi về cột Stage ──
                 Rectangle {
                     id: outCard
                     visible: swapOverlay.outgoing !== null
@@ -589,7 +782,7 @@ Scope {
 
                     Image {
                         anchors.centerIn: parent
-                        width: 48; height: 48
+                        width: 52; height: 52
                         sourceSize: Qt.size(64, 64)
                         source: outCard.o.iconPath || ""
                         smooth: true
@@ -597,10 +790,10 @@ Scope {
                     }
                 }
 
-                // ── Pha 1: Thẻ được chọn (incoming) xoay từ nghiêng 3D về phẳng, phóng to và bay ra giữa màn hình ──
+                // ── Pha 1: Cụm được chọn (incoming) xoay từ nghiêng 3D về phẳng, phóng to và lướt ra giữa màn hình ──
                 Rectangle {
                     id: inCard
-                    visible: swapOverlay.incoming !== null
+                    visible: swapOverlay.incomingCluster !== null && swapOverlay.incomingCluster.windows.length > 0
                     radius: 12
                     color: Qt.rgba(0.12, 0.12, 0.15, 0.92)
                     border.width: 1
@@ -609,12 +802,14 @@ Scope {
                     z: 100
 
                     property real p: swapOverlay.progress
-                    property var inc: swapOverlay.incoming || ({ startRect: {x:0,y:0,width:1,height:1}, targetRect: {x:0,y:0,width:1,height:1} })
+                    readonly property var topWin: (swapOverlay.incomingCluster && swapOverlay.incomingCluster.windows.length > 0) ? swapOverlay.incomingCluster.windows[0] : null
+                    property var startRect: (swapOverlay.outgoing && swapOverlay.outgoing.targetRect) ? swapOverlay.outgoing.targetRect : ({ x: 20, y: 200, width: 248, height: 154 })
+                    property var targetRect: (swapOverlay.outgoing && swapOverlay.outgoing.startRect) ? swapOverlay.outgoing.startRect : ({ x: 140, y: 45, width: 1400, height: 800 })
 
-                    x: win.lerp(inc.startRect.x, inc.targetRect.x, p)
-                    y: win.lerp(inc.startRect.y, inc.targetRect.y, p)
-                    width: Math.max(1, win.lerp(inc.startRect.width, inc.targetRect.width, p))
-                    height: Math.max(1, win.lerp(inc.startRect.height, inc.targetRect.height, p))
+                    x: win.lerp(startRect.x, targetRect.x, p)
+                    y: win.lerp(startRect.y, targetRect.y, p)
+                    width: Math.max(1, win.lerp(startRect.width, targetRect.width, p))
+                    height: Math.max(1, win.lerp(startRect.height, targetRect.height, p))
                     opacity: 1.0
 
                     transform: [
@@ -636,21 +831,21 @@ Scope {
 
                     Image {
                         anchors.centerIn: parent
-                        width: 56; height: 56
-                        sourceSize: Qt.size(64, 64)
-                        source: inCard.inc.iconPath || ""
+                        width: 64; height: 64
+                        sourceSize: Qt.size(80, 80)
+                        source: inCard.topWin ? inCard.topWin.iconPath : ""
                         smooth: true
-                        visible: inCard.inc.iconPath !== ""
+                        visible: inCard.topWin && inCard.topWin.iconPath !== ""
                     }
 
                     Text {
                         anchors.centerIn: parent
-                        text: inCard.inc.title || ""
+                        text: inCard.topWin ? inCard.topWin.title : ""
                         color: "white"
                         font.family: "Open Runde"
-                        font.pixelSize: 16
+                        font.pixelSize: 18
                         font.weight: Font.DemiBold
-                        visible: inCard.inc.iconPath === ""
+                        visible: !inCard.topWin || inCard.topWin.iconPath === ""
                     }
                 }
             }
