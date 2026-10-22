@@ -233,16 +233,17 @@ Scope {
         if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
 
         var targetWs = cluster.workspace || (cluster.windows[0] ? cluster.windows[0].workspace : 1);
-        var topAddr = String(cluster.windows[0].address || "").replace(/^0x/, "");
-
-        // Switch to the target workspace and focus the window via Hyprland Lua
         var lua = "";
         if (targetWs) {
             lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
         }
-        if (topAddr !== "") {
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + topAddr + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+        for (var w = cluster.windows.length - 1; w >= 0; w--) {
+            var wAddr = String(cluster.windows[w].address || "").replace(/^0x/, "");
+            if (wAddr !== "") {
+                lua += "hl.dispatch(hl.dsp.window.move({ workspace = \"" + targetWs + "\", window = \"address:0x" + wAddr + "\" })); ";
+                lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + wAddr + "\" })); ";
+                lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+            }
         }
 
         Quickshell.execDetached(["hyprctl", "eval", lua]);
@@ -264,6 +265,17 @@ Scope {
         for (var k in root.customGroups) map[k] = root.customGroups[k];
         if (targetClusterId) {
             map[winAddr] = targetClusterId;
+            var targetWs = 0;
+            for (var i = 0; i < root.clusters.length; i++) {
+                if (root.clusters[i].id === targetClusterId) {
+                    targetWs = root.clusters[i].workspace;
+                    break;
+                }
+            }
+            if (targetWs > 0) {
+                var cleanAddr = String(winAddr).replace(/^0x/, "");
+                Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent", String(targetWs) + ",address:0x" + cleanAddr]);
+            }
         } else {
             // Detach to its own unique cluster
             map[winAddr] = "solo_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
@@ -695,15 +707,30 @@ Scope {
                                         hasMoved = true;
                                         if (win.draggingWinObj) {
                                             var p = mapToItem(swapOverlay, mouse.x, mouse.y);
-                                            dragProxy.x = p.x - 30;
-                                            dragProxy.y = p.y - 30;
+                                            dragProxy.x = p.x - 34;
+                                            dragProxy.y = p.y - 34;
                                             dragProxy.visible = true;
                                         }
                                     }
                                     if (hasMoved && win.draggingAddr !== "") {
                                         var p2 = mapToItem(swapOverlay, mouse.x, mouse.y);
-                                        dragProxy.x = p2.x - 30;
-                                        dragProxy.y = p2.y - 30;
+                                        dragProxy.x = p2.x - 34;
+                                        dragProxy.y = p2.y - 34;
+
+                                        // Hit-test against cardsColumn children to find target cluster underneath cursor
+                                        var posInCol = mapToItem(cardsColumn, mouse.x, mouse.y);
+                                        var targetId = "";
+                                        for (var i = 0; i < cardsColumn.children.length; i++) {
+                                            var item = cardsColumn.children[i];
+                                            if (!item || !item.modelData || !item.modelData.id) continue;
+                                            if (item.modelData.id === clusterWrapper.modelData.id) continue;
+                                            if (posInCol.x >= item.x - 25 && posInCol.x <= item.x + item.width + 25 &&
+                                                posInCol.y >= item.y - 10 && posInCol.y <= item.y + item.height + 10) {
+                                                targetId = item.modelData.id;
+                                                break;
+                                            }
+                                        }
+                                        win.hoverTargetClusterId = targetId;
                                     }
                                 }
 
@@ -711,12 +738,28 @@ Scope {
                                     if (hasMoved && win.draggingAddr !== "") {
                                         dragProxy.visible = false;
                                         var dropP = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        
+                                        var targetId = win.hoverTargetClusterId;
+                                        if (!targetId) {
+                                            var posInCol = mapToItem(cardsColumn, mouse.x, mouse.y);
+                                            for (var i = 0; i < cardsColumn.children.length; i++) {
+                                                var item = cardsColumn.children[i];
+                                                if (!item || !item.modelData || !item.modelData.id) continue;
+                                                if (item.modelData.id === clusterWrapper.modelData.id) continue;
+                                                if (posInCol.x >= item.x - 35 && posInCol.x <= item.x + item.width + 35 &&
+                                                    posInCol.y >= item.y - 15 && posInCol.y <= item.y + item.height + 15) {
+                                                    targetId = item.modelData.id;
+                                                    break;
+                                                }
+                                            }
+                                        }
+
                                         if (dropP.x > 320) {
                                             // Dropped out onto desktop: detach into own cluster
                                             root.assignWindowToGroup(win.draggingAddr, null);
-                                        } else if (win.hoverTargetClusterId && win.hoverTargetClusterId !== clusterWrapper.modelData.id) {
+                                        } else if (targetId && targetId !== clusterWrapper.modelData.id) {
                                             // Merged into target cluster
-                                            root.assignWindowToGroup(win.draggingAddr, win.hoverTargetClusterId);
+                                            root.assignWindowToGroup(win.draggingAddr, targetId);
                                         }
                                     } else {
                                         // User clicked: trigger Stage swap & activation!
@@ -736,9 +779,9 @@ Scope {
             // ── Floating Drag Proxy (follows cursor while dragging a thumbnail) ──
             Rectangle {
                 id: dragProxy
-                width: 60; height: 60; radius: 14
-                color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
-                border.width: 1.5
+                width: 68; height: 68; radius: 16
+                color: Qt.rgba(0.12, 0.12, 0.16, 0.94)
+                border.width: 2
                 border.color: "#38bdf8"
                 visible: false
                 z: 200
@@ -753,11 +796,24 @@ Scope {
 
                 Image {
                     anchors.centerIn: parent
-                    width: 36; height: 36
+                    width: 44; height: 44
                     sourceSize: Qt.size(64, 64)
-                    source: win.draggingWinObj ? win.draggingWinObj.iconPath : ""
+                    source: win.draggingWinObj ? (win.draggingWinObj.iconPath || "") : ""
                     smooth: true
-                    visible: win.draggingWinObj && win.draggingWinObj.iconPath !== ""
+                    visible: source !== ""
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - 8
+                    horizontalAlignment: Text.AlignHCenter
+                    text: win.draggingWinObj ? (win.draggingWinObj.name || win.draggingWinObj.title || "App") : ""
+                    color: "white"
+                    font.family: "Open Runde"
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    visible: !win.draggingWinObj || !win.draggingWinObj.iconPath
                 }
             }
 
