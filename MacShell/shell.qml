@@ -45,6 +45,7 @@ ShellRoot {
         property var airdrop: airDrop
         property var reminders: remindersApp
         property var about: aboutApp
+        property var stagemanager: stageManager
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // ── macOS App Nap / Resource Throttling: detect when user is focused on an application ──
@@ -332,6 +333,7 @@ ShellRoot {
     MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect !== undefined ? macDock.minimizeEffect : "genie"; speed: macDock.minimizeSecs !== undefined ? macDock.minimizeSecs : 0.42 }
     WindowBar { id: windowBar; hub: sharedHub }
     Installer { id: depsInstaller; hub: sharedHub }
+    StageManager { id: stageManager; hub: sharedHub; enabled: macBar.stageManager }
     SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub; typeToSiri: typeToSiri }
     TypeToSiri { id: typeToSiri; edgeGlow: siriEdgeGlow }
 
@@ -340,6 +342,7 @@ ShellRoot {
         sharedHub.dock = macDock;
         sharedHub.widgets = macWidgets;
         sharedHub.about = aboutApp;
+        sharedHub.stagemanager = stageManager;
     }
 
     // qs -c MacShell ipc call siri activate true | false
@@ -460,5 +463,16 @@ ShellRoot {
         function minimizeActive() { macDock.minimizeActive(); }
         function minimize(addr: string) { macDock.minimizeWindow(addr); }
         function unminimize(addr: string) { macDock.unminimizeWindow(addr); }
+    }
+
+    // macOS Stage Manager IPC:
+    // qs -c MacShell ipc call stagemanager toggle | on | off | reveal <bool>
+    IpcHandler {
+        target: "stagemanager"
+        function toggle() { macBar.stageManager = !macBar.stageManager; }
+        function on() { macBar.stageManager = true; }
+        function off() { macBar.stageManager = false; }
+        function reveal(on: bool) { stageManager.forceReveal = on; }
+        function alwaysShow(on: bool) { stageManager.alwaysShow = on; }
     }
 }

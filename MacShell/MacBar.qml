@@ -291,6 +291,8 @@ Scope {
     // Control Center: ids of the enabled controls, in order (edit with Control Center → Edit Controls)
     property var ccControls: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake", "display", "sound"]
     property bool ccMigRec: false              // one-time: add the Screen Recording tile to an existing Control Center layout
+    property bool ccMigStage: false            // one-time: add Stage Manager tile to Control Center
+    property bool stageManager: true           // macOS 3D Stage Manager enabled
     property bool recording: false
     property int recSecs: 0
     property var otherConnections: []
@@ -310,7 +312,7 @@ Scope {
         "spotlightEnabled", "ccEnabled", "notificationsEnabled", "clockAppEnabled", "ccStyle", "barLogoMode", "barCustomLogoPath", "barWidgets", "weekStartsMonday", "terminal", "launcher",
         "filesCmd", "clipboardCmd", "appUsage", "clipHistory", "clipAutoPaste", "emojiRecent", "screenshotDir", "screenshotSave", "screenshotClipboard", "screenshotNotify", "nightTemp", "ccControls", "ccMigRec", "wallpaperDir", "wallpaperFavs", "wallpaperCmd", "wallpaperVideo", "wpRestorePath", "uiSounds", "gamingMode", "gamingAuto", "ccMigGame", "lockArtBackground",
         "lockClockStyle", "switcherStyle", "lockClockFont", "lockClockWeight", "lockClockMaterial", "lockClockIntensity", "lockClockTint", "lockClockTall", "lockClockDate", "autoContrast", "wallpaperAppearance", "wpPairLight", "wpPairDark",
-        "notifDnd", "dnd", "nightOn", "keepAwake",
+        "notifDnd", "dnd", "nightOn", "keepAwake", "stageManager", "ccMigStage",
         "kbRepeatRate", "kbRepeatDelay", "mouseSens", "mouseNatural", "tpNatural", "tpTap", "tpDwt", "tpScroll"]
     // Optional bar widgets; tray and Spotlight use their existing showTray/showSearch settings.
     property var barWidgets: ["appleMenu", "appMenus", "workspaces", "volume", "keyboard", "cpuRam", "notifications", "wifi", "bluetooth", "privacy", "controlCenter", "clock"]
@@ -349,13 +351,14 @@ Scope {
         { id: "nightshift", label: I18n.tr("Night Shift"),   glyph: "nightshift", w: 1, h: 1 },
         { id: "keepawake",  label: I18n.tr("Keep Awake"),    glyph: "coffee",     w: 1, h: 1 },
         { id: "darkmode",   label: I18n.tr("Dark Mode"),     glyph: "contrast",   w: 1, h: 1 },
+        { id: "stagemanager", label: I18n.tr("Stage Manager"), glyph: "stagemanager", w: 1, h: 1 },
         { id: "gaming",     label: I18n.tr("Game Mode"),     glyph: "gamepad",    w: 2, h: 1 },
         { id: "record",     label: I18n.tr("Screen Recording"), glyph: "record",  w: 2, h: 1 },
         { id: "nowplaying", label: I18n.tr("Now Playing"),   glyph: "note",       w: 2, h: 2 },
         { id: "display",    label: I18n.tr("Display"),       glyph: "sun",        w: 4, h: 1 },
         { id: "sound",      label: I18n.tr("Sound"),         glyph: "speaker",    w: 4, h: 1 }
     ]
-    readonly property var ccDefault: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake", "display", "sound"]
+    readonly property var ccDefault: ["wifi", "nowplaying", "bluetooth", "airplane", "focus", "record", "nightshift", "keepawake", "stagemanager", "display", "sound"]
     function ccDef(id) {
         for (var i = 0; i < ccCatalog.length; i++) if (ccCatalog[i].id === id) return ccCatalog[i];
         return null;
@@ -845,6 +848,11 @@ Scope {
                 ctx.beginPath(); ctx.arc(9.2, 9, 7.4, -0.62, 0.62); ctx.stroke();
             } else if (k === "bolt") {
                 poly([10, 1.5, 4.5, 10, 8.4, 10, 7.6, 16.5, 13.5, 7.6, 9.6, 7.6], true);
+            } else if (k === "stagemanager") {
+                rrect(7.0, 3.4, 9.0, 11.2, 1.8); ctx.stroke();
+                rrect(2.0, 3.6, 3.2, 2.7, 0.8); ctx.fill();
+                rrect(2.0, 7.65, 3.2, 2.7, 0.8); ctx.fill();
+                rrect(2.0, 11.7, 3.2, 2.7, 0.8); ctx.fill();
             } else if (k === "appstore") {
                 line(9, 2.8, 3.8, 14.6);
                 line(9, 2.8, 14.2, 14.6);
@@ -3865,6 +3873,15 @@ Scope {
                 root.ccMigRec = true;
                 var cl = root.ccControls.slice();
                 if (cl.indexOf("record") < 0) { var fi = cl.indexOf("focus"); cl.splice(fi >= 0 ? fi + 1 : cl.length, 0, "record"); root.ccControls = cl; }
+            }
+            if (!root.ccMigStage) {
+                root.ccMigStage = true;
+                var cs = root.ccControls.slice();
+                if (cs.indexOf("stagemanager") < 0) {
+                    var ki = cs.indexOf("keepawake");
+                    cs.splice(ki >= 0 ? ki + 1 : cs.length, 0, "stagemanager");
+                    root.ccControls = cs;
+                }
             }
             root.settingsReady = true;
             inputApplyT.restart();
@@ -8106,6 +8123,7 @@ Scope {
                         case "nightshift": return cNight;
                         case "keepawake": return cAwake;
                         case "darkmode": return cDark;
+                        case "stagemanager": return cStageManager;
                         case "nowplaying": return cNowPlaying;
                         case "display": return cDisplay;
                         case "sound": return cSound;
@@ -8316,6 +8334,21 @@ Scope {
                                 plain: true
                                 t: ccPal; gx: ccg; anchors.centerIn: parent
                                 kind: "contrast"; on: root.darkMode
+                            }
+                        }
+                    }
+                    Component {
+                        id: cStageManager
+                        CCTile {
+                            id: tlStage
+                            clickable: true
+                            on: root.stageManager
+                            onClicked: root.stageManager = !root.stageManager
+                            t: ccPal; gx: ccg
+                            CCBtn {
+                                plain: true
+                                t: ccPal; gx: ccg; anchors.centerIn: parent
+                                kind: "stagemanager"; on: root.stageManager
                             }
                         }
                     }

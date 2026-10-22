@@ -2884,9 +2884,19 @@ Scope {
             Column {
                 spacing: 18
                 Loader { width: parent.width; sourceComponent: paneDock }
-                SLabel { t: pal; header: true; text: I18n.tr("Windows") }
+                SLabel { t: pal; header: true; text: I18n.tr("Windows & Stage Manager") }
                 SCard {
                     t: pal
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Stage Manager")
+                        subtitle: I18n.tr("Show a 3D perspective stack of recent background windows on the left edge of your screen.")
+                        SSwitch {
+                            t: pal
+                            checked: root.bar ? root.bar.stageManager : true
+                            onToggled: v => { if (root.bar) root.bar.stageManager = v; }
+                        }
+                    }
                     SRow {
                         t: pal
                         title: I18n.tr("Open windows floating")
