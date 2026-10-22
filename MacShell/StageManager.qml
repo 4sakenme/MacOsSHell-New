@@ -30,6 +30,13 @@ Scope {
     property string activeAddress: ""
     property var activeIpcObject: null
 
+    function normAddr(a) {
+        if (!a) return "";
+        var s = String(a).toLowerCase().trim();
+        if (s.indexOf("0x") === 0) return s;
+        return "0x" + s;
+    }
+
     function updateWindows() {
         if (!root.enabled) {
             root.clusters = [];
@@ -47,10 +54,21 @@ Scope {
         if (atl) {
             for (var i = 0; i < hts.length; i++) {
                 if (hts[i].wayland === atl) {
-                    actAddr = String(hts[i].address || "").toLowerCase();
+                    actAddr = root.normAddr(hts[i].address);
                     var obj = hts[i].lastIpcObject || {};
                     if (obj.at && obj.at[0] !== undefined) activeLeft = obj.at[0];
                     actObj = obj;
+                    break;
+                }
+            }
+        }
+        if (actAddr === "") {
+            for (var aIdx = 0; aIdx < hts.length; aIdx++) {
+                if (hts[aIdx].focusHistoryID === 0) {
+                    actAddr = root.normAddr(hts[aIdx].address);
+                    var o0 = hts[aIdx].lastIpcObject || {};
+                    if (o0.at && o0.at[0] !== undefined) activeLeft = o0.at[0];
+                    actObj = o0;
                     break;
                 }
             }
@@ -61,6 +79,7 @@ Scope {
 
         var vals = ToplevelManager.toplevels.values;
         var bgWindows = [];
+        var seenAddr = {};
 
         for (var j = 0; j < vals.length; j++) {
             var w = vals[j];
@@ -79,13 +98,19 @@ Scope {
             var addr = "";
             var ws = 1;
             if (hit) {
-                addr = String(hit.address || "");
-                if (addr.indexOf("0x") !== 0 && addr !== "") addr = "0x" + addr;
+                addr = root.normAddr(hit.address);
                 if (hit.workspace && hit.workspace.id > 0) ws = hit.workspace.id;
                 else if (hit.lastIpcObject && hit.lastIpcObject.workspace && hit.lastIpcObject.workspace.id > 0) ws = hit.lastIpcObject.workspace.id;
                 var o = hit.lastIpcObject || {};
                 if (ws === -98 || o.hidden || o.mapped === false) continue;
             }
+
+            // Exclude currently active window
+            if (addr !== "" && actAddr !== "" && addr === actAddr) continue;
+
+            // Prevent duplicate entries
+            if (addr !== "" && seenAddr[addr]) continue;
+            if (addr !== "") seenAddr[addr] = true;
 
             var title = w.title || (hit && hit.lastIpcObject ? hit.lastIpcObject.title : "") || id;
             var de = id ? DesktopEntries.heuristicLookup(id) : null;
@@ -103,6 +128,36 @@ Scope {
             });
         }
 
+        // Also add any Hyprland toplevels not found in ToplevelManager (e.g. XWayland)
+        for (var h = 0; h < hts.length; h++) {
+            var ht = hts[h];
+            if (!ht) continue;
+            var hAddr = root.normAddr(ht.address);
+            if (hAddr === "" || seenAddr[hAddr] || (actAddr !== "" && hAddr === actAddr)) continue;
+
+            var hWs = (ht.workspace && ht.workspace.id > 0) ? ht.workspace.id : 1;
+            var ho = ht.lastIpcObject || {};
+            if (hWs === -98 || ho.hidden || ho.mapped === false) continue;
+
+            var hClass = ht.appId || ho.class || "";
+            if (hClass === "org.quickshell" || hClass === "quickshell") continue;
+
+            var hDe = hClass ? DesktopEntries.heuristicLookup(hClass) : null;
+            var hIcon = "";
+            if (hDe && hDe.icon) hIcon = Quickshell.iconPath(hDe.icon, true) || "";
+
+            seenAddr[hAddr] = true;
+            bgWindows.push({
+                address: hAddr,
+                title: ho.title || ht.title || hClass,
+                appId: hClass,
+                name: hDe && hDe.name ? hDe.name : hClass,
+                iconPath: hIcon,
+                tl: ht.wayland || null,
+                workspace: hWs
+            });
+        }
+
         // ── Group windows into Multi-Window Clusters (1 to 3 windows per cluster) ──
         var clusterMap = {};
         var clusterOrder = [];
@@ -111,7 +166,7 @@ Scope {
             var win = bgWindows[n];
             var gid = root.customGroups[win.address];
             if (!gid) {
-                // Default grouping: by workspace ID or appId
+                // Group by workspace by default
                 gid = "ws_" + win.workspace;
             }
 
@@ -126,27 +181,22 @@ Scope {
                 clusterOrder.push(gid);
             }
 
-            // Cap at 3 windows per cluster stack
             if (clusterMap[gid].windows.length < 3) {
                 clusterMap[gid].windows.push(win);
             }
         }
 
         var resultClusters = [];
-        for (var c = 0; c < clusterOrder.length && resultClusters.length < 5; c++) {
+        for (var c = 0; c < clusterOrder.length && resultClusters.length < 6; c++) {
             var cl = clusterMap[clusterOrder[c]];
             if (cl && cl.windows.length > 0) {
-                // Determine display name for cluster
-                if (cl.windows.length > 1) {
-                    var names = [];
-                    for (var wIdx = 0; wIdx < cl.windows.length; wIdx++) {
-                        var nm = cl.windows[wIdx].name || cl.windows[wIdx].appId;
-                        if (names.indexOf(nm) < 0) names.push(nm);
-                    }
-                    cl.name = names.join(" & ") + " (" + cl.windows.length + ")";
-                } else {
-                    cl.name = cl.windows[0].name;
+                var names = [];
+                for (var wIdx = 0; wIdx < cl.windows.length; wIdx++) {
+                    var nm = cl.windows[wIdx].name || cl.windows[wIdx].appId;
+                    if (names.indexOf(nm) < 0) names.push(nm);
                 }
+                cl.appsLabel = names.join(" & ");
+                cl.name = cl.appsLabel;
                 resultClusters.push(cl);
             }
         }
@@ -182,34 +232,21 @@ Scope {
     function activateCluster(cluster) {
         if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
 
-        var curWs = 1;
-        if (Hyprland.focusedMonitor && Hyprland.focusedMonitor.activeWorkspace) {
-            curWs = Hyprland.focusedMonitor.activeWorkspace.id;
-        }
-
-        var lua = "";
-        if (curWs > 0) {
-            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + curWs + "\" })); ";
-        }
-
-        // Pull each window in cluster to active workspace
-        for (var i = cluster.windows.length - 1; i >= 0; i--) {
-            var winObj = cluster.windows[i];
-            var a = String(winObj.address || "").replace(/^0x/, "");
-            if (curWs > 0 && winObj.workspace !== curWs) {
-                lua += "hl.dispatch(hl.dsp.window.move({ workspace = " + curWs + ", follow = false, window = \"address:0x" + a + "\" })); ";
-            }
-        }
-
-        // Focus front window of the cluster
+        var targetWs = cluster.workspace || (cluster.windows[0] ? cluster.windows[0].workspace : 1);
         var topAddr = String(cluster.windows[0].address || "").replace(/^0x/, "");
+
+        // Switch to the target workspace and focus the window via Hyprland Lua
+        var lua = "";
+        if (targetWs) {
+            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
+        }
         if (topAddr !== "") {
             lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + topAddr + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.window.bring_to_top())";
-            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + topAddr]);
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
         }
 
         Quickshell.execDetached(["hyprctl", "eval", lua]);
+
         if (cluster.windows[0].tl && typeof cluster.windows[0].tl.activate === "function") {
             try { cluster.windows[0].tl.activate(); } catch (e) {}
         }
@@ -433,19 +470,20 @@ Scope {
                                                 var a = deckLayer.modelData ? deckLayer.modelData.address : "";
                                                 if (root.hub && a && root.hub.closingWins && root.hub.closingWins[String(a).replace(/^0x/, "")] === true) return null;
                                                 if (root.hub && typeof root.hub.tlFor === "function" && a) {
-                                                    return root.hub.tlFor(a);
+                                                    var res = root.hub.tlFor(a);
+                                                    if (res) return res;
                                                 }
-                                                return deckLayer.modelData ? deckLayer.modelData.tl : null;
+                                                return (deckLayer.modelData && deckLayer.modelData.tl) ? deckLayer.modelData.tl : null;
                                             }
 
                                             // Wayland live capture
                                             Loader {
                                                 id: scLoader
                                                 anchors.fill: parent
-                                                active: win.stageVisible && deckLayer.safeTl !== null
+                                                active: win.stageVisible && layerFrame.safeTl !== null
                                                 sourceComponent: ScreencopyView {
                                                     anchors.fill: parent
-                                                    captureSource: win.stageVisible ? deckLayer.safeTl : null
+                                                    captureSource: (win.stageVisible && layerFrame.safeTl) ? layerFrame.safeTl : null
                                                     live: false
                                                     visible: hasContent
                                                 }
@@ -552,24 +590,66 @@ Scope {
                                         }
                                     }
                                 }
+                                // ── Workspace Tag Pill (Top-Right of card) ──
+                                Rectangle {
+                                    id: wsPill
+                                    anchors.top: stackContainer.top
+                                    anchors.right: stackContainer.right
+                                    anchors.topMargin: 8
+                                    anchors.rightMargin: 8
+                                    height: 19
+                                    radius: 6
+                                    color: Qt.rgba(0.08, 0.08, 0.12, 0.78)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.22)
+                                    z: 45
+                                    implicitWidth: wsLabel.implicitWidth + 12
+
+                                    Text {
+                                        id: wsLabel
+                                        anchors.centerIn: parent
+                                        text: "Desktop " + clusterWrapper.modelData.workspace
+                                        color: Qt.rgba(1, 1, 1, 0.9)
+                                        font.family: "Open Runde"
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
                             }
 
-                            // ── Text Label Underneath (Group / Window Title) ──
-                            Text {
+                            // ── Text Label Underneath (Group / Window Title & Workspace) ──
+                            Column {
                                 anchors.top: stackContainer.bottom
-                                anchors.topMargin: 10
+                                anchors.topMargin: 8
                                 anchors.horizontalCenter: stackContainer.horizontalCenter
                                 width: stackContainer.width - 16
-                                horizontalAlignment: Text.AlignHCenter
-                                text: clusterWrapper.modelData.name || clusterWrapper.modelData.title
-                                color: Qt.rgba(1, 1, 1, 0.95)
-                                font.family: "Open Runde"
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                                elide: Text.ElideRight
-                                maximumLineCount: 1
-                                style: Text.Outline
-                                styleColor: Qt.rgba(0, 0, 0, 0.75)
+                                spacing: 2
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: clusterWrapper.modelData.appsLabel || clusterWrapper.modelData.name || clusterWrapper.modelData.title
+                                    color: Qt.rgba(1, 1, 1, 0.95)
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
+                                    style: Text.Outline
+                                    styleColor: Qt.rgba(0, 0, 0, 0.75)
+                                }
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: "Workspace " + clusterWrapper.modelData.workspace
+                                    color: Qt.rgba(1, 1, 1, 0.65)
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 10
+                                    font.weight: Font.Normal
+                                    style: Text.Outline
+                                    styleColor: Qt.rgba(0, 0, 0, 0.75)
+                                }
                             }
 
                             // ── Hover interaction ──
@@ -590,41 +670,46 @@ Scope {
                                 }
                             }
 
-                            // ── Tap to Activate / Swap ──
-                            TapHandler {
-                                onTapped: {
-                                    swapOverlay.startSwap(clusterWrapper.modelData, stackContainer);
-                                }
-                            }
-
-                            // ── Drag to Group / Ungroup ──
+                            // ── Click to Swap & Drag to Group/Ungroup ──
                             MouseArea {
+                                id: cardMouseArea
                                 anchors.fill: parent
-                                drag.target: dragProxy
-                                drag.axis: Drag.XAndYAxis
-                                propagateComposedEvents: true
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
 
-                                onPressed: {
+                                property point pressPos: Qt.point(0, 0)
+                                property bool hasMoved: false
+
+                                onPressed: (mouse) => {
+                                    pressPos = Qt.point(mouse.x, mouse.y);
+                                    hasMoved = false;
                                     if (clusterWrapper.modelData.windows.length > 0) {
                                         win.draggingAddr = clusterWrapper.modelData.windows[0].address;
                                         win.draggingWinObj = clusterWrapper.modelData.windows[0];
-                                        var p = mapToItem(swapOverlay, mouse.x, mouse.y);
-                                        dragProxy.x = p.x - 30;
-                                        dragProxy.y = p.y - 30;
-                                        dragProxy.visible = true;
                                     }
                                 }
 
-                                onPositionChanged: {
-                                    if (win.draggingAddr !== "") {
-                                        var p = mapToItem(swapOverlay, mouse.x, mouse.y);
-                                        dragProxy.x = p.x - 30;
-                                        dragProxy.y = p.y - 30;
+                                onPositionChanged: (mouse) => {
+                                    var dx = Math.abs(mouse.x - pressPos.x);
+                                    var dy = Math.abs(mouse.y - pressPos.y);
+                                    if (!hasMoved && (dx > 8 || dy > 8)) {
+                                        hasMoved = true;
+                                        if (win.draggingWinObj) {
+                                            var p = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                            dragProxy.x = p.x - 30;
+                                            dragProxy.y = p.y - 30;
+                                            dragProxy.visible = true;
+                                        }
+                                    }
+                                    if (hasMoved && win.draggingAddr !== "") {
+                                        var p2 = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        dragProxy.x = p2.x - 30;
+                                        dragProxy.y = p2.y - 30;
                                     }
                                 }
 
-                                onReleased: {
-                                    if (win.draggingAddr !== "") {
+                                onReleased: (mouse) => {
+                                    if (hasMoved && win.draggingAddr !== "") {
                                         dragProxy.visible = false;
                                         var dropP = mapToItem(swapOverlay, mouse.x, mouse.y);
                                         if (dropP.x > 320) {
@@ -634,10 +719,14 @@ Scope {
                                             // Merged into target cluster
                                             root.assignWindowToGroup(win.draggingAddr, win.hoverTargetClusterId);
                                         }
-                                        win.draggingAddr = "";
-                                        win.draggingWinObj = null;
-                                        win.hoverTargetClusterId = "";
+                                    } else {
+                                        // User clicked: trigger Stage swap & activation!
+                                        swapOverlay.startSwap(clusterWrapper.modelData, stackContainer);
                                     }
+                                    win.draggingAddr = "";
+                                    win.draggingWinObj = null;
+                                    win.hoverTargetClusterId = "";
+                                    hasMoved = false;
                                 }
                             }
                         }
@@ -706,6 +795,7 @@ Scope {
                 }
 
                 function startSwap(clusterData, cardItem) {
+                    if (swapOverlay.running) return;
                     var atl = ToplevelManager.activeToplevel;
                     var actAddr = root.activeAddress;
                     var actObj = root.activeIpcObject || {};
