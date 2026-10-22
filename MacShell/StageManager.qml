@@ -299,20 +299,26 @@ Scope {
 
             Timer {
                 id: hideTimer
-                interval: 360
+                interval: 420
                 onTriggered: win.isRevealed = false
             }
 
-            // Click-through mask
-            mask: Region {
-                item: swapOverlay.running ? null : (win.stageVisible ? stageContainer : triggerStrip)
+            // Click-through mask: covers entire stage sidebar when open (360px) or edge strip (26px) when closed
+            Item {
+                id: inputArea
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: win.stageVisible ? 360 : 26
             }
 
-            // ── Left edge trigger strip (18px wide) ──
+            mask: Region {
+                item: swapOverlay.running ? null : inputArea
+            }
+
+            // ── Left edge trigger strip (26px wide) ──
             Item {
                 id: triggerStrip
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 18
+                width: 26
 
                 HoverHandler {
                     id: edgeHover
@@ -328,7 +334,7 @@ Scope {
             // ── Global hover area across the stage panel to avoid jitter ──
             Item {
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 320
+                width: 360
                 HoverHandler {
                     id: panelHover
                     onHoveredChanged: {
@@ -354,9 +360,9 @@ Scope {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
-                // Slide in/out animation
-                x: win.stageVisible ? 20 : -280
-                Behavior on x { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
+                // Slide in/out animation (settles at x: 32 for comfortable spacing from screen edge)
+                x: win.stageVisible ? 32 : -300
+                Behavior on x { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                 Column {
                     id: cardsColumn
@@ -373,18 +379,16 @@ Scope {
 
                             width: 250
                             height: 185
-                            z: clusterHover.hovered ? 60 : (20 - index)
+                            z: isHovered ? 60 : (20 - index)
 
+                            readonly property bool isHovered: cardMouseArea.containsMouse
                             readonly property bool isTargetDrop: win.hoverTargetClusterId === clusterWrapper.modelData.id && win.draggingAddr !== ""
 
-                            // ── 3D Cluster Stack Item ──
+                            // ── 3D Cluster Stack Item (Stable 3D orientation, no wobbling on hover) ──
                             Item {
                                 id: stackContainer
                                 width: 248
                                 height: 154
-
-                                property real pK: clusterHover.hovered ? 0.0003 : 0.0016
-                                Behavior on pK { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
                                 transform: [
                                     Matrix4x4 {
@@ -392,27 +396,25 @@ Scope {
                                             1, 0, 0, 0,
                                             0, 1, 0, 0,
                                             0, 0, 1, 0,
-                                            stackContainer.pK, 0, 0, 1
+                                            0.0014, 0, 0, 1
                                         )
                                     },
                                     Rotation {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
                                         axis { x: 0; y: 1; z: 0 }
-                                        angle: clusterHover.hovered ? -5 : -26
-                                        Behavior on angle { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                                        angle: -22
                                     },
                                     Translate {
-                                        x: (clusterHover.hovered ? 18 : 0) + (clusterWrapper.isTargetDrop ? 10 : 0)
-                                        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                        x: clusterWrapper.isTargetDrop ? 10 : 0
+                                        Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     },
                                     Scale {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
-                                        xScale: (clusterHover.hovered ? 1.05 : 0.96) * (clusterWrapper.isTargetDrop ? 1.06 : 1.0)
+                                        xScale: clusterWrapper.isHovered ? 1.025 : 1.0
                                         yScale: xScale
-                                        Behavior on xScale { NumberAnimation { duration: 200 } }
-                                        Behavior on yScale { NumberAnimation { duration: 200 } }
+                                        Behavior on xScale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                     }
                                 ]
 
@@ -429,15 +431,15 @@ Scope {
                                         readonly property int depth: index
                                         z: 10 - depth
 
-                                        // Hover Fan-out: cards spread out horizontally and vertically on hover
-                                        property real fanSpread: clusterHover.hovered ? 1.0 : 0.0
-                                        Behavior on fanSpread { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                                        x: depth * (clusterWrapper.isHovered ? 16 : 10)
+                                        y: -depth * (clusterWrapper.isHovered ? 8 : 6)
+                                        Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                        Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
-                                        x: depth * (clusterHover.hovered ? 26 : 12)
-                                        y: -depth * (clusterHover.hovered ? 14 : 7)
                                         width: 248
                                         height: 154
-                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (0.84 + 0.12 * fanSpread) : (0.72 + 0.18 * fanSpread))
+                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.92 : 0.84) : (clusterWrapper.isHovered ? 0.84 : 0.72))
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
 
                                         // 3D Shadow per deck layer
                                         Rectangle {
@@ -461,7 +463,7 @@ Scope {
                                             color: Qt.rgba(0.12, 0.12, 0.15, 0.88)
                                             clip: true
                                             border.width: clusterWrapper.isTargetDrop ? 2 : 1
-                                            border.color: clusterWrapper.isTargetDrop ? "#38bdf8" : (clusterHover.hovered ? "#60ffffff" : "#30ffffff")
+                                            border.color: clusterWrapper.isTargetDrop ? "#38bdf8" : (clusterWrapper.isHovered ? "#60ffffff" : "#30ffffff")
                                             Behavior on border.color { ColorAnimation { duration: 180 } }
 
                                             // Safe Wayland handle check
@@ -558,8 +560,8 @@ Scope {
                                             color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
                                             border.width: 1
                                             border.color: Qt.rgba(1, 1, 1, 0.35)
-                                            scale: clusterHover.hovered ? 1.12 : 1.0
-                                            Behavior on scale { NumberAnimation { duration: 200 } }
+                                            scale: clusterWrapper.isHovered ? 1.08 : 1.0
+                                            Behavior on scale { NumberAnimation { duration: 180 } }
 
                                             layer.enabled: true
                                             layer.effect: MultiEffect {
@@ -652,30 +654,26 @@ Scope {
                                 }
                             }
 
-                            // ── Hover interaction ──
-                            HoverHandler {
-                                id: clusterHover
-                                onHoveredChanged: {
-                                    if (hovered) {
-                                        hideTimer.stop();
-                                        win.isRevealed = true;
-                                        if (win.draggingAddr !== "") {
-                                            win.hoverTargetClusterId = clusterWrapper.modelData.id;
-                                        }
-                                    } else {
-                                        if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
-                                            win.hoverTargetClusterId = "";
-                                        }
-                                    }
-                                }
-                            }
-
                             // ── Click to Swap & Drag to Group/Ungroup ──
                             MouseArea {
                                 id: cardMouseArea
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
+
+                                onEntered: {
+                                    hideTimer.stop();
+                                    win.isRevealed = true;
+                                    if (win.draggingAddr !== "") {
+                                        win.hoverTargetClusterId = clusterWrapper.modelData.id;
+                                    }
+                                }
+
+                                onExited: {
+                                    if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
+                                        win.hoverTargetClusterId = "";
+                                    }
+                                }
 
                                 property point pressPos: Qt.point(0, 0)
                                 property bool hasMoved: false
