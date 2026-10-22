@@ -229,33 +229,103 @@ Scope {
 
     Component.onCompleted: updateWindows()
 
-    function activateCluster(cluster) {
+    property var clusterCycleMap: ({})
+
+    function getFreeWorkspace(excludeWs) {
+        var used = {};
+        if (excludeWs) used[excludeWs] = true;
+        var hts = Hyprland.toplevels.values;
+        for (var i = 0; i < hts.length; i++) {
+            var ht = hts[i];
+            if (ht && ht.workspace && ht.workspace.id > 0) {
+                used[ht.workspace.id] = true;
+            }
+        }
+        for (var w = 1; w < 100; w++) {
+            if (!used[w]) return w;
+        }
+        return 9;
+    }
+
+    // Cycle through apps in a grouped stage, or directly activate a chosen sub-app
+    function cycleOrActivateCluster(cluster, specificWinIndex) {
         if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
 
-        var targetWs = cluster.workspace || (cluster.windows[0] ? cluster.windows[0].workspace : 1);
+        var wins = cluster.windows;
+        var targetWin = null;
+
+        if (specificWinIndex !== undefined && specificWinIndex >= 0 && specificWinIndex < wins.length) {
+            // User hovered and clicked directly on a specific stacked card behind
+            targetWin = wins[specificWinIndex];
+        } else if (wins.length === 1) {
+            targetWin = wins[0];
+        } else {
+            // Group stage with multiple windows: cycle / loop through windows one by one!
+            var actAddr = root.normAddr(root.activeAddress);
+            var activeInClusterIdx = -1;
+            for (var i = 0; i < wins.length; i++) {
+                if (root.normAddr(wins[i].address) === actAddr) {
+                    activeInClusterIdx = i;
+                    break;
+                }
+            }
+
+            var nextIdx = 0;
+            if (activeInClusterIdx >= 0) {
+                // Currently working on a window from this stage: cycle to the next window!
+                nextIdx = (activeInClusterIdx + 1) % wins.length;
+            } else {
+                var lastIdx = root.clusterCycleMap[cluster.id] || 0;
+                nextIdx = lastIdx % wins.length;
+            }
+
+            root.clusterCycleMap[cluster.id] = (nextIdx + 1) % wins.length;
+            targetWin = wins[nextIdx];
+        }
+
+        if (!targetWin) return;
+
+        var targetWs = targetWin.workspace || 1;
+        var targetAddr = String(targetWin.address || "").replace(/^0x/, "");
+
+        // Đảm bảo "1 lần ấn chỉ mở 1 app thôi, các app khác ẩn đi":
+        // Nếu có cửa sổ khác trong cluster đang ở cùng workspace, dời nó sang workspace riêng để không che nhau
+        for (var w = 0; w < wins.length; w++) {
+            if (wins[w] !== targetWin) {
+                var otherAddr = String(wins[w].address || "").replace(/^0x/, "");
+                if (wins[w].workspace === targetWs && otherAddr !== "") {
+                    var freeWs = root.getFreeWorkspace(targetWs);
+                    wins[w].workspace = freeWs;
+                    Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent", String(freeWs) + ",address:0x" + otherAddr]);
+                }
+            }
+        }
+
+        // Focus duy nhất targetWin
         var lua = "";
         if (targetWs) {
             lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
         }
-        for (var w = cluster.windows.length - 1; w >= 0; w--) {
-            var wAddr = String(cluster.windows[w].address || "").replace(/^0x/, "");
-            if (wAddr !== "") {
-                lua += "hl.dispatch(hl.dsp.window.move({ workspace = \"" + targetWs + "\", window = \"address:0x" + wAddr + "\" })); ";
-                lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + wAddr + "\" })); ";
-                lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
-            }
+        if (targetAddr !== "") {
+            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
         }
 
         Quickshell.execDetached(["hyprctl", "eval", lua]);
 
-        if (cluster.windows[0].tl && typeof cluster.windows[0].tl.activate === "function") {
-            try { cluster.windows[0].tl.activate(); } catch (e) {}
+        if (targetWin.tl && typeof targetWin.tl.activate === "function") {
+            try { targetWin.tl.activate(); } catch (e) {}
         }
 
         if (root.hub && root.hub.bar && typeof root.hub.bar.playSound === "function") {
-            root.hub.bar.playSound("tink", 0.4);
+            root.hub.bar.playSound("tink", 0.35);
         }
+
         root.updateWindows();
+    }
+
+    function activateCluster(cluster) {
+        cycleOrActivateCluster(cluster, 0);
     }
 
     // Merge or separate window via drag-and-drop
@@ -265,17 +335,6 @@ Scope {
         for (var k in root.customGroups) map[k] = root.customGroups[k];
         if (targetClusterId) {
             map[winAddr] = targetClusterId;
-            var targetWs = 0;
-            for (var i = 0; i < root.clusters.length; i++) {
-                if (root.clusters[i].id === targetClusterId) {
-                    targetWs = root.clusters[i].workspace;
-                    break;
-                }
-            }
-            if (targetWs > 0) {
-                var cleanAddr = String(winAddr).replace(/^0x/, "");
-                Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent", String(targetWs) + ",address:0x" + cleanAddr]);
-            }
         } else {
             // Detach to its own unique cluster
             map[winAddr] = "solo_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
@@ -299,7 +358,7 @@ Scope {
             WlrLayershell.layer: WlrLayer.Top
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-            visible: root.enabled && (root.clusters.length > 0 || swapOverlay.running)
+            visible: root.enabled && root.clusters.length > 0
 
             property bool isRevealed: false
             readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 320)
@@ -328,7 +387,7 @@ Scope {
             }
 
             mask: Region {
-                item: swapOverlay.running ? null : inputArea
+                item: inputArea
             }
 
             // ── Unified hover area across the stage panel (auto-clipped to 26px by Wayland mask when hidden) ──
@@ -350,9 +409,7 @@ Scope {
                 }
             }
 
-            function lerp(a, b, t) {
-                return a + (b - a) * t;
-            }
+            function lerp(a, b, t) { return a + (b - a) * t; }  // kept for legacy ref
 
             // ── 3D Stage Cards Container ──
             Item {
@@ -384,6 +441,7 @@ Scope {
                             height: 185
                             z: isHovered ? 60 : (20 - index)
 
+                            property int hoveredSubIndex: -1
                             readonly property bool isHovered: cardMouseArea.containsMouse
                             readonly property bool isTargetDrop: win.hoverTargetClusterId === clusterWrapper.modelData.id && win.draggingAddr !== ""
 
@@ -437,17 +495,35 @@ Scope {
 
                                         // index 0 is front window; 1 is mid; 2 is back
                                         readonly property int depth: index
-                                        z: 10 - depth
+                                        readonly property bool isThisSubHovered: clusterWrapper.hoveredSubIndex === index
+                                        z: isThisSubHovered ? 45 : (10 - depth)
 
-                                        x: depth * (clusterWrapper.isHovered ? 24 : 12)
-                                        y: -depth * (clusterWrapper.isHovered ? 13 : 7)
+                                        // Sub-app hover peek: khi rê chuột vào app đằng sau, thẻ đó nhô hẳn ra ngoài và nhô lên
+                                        x: depth * (clusterWrapper.isHovered ? 26 : 12) + (isThisSubHovered && depth > 0 ? 34 : 0)
+                                        y: -depth * (clusterWrapper.isHovered ? 14 : 7) - (isThisSubHovered && depth > 0 ? 10 : 0)
                                         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                         Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
+                                        scale: isThisSubHovered ? 1.05 : 1.0
+                                        Behavior on scale { NumberAnimation { duration: 180 } }
+
                                         width: 248
                                         height: 154
-                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.94 : 0.84) : (clusterWrapper.isHovered ? 0.88 : 0.72))
+                                        opacity: (depth === 0 || isThisSubHovered) ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.94 : 0.84) : (clusterWrapper.isHovered ? 0.88 : 0.72))
                                         Behavior on opacity { NumberAnimation { duration: 180 } }
+
+                                        // Hover detector riêng cho từng app đằng sau lúc gộp
+                                        HoverHandler {
+                                            id: subHover
+                                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                                            onHoveredChanged: {
+                                                if (hovered) {
+                                                    clusterWrapper.hoveredSubIndex = deckLayer.index;
+                                                } else if (clusterWrapper.hoveredSubIndex === deckLayer.index) {
+                                                    clusterWrapper.hoveredSubIndex = -1;
+                                                }
+                                            }
+                                        }
 
                                         // 3D Shadow per deck layer
                                         Rectangle {
@@ -470,8 +546,8 @@ Scope {
                                             radius: 12
                                             color: Qt.rgba(0.12, 0.12, 0.15, 0.88)
                                             clip: true
-                                            border.width: clusterWrapper.isTargetDrop ? 2 : 1
-                                            border.color: clusterWrapper.isTargetDrop ? "#38bdf8" : (clusterWrapper.isHovered ? "#60ffffff" : "#30ffffff")
+                                            border.width: (clusterWrapper.isTargetDrop || deckLayer.isThisSubHovered) ? 2 : 1
+                                            border.color: clusterWrapper.isTargetDrop ? "#38bdf8" : (deckLayer.isThisSubHovered ? "#38bdf8" : (clusterWrapper.isHovered ? "#60ffffff" : "#30ffffff"))
                                             Behavior on border.color { ColorAnimation { duration: 180 } }
 
                                             // Safe Wayland handle check
@@ -684,7 +760,7 @@ Scope {
                                     if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
                                         win.hoverTargetClusterId = "";
                                     }
-                                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !edgeHover.hovered && !win.draggingAddr) {
+                                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !win.draggingAddr) {
                                         hideTimer.restart();
                                     }
                                 }
@@ -707,14 +783,14 @@ Scope {
                                     if (!hasMoved && (dx > 8 || dy > 8)) {
                                         hasMoved = true;
                                         if (win.draggingWinObj) {
-                                            var p = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                            var p = mapToItem(win, mouse.x, mouse.y);
                                             dragProxy.x = p.x - 34;
                                             dragProxy.y = p.y - 34;
                                             dragProxy.visible = true;
                                         }
                                     }
                                     if (hasMoved && win.draggingAddr !== "") {
-                                        var p2 = mapToItem(swapOverlay, mouse.x, mouse.y);
+                                        var p2 = mapToItem(win, mouse.x, mouse.y);
                                         dragProxy.x = p2.x - 34;
                                         dragProxy.y = p2.y - 34;
 
@@ -738,8 +814,7 @@ Scope {
                                 onReleased: (mouse) => {
                                     if (hasMoved && win.draggingAddr !== "") {
                                         dragProxy.visible = false;
-                                        var dropP = mapToItem(swapOverlay, mouse.x, mouse.y);
-                                        
+                                        var dropP = mapToItem(win, mouse.x, mouse.y);
                                         var targetId = win.hoverTargetClusterId;
                                         if (!targetId) {
                                             var posInCol = mapToItem(cardsColumn, mouse.x, mouse.y);
@@ -755,7 +830,7 @@ Scope {
                                             }
                                         }
 
-                                        if (dropP.x > 290) {
+                                        if (dropP.x > 290 || dropP.x < 0) {
                                             // Dropped out onto desktop: detach into own cluster
                                             root.assignWindowToGroup(win.draggingAddr, null);
                                         } else if (targetId && targetId !== clusterWrapper.modelData.id) {
@@ -763,8 +838,9 @@ Scope {
                                             root.assignWindowToGroup(win.draggingAddr, targetId);
                                         }
                                     } else {
-                                        // User clicked: trigger Stage swap & activation!
-                                        swapOverlay.startSwap(clusterWrapper.modelData, stackContainer);
+                                        // User clicked: cycle through grouped apps one by one, or directly focus hovered sub-card
+                                        var clickedSubIdx = clusterWrapper.hoveredSubIndex >= 0 ? clusterWrapper.hoveredSubIndex : undefined;
+                                        root.cycleOrActivateCluster(clusterWrapper.modelData, clickedSubIdx);
                                     }
                                     win.draggingAddr = "";
                                     win.draggingWinObj = null;
@@ -818,183 +894,6 @@ Scope {
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════════
-            // SWAP & ZOOM-OUT TRANSITION OVERLAY (macOS Stage Manager Window Swap)
-            // ════════════════════════════════════════════════════════════════════
-            Item {
-                id: swapOverlay
-                anchors.fill: parent
-                visible: running
-                property bool running: false
-                property real progress: 0.0
-
-                property var incomingCluster: null
-                property var outgoing: null
-
-                NumberAnimation {
-                    id: swapAnim
-                    target: swapOverlay
-                    property: "progress"
-                    from: 0.0
-                    to: 1.0
-                    duration: 290
-                    easing.type: Easing.OutCubic
-                    onFinished: {
-                        swapOverlay.running = false;
-                        var cl = swapOverlay.incomingCluster;
-                        if (cl) {
-                            root.activateCluster(cl);
-                        }
-                        swapOverlay.incomingCluster = null;
-                        swapOverlay.outgoing = null;
-                    }
-                }
-
-                function startSwap(clusterData, cardItem) {
-                    if (swapOverlay.running) return;
-                    var atl = ToplevelManager.activeToplevel;
-                    var actAddr = root.activeAddress;
-                    var actObj = root.activeIpcObject || {};
-
-                    var actRect = {
-                        x: (actObj.at && actObj.at[0] !== undefined) ? actObj.at[0] : 140,
-                        y: (actObj.at && actObj.at[1] !== undefined) ? actObj.at[1] : 45,
-                        width: (actObj.size && actObj.size[0] !== undefined) ? actObj.size[0] : (win.width - 280),
-                        height: (actObj.size && actObj.size[1] !== undefined) ? actObj.size[1] : (win.height - 90)
-                    };
-
-                    var actIcon = "";
-                    var actTitle = "";
-                    if (actObj.class) {
-                        var de = DesktopEntries.heuristicLookup(actObj.class);
-                        if (de && de.icon) actIcon = Quickshell.iconPath(de.icon, true) || "";
-                        actTitle = actObj.title || actObj.class;
-                    }
-
-                    var p = cardItem.mapToItem(swapOverlay, 0, 0);
-                    var cardRect = { x: p.x, y: p.y, width: cardItem.width, height: cardItem.height };
-
-                    incomingCluster = clusterData;
-                    outgoing = {
-                        address: actAddr,
-                        tl: atl,
-                        iconPath: actIcon,
-                        title: actTitle,
-                        startRect: actRect,
-                        targetRect: cardRect
-                    };
-
-                    progress = 0.0;
-                    running = true;
-                    swapAnim.restart();
-                }
-
-                // ── Pha 2: Cụm cửa sổ active ở giữa (outgoing) co nhỏ, nghiêng dần về 3D và trượt lùi về cột Stage ──
-                Rectangle {
-                    id: outCard
-                    visible: swapOverlay.outgoing !== null
-                    radius: 12
-                    color: Qt.rgba(0.12, 0.12, 0.15, 0.88)
-                    border.width: 1
-                    border.color: "#30ffffff"
-                    clip: true
-                    z: 80
-
-                    property real p: swapOverlay.progress
-                    property var o: swapOverlay.outgoing || ({ startRect: {x:0,y:0,width:1,height:1}, targetRect: {x:0,y:0,width:1,height:1} })
-
-                    x: win.lerp(o.startRect.x, o.targetRect.x, p)
-                    y: win.lerp(o.startRect.y, o.targetRect.y, p)
-                    width: Math.max(1, win.lerp(o.startRect.width, o.targetRect.width, p))
-                    height: Math.max(1, win.lerp(o.startRect.height, o.targetRect.height, p))
-                    opacity: 1.0 - 0.25 * p
-
-                    transform: [
-                        Matrix4x4 {
-                            matrix: Qt.matrix4x4(
-                                1, 0, 0, 0,
-                                0, 1, 0, 0,
-                                0, 0, 1, 0,
-                                win.lerp(0.0, 0.0016, outCard.p), 0, 0, 1
-                            )
-                        },
-                        Rotation {
-                            origin.x: 0
-                            origin.y: outCard.height / 2
-                            axis { x: 0; y: 1; z: 0 }
-                            angle: win.lerp(0, -26, outCard.p)
-                        }
-                    ]
-
-                    Image {
-                        anchors.centerIn: parent
-                        width: 52; height: 52
-                        sourceSize: Qt.size(64, 64)
-                        source: outCard.o.iconPath || ""
-                        smooth: true
-                        visible: outCard.o.iconPath !== ""
-                    }
-                }
-
-                // ── Pha 1: Cụm được chọn (incoming) xoay từ nghiêng 3D về phẳng, phóng to và lướt ra giữa màn hình ──
-                Rectangle {
-                    id: inCard
-                    visible: swapOverlay.incomingCluster !== null && swapOverlay.incomingCluster.windows.length > 0
-                    radius: 12
-                    color: Qt.rgba(0.12, 0.12, 0.15, 0.92)
-                    border.width: 1
-                    border.color: inCard.p < 0.8 ? "#50ffffff" : Qt.rgba(1, 1, 1, 1.0 - inCard.p)
-                    clip: true
-                    z: 100
-
-                    property real p: swapOverlay.progress
-                    readonly property var topWin: (swapOverlay.incomingCluster && swapOverlay.incomingCluster.windows.length > 0) ? swapOverlay.incomingCluster.windows[0] : null
-                    property var startRect: (swapOverlay.outgoing && swapOverlay.outgoing.targetRect) ? swapOverlay.outgoing.targetRect : ({ x: 20, y: 200, width: 248, height: 154 })
-                    property var targetRect: (swapOverlay.outgoing && swapOverlay.outgoing.startRect) ? swapOverlay.outgoing.startRect : ({ x: 140, y: 45, width: 1400, height: 800 })
-
-                    x: win.lerp(startRect.x, targetRect.x, p)
-                    y: win.lerp(startRect.y, targetRect.y, p)
-                    width: Math.max(1, win.lerp(startRect.width, targetRect.width, p))
-                    height: Math.max(1, win.lerp(startRect.height, targetRect.height, p))
-                    opacity: 1.0
-
-                    transform: [
-                        Matrix4x4 {
-                            matrix: Qt.matrix4x4(
-                                1, 0, 0, 0,
-                                0, 1, 0, 0,
-                                0, 0, 1, 0,
-                                win.lerp(0.0016, 0.0, inCard.p), 0, 0, 1
-                            )
-                        },
-                        Rotation {
-                            origin.x: 0
-                            origin.y: inCard.height / 2
-                            axis { x: 0; y: 1; z: 0 }
-                            angle: win.lerp(-26, 0, inCard.p)
-                        }
-                    ]
-
-                    Image {
-                        anchors.centerIn: parent
-                        width: 64; height: 64
-                        sourceSize: Qt.size(80, 80)
-                        source: inCard.topWin ? inCard.topWin.iconPath : ""
-                        smooth: true
-                        visible: inCard.topWin && inCard.topWin.iconPath !== ""
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: inCard.topWin ? inCard.topWin.title : ""
-                        color: "white"
-                        font.family: "Open Runde"
-                        font.pixelSize: 18
-                        font.weight: Font.DemiBold
-                        visible: !inCard.topWin || inCard.topWin.iconPath === ""
-                    }
-                }
-            }
         }
     }
 }
