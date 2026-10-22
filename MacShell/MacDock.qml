@@ -1,4 +1,4 @@
-// macdock v2 — a macOS-style dock for Hyprland, built on Quickshell.
+// macdock v2 — a macOS-style dock for Hyprland, built on Quickshell. vSuol
 //
 // Part of the combined macbar + macdock shell (see shell.qml). Keep this file, MacBar.qml, shell.qml and
 // liquidglass.frag together in ~/.config/quickshell/macbar/ and run:  qs -c macbar
@@ -39,7 +39,16 @@ Scope {
     property var hub: null
     property bool dockEnabled: true      // false = no Dock at all (settings window stays available)
     property bool settingsEnabled: true  // false = keep the System Settings window closed
-    readonly property var bar: hub ? hub.bar : null
+    property var bar: hub ? hub.bar : null
+    Connections {
+        target: root.bar
+        function onDarkModeChanged() {
+            if (root.darkMode !== root.bar.darkMode) root.darkMode = root.bar.darkMode;
+        }
+        function onAppearanceModeChanged() {
+            if (root.appearanceMode !== root.bar.appearanceMode) root.appearanceMode = root.bar.appearanceMode;
+        }
+    }
     property string userName: Quickshell.env("USER") || ""
 
     // ═════ Displays: main display + resolution / refresh, with a macOS-style "keep or revert" safety net ═════
@@ -127,9 +136,18 @@ Scope {
     function setLook(k, v) { root[k] = v; if (bar) bar[k] = v; }
     // Appearance: the Menu Bar resolves "auto" (light by day, dark by night) and keeps both windows in step
     function setAppearance(mode) {
-        if (bar && bar.setAppearance) { bar.setAppearance(mode); return; }
+        if (["light", "dark", "auto"].indexOf(mode) < 0) return;
         appearanceMode = mode;
-        if (mode === "auto") { var h = new Date().getHours(); darkMode = (h < 7 || h >= 19); } else darkMode = (mode === "dark");
+        if (mode === "auto") {
+            var h = new Date().getHours();
+            darkMode = bar && bar.autoIsDark ? bar.autoIsDark() : (h < 7 || h >= 19);
+        } else darkMode = mode === "dark";
+        // Update this window first so its palette reacts immediately, then keep the Menu Bar in sync.
+        if (bar && bar.setAppearance) {
+            bar.setAppearance(mode);
+            appearanceMode = mode;
+            darkMode = bar.darkMode;
+        }
     }
 
     // ───────────── CONFIG ───────────── Lachowski
@@ -151,7 +169,10 @@ Scope {
     property real glassRim: 0.45
     property real glassGrain: 0.03
     property real glassLiquid: 1.0
-    readonly property bool glassRT: bar ? bar.glassRealtime : true     // real-time glass (Menu Bar settings)
+    // The Dock's own real-time switch (Dock Preferences -> Appearance). It used to follow the Menu Bar's "Real-time glass" toggle, which is OFF by
+    // default, so the Dock glass was a 15 fps, pause-while-windows-open snapshot unless that was found and switched on.
+    property bool glassLive: true
+    readonly property bool glassRT: glassLive
     property real glassBlur: 5            // Liquid Glass backdrop blur radius, px (settings slider)
     property bool glassDebug: false       // settings.json only: draw the raw Liquid Glass backdrop texture
     property string wallpaperPath: ""    // optional override for the wallpaper the Liquid Glass refracts
@@ -161,6 +182,8 @@ Scope {
     property string hideMode: "smart"
     property bool showTrash: true
     property string fontFamily: "Open Runde"  // bundled in assets/fonts (shell.qml loads it); falls back to the system font if missing
+    readonly property string boldFontFamily: hub && hub.boldFontFamily ? hub.boldFontFamily : "Open Runde Semibold"
+    function fontForWeight(weight, regularFamily) { return Number(weight) >= Font.DemiBold ? boldFontFamily : regularFamily; }
     onFontFamilyChanged: if (fontFamily.indexOf("Inter") === 0) fontFamily = "Open Runde"
     property bool magnificationEnabled: true
     property bool showLabels: true       // hover tooltips
@@ -256,7 +279,7 @@ Scope {
                 text: r.title
                 elide: Text.ElideRight
                 color: r.t.text
-                font.family: r.t.fam
+                font.family: root.fontForWeight(font.weight, r.t.fam)
                 font.pixelSize: 13
             }
             Text {
@@ -265,7 +288,7 @@ Scope {
                 text: r.subtitle
                 wrapMode: Text.WordWrap
                 color: r.t.text2
-                font.family: r.t.fam
+                font.family: root.fontForWeight(font.weight, r.t.fam)
                 font.pixelSize: 12
             }
         }
@@ -288,7 +311,7 @@ Scope {
         topPadding: header ? 8 : 0
         wrapMode: Text.WordWrap
         color: t.text2
-        font.family: t.fam
+        font.family: root.fontForWeight(font.weight, t.fam)
         font.pixelSize: header ? 12 : 12
         font.weight: header ? Font.DemiBold : Font.Normal
     }
@@ -296,7 +319,7 @@ Scope {
     // macOS toggle switch: capsule knob, draggable, fluid slide, the knob turns into Liquid Glass while held (see GlassSwitch.qml)
     component SSwitch: GlassSwitch {
         required property var t
-        accentColor: t.accent
+        accentColor: "#30D158"
         offColor: t.switchOff
         knobColor: t.dark ? "#DCDDDA" : "white"
         dark: t.dark
@@ -317,6 +340,8 @@ Scope {
         fg: t.text
         fillColor: t.accent
         knobColor: "white"
+        knobSize: 1.2
+        pressGrow: 0.8
         trackColor: t.track
         labelColor: t.text2
         fontFamily: t.fam
@@ -332,50 +357,26 @@ Scope {
         onGlassFailed: root.glassState = "failed"
     }
 
-    // macOS segmented control
-    component SSegmented: Item {
-        id: g
+    // macOS segmented control: capsule track, dividers between the options, and a marker that turns into Liquid Glass while it
+    // slides to the chosen option (see GlassSegmented.qml)
+    component SSegmented: GlassSegmented {
         required property var t
-        property var model: []
-        property int current: 0
-        property real segWidth: 72
-        signal picked(int index)
-        width: model.length * segWidth + 4
-        height: 26
-        Rectangle { anchors.fill: parent; radius: 7; color: g.t.ctrl }
-        Rectangle {
-            visible: g.current >= 0
-            y: 2
-            x: 2 + g.current * g.segWidth
-            width: g.segWidth
-            height: parent.height - 4
-            radius: 5
-            color: g.t.ctrlSel
-            border.width: g.t.dark ? 0 : 1
-            border.color: Qt.rgba(0, 0, 0, 0.10)
-            Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-        }
-        Row {
-            x: 2; y: 2
-            Repeater {
-                model: g.model
-                delegate: Item {
-                    required property var modelData
-                    required property int index
-                    width: g.segWidth
-                    height: g.height - 4
-                    Text {
-                        anchors.centerIn: parent
-                        text: I18n.tr(parent.modelData)
-                        color: g.t.text
-                        font.family: g.t.fam
-                        font.pixelSize: 12
-                        font.weight: parent.index === g.current ? Font.Medium : Font.Normal
-                    }
-                    MouseArea { anchors.fill: parent; onClicked: g.picked(parent.index) }
-                }
-            }
-        }
+        segWidth: 72
+        dark: t.dark
+        textColor: t.text
+        fontFamily: t.fam
+        fontSize: 12
+        trackColor: t.ctrl
+        pillColor: t.ctrlSel
+        baseColor: t.dark ? "#2B2B2D" : "#FFFFFF"
+        glass: root.settingsGlass
+        shaderUrl: root.glassShaderUrl
+        glassLiquid: root.glassLiquid
+        glassRim: root.glassRim
+        glassGrain: root.glassGrain
+        glassTint: root.glassOpacity
+        borderTint: root.bar ? root.bar.menuBorderColor : "#8A9AB5"
+        onGlassFailed: root.glassState = "failed"
     }
 
     // macOS push button
@@ -396,7 +397,7 @@ Scope {
             anchors.centerIn: parent
             text: b.text
             color: b.destructive ? b.t.danger : b.t.text
-            font.family: b.t.fam
+            font.family: root.fontForWeight(font.weight, b.t.fam)
             font.pixelSize: 13
         }
         MouseArea { id: ma; anchors.fill: parent; onClicked: b.clicked() }
@@ -472,7 +473,7 @@ Scope {
             anchors.horizontalCenter: parent.horizontalCenter
             text: I18n.tr(tile.label)
             color: tile.t.text
-            font.family: tile.t.fam
+            font.family: root.fontForWeight(font.weight, tile.t.fam)
             font.pixelSize: 12
         }
         MouseArea { anchors.fill: parent; onClicked: tile.clicked() }
@@ -661,7 +662,7 @@ Scope {
             { id: "displays",   sec: 2, name: "Displays",        wg: "sun",        c1: "#3D9BFF", c2: "#0A6CFF", keys: "brightness night shift monitor resolution refresh scale" },
             { id: "battery",    sec: 2, name: "Battery",         wg: "bolt",       c1: "#4CD964", c2: "#28A745", keys: "power energy charge profile performance game mode gaming fullscreen" },
             // 3 · Desktop
-            { id: "dock",       sec: 3, name: "Desktop & Dock",  glyph: "dock",     c1: "#2C2C2E", c2: "#1C1C1E", keys: "size icon magnification zoom spacing margin distance edge hide auto labels indicators bounce trash monitor preview app switcher alt tab" },
+            { id: "dock",       sec: 3, name: "Desktop & Dock",  glyph: "dock",     c1: "#2C2C2E", c2: "#1C1C1E", keys: "size icon magnification zoom spacing margin distance corner radius round square edge hide auto labels indicators bounce trash monitor preview app switcher alt tab" },
             { id: "menubar",    sec: 3, name: "Menu Bar",        glyph: "menubar",  c1: "#3D9BFF", c2: "#0A6CFF", keys: "panel bar height clock date seconds 24 hour battery tray search spotlight week monday style liquid bluetooth screenshots" },
             { id: "controlcenter", sec: 3, name: "Control Center", wg: "cc",       c1: "#8E8E93", c2: "#636366", keys: "modules tiles controls" },
             { id: "widgets",    sec: 3, name: "Widgets",         glyph: "widgets",  c1: "#FF9F0A", c2: "#FF7A00", keys: "desktop widgets weather clock calendar player image photo add remove arrange edit size temperature fahrenheit celsius city location" },
@@ -730,6 +731,10 @@ Scope {
                 // the compositor maps the window a moment after it becomes visible: send the dispatches a few times
                 var sel = 'window = "title:^(' + prefsWindow.title + ')$"';
                 Hyprland.dispatch('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
+                // the window draws its own macOS-style edge: no Hyprland border, and Hyprland's rounding (used for its
+                // shadow and the blur behind the sidebar) matches the window's own corner radius
+                Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "border_size", value = "0", ' + sel + ' })');
+                Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "rounding", value = "' + frame.radius + '", ' + sel + ' })');
                 // Hyprland can remember an older floating size; reapply the compact size after mapping.
                 if (prefsWindow.floatTries >= 1) {
                     Hyprland.dispatch('hl.dsp.window.resize({ x = ' + prefsWindow.preferredWidth + ', y = ' + prefsWindow.preferredHeight + ', "exact", ' + sel + ' })');
@@ -753,9 +758,12 @@ Scope {
             readonly property color contentSolid: dark ? "#1E1E1E" : "#F5F5F7"
             readonly property color sidebarGlass: dark ? Qt.rgba(0.17, 0.17, 0.18, 0.55) : Qt.rgba(0.94, 0.94, 0.96, 0.60)
             readonly property color card: dark ? "#2B2B2D" : "#FFFFFF"
-            readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.07)
+            readonly property color cardBorder: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.12)
             readonly property color windowBorder: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.22)
-            readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.09)
+            // two-tone macOS window edge: a thin dark line outside, a soft highlight just inside it
+            readonly property color edgeOuter: dark ? Qt.rgba(0, 0, 0, 0.55) : Qt.rgba(0, 0, 0, 0.40)
+            readonly property color edgeInner: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.65)
+            readonly property color sep: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.12)
             readonly property color text: dark ? "#F5F5F7" : "#1D1D1F"
             readonly property color text2: dark ? Qt.rgba(1, 1, 1, 0.56) : Qt.rgba(0, 0, 0, 0.52)
             readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.32) : Qt.rgba(0, 0, 0, 0.30)
@@ -765,10 +773,11 @@ Scope {
             readonly property color ctrlSel: dark ? "#636366" : "#FFFFFF"
             readonly property color button: dark ? Qt.rgba(1, 1, 1, 0.13) : "#FFFFFF"
             readonly property color buttonPressed: dark ? Qt.rgba(1, 1, 1, 0.24) : "#E4E4E7"
-            readonly property color buttonBorder: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.14)
+            readonly property color buttonBorder: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.20)
             readonly property color field: dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
             readonly property color hover: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
             readonly property color selInactive: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+            function lightBorder(active, c) { return active ? Qt.darker(c, dark ? 1.12 : 1.22) : "transparent"; }
             readonly property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.15)
             readonly property color danger: "#FF453A"
         }
@@ -782,7 +791,16 @@ Scope {
             radius: 12
             color: "transparent"        // the sidebar is translucent (blur of what is behind the window), the pages are opaque
             border.width: 1
-            border.color: pal.windowBorder
+            border.color: pal.edgeOuter
+
+            // inner highlight (on top of everything, never takes the mouse)
+            Rectangle {
+                anchors.fill: parent; anchors.margins: 1
+                radius: frame.radius - 1
+                color: "transparent"
+                border.width: 1; border.color: pal.edgeInner
+                z: 900
+            }
 
             // opaque page area: from the sidebar's right edge to the window edge (rounded on the right only)
             Rectangle {
@@ -868,6 +886,14 @@ Scope {
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true; smooth: true
                             }
+                            LiveWall {
+                                x: sbg.m - prefsGlassGeo.x
+                                y: sbg.m - prefsGlassGeo.y
+                                width: prefsGlassGeo.mw; height: prefsGlassGeo.mh
+                                video: root.bar ? root.bar.glassVideo : ""
+                                live: root.glassLive && prefsWindow.visible
+                                paused: !!root.bar && root.bar.gaming
+                            }
                         }
                         ShaderEffectSource {
                             id: sbSrc
@@ -920,9 +946,10 @@ Scope {
                 // traffic lights
                 Item {
                     id: lights
-                    x: 17; y: 16
+                    x: 17; y: 14
                     width: 58; height: 14
                     Row {
+                        scale: 0.93; transformOrigin: Item.TopLeft      // a touch smaller
                         spacing: 8
                         Repeater {
                             model: [
@@ -936,14 +963,41 @@ Scope {
                                 color: (modelData.on && (prefsWindow.active || lightsMa.containsMouse))
                                        ? modelData.c : pal.lightOff
                                 border.width: 1
-                                border.color: Qt.rgba(0, 0, 0, 0.14)
-                                Text {
-                                    anchors.centerIn: parent
+                                border.color: pal.lightBorder(modelData.on && (prefsWindow.active || lightsMa.containsMouse), modelData.c)
+                                Canvas {
+                                    anchors.fill: parent
                                     visible: lightsMa.containsMouse && parent.modelData.on
-                                    text: parent.modelData.g
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: Qt.rgba(0, 0, 0, 0.55)
+                                    onVisibleChanged: if (visible) requestPaint()
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.clearRect(0, 0, width, height);
+                                        if (parent.modelData.g === "\u00D7") {
+                                            ctx.strokeStyle = "rgba(0,0,0,0.58)";
+                                            ctx.lineWidth = 1.1;
+                                            ctx.lineCap = "round";
+                                            ctx.beginPath();
+                                            ctx.moveTo(4.9, 4.9); ctx.lineTo(9.1, 9.1);
+                                            ctx.moveTo(9.1, 4.9); ctx.lineTo(4.9, 9.1);
+                                            ctx.stroke();
+                                        } else if (parent.modelData.g === "\u2212") {
+                                            ctx.strokeStyle = "rgba(0,0,0,0.58)";
+                                            ctx.lineWidth = 1.2;
+                                            ctx.lineCap = "round";
+                                            ctx.beginPath();
+                                            ctx.moveTo(3.5, 7.0); ctx.lineTo(10.5, 7.0);
+                                            ctx.stroke();
+                                        } else if (parent.modelData.g === "↗") {
+                                            ctx.fillStyle = "rgba(0,0,0,0.58)";
+                                            ctx.beginPath();
+                                            ctx.moveTo(6, 4); ctx.lineTo(10, 4); ctx.lineTo(10, 8);
+                                            ctx.closePath();
+                                            ctx.fill();
+                                            ctx.beginPath();
+                                            ctx.moveTo(8, 10); ctx.lineTo(4, 10); ctx.lineTo(4, 6);
+                                            ctx.closePath();
+                                            ctx.fill();
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1008,7 +1062,7 @@ Scope {
                         selectByMouse: true
                         color: pal.text
                         selectionColor: pal.accent
-                        font.family: pal.fam
+                        font.family: root.fontForWeight(font.weight, pal.fam)
                         font.pixelSize: 13
                         onTextChanged: prefsWindow.query = text
                     }
@@ -1018,7 +1072,7 @@ Scope {
                         visible: searchInput.text === ""
                         text: I18n.tr("Search")
                         color: pal.text3
-                        font.family: pal.fam
+                        font.family: root.fontForWeight(font.weight, pal.fam)
                         font.pixelSize: 13
                     }
                     Rectangle {   // clear button
@@ -1060,8 +1114,8 @@ Scope {
                     }
                     Column {
                         x: 52; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: root.userName; color: prefsWindow.cur === acct.idx && prefsWindow.active ? "white" : pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                        Text { text: I18n.tr("Local Account"); color: prefsWindow.cur === acct.idx && prefsWindow.active ? Qt.rgba(1, 1, 1, 0.8) : pal.text2; font.family: pal.fam; font.pixelSize: 11 }
+                        Text { text: root.userName; color: prefsWindow.cur === acct.idx && prefsWindow.active ? "white" : pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold }
+                        Text { text: I18n.tr("Local Account"); color: prefsWindow.cur === acct.idx && prefsWindow.active ? Qt.rgba(1, 1, 1, 0.8) : pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 11 }
                     }
                     MouseArea { id: acctMa; anchors.fill: parent; hoverEnabled: true; onClicked: prefsWindow.go(acct.idx) }
                 }
@@ -1134,7 +1188,7 @@ Scope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: I18n.tr(navRow.p.name)
                                 color: (navRow.sel && prefsWindow.active) ? "white" : pal.text
-                                font.family: pal.fam
+                                font.family: root.fontForWeight(font.weight, pal.fam)
                                 font.pixelSize: 14
                             }
                             MouseArea {
@@ -1154,7 +1208,7 @@ Scope {
                         horizontalAlignment: Text.AlignHCenter
                         text: I18n.tr("No Results")
                         color: pal.text2
-                        font.family: pal.fam
+                        font.family: root.fontForWeight(font.weight, pal.fam)
                         font.pixelSize: 12
                     }
                 }
@@ -1239,7 +1293,7 @@ Scope {
                     anchors.verticalCenter: parent.verticalCenter
                     text: I18n.tr(prefsWindow.panes[prefsWindow.cur].name)
                     color: pal.text
-                    font.family: pal.fam
+                    font.family: root.fontForWeight(font.weight, pal.fam)
                     font.pixelSize: 15
                     font.weight: Font.DemiBold
                 }
@@ -1592,10 +1646,10 @@ Scope {
                     t: pal
                     SRow {
                         t: pal
-                        title: I18n.tr("Menu Bar and widget size")
-                        subtitle: I18n.tr("Scales the bar widgets; the left and right groups stay tucked into the screen corners")
+                        title: I18n.tr("Menu Bar size")
+                        subtitle: I18n.tr("Scales the bar, its widgets, the menus and the Control Center; the left and right groups stay tucked into the screen corners")
                         SSlider {
-                            t: pal; from: 22; to: 48; stepSize: 1
+                            t: pal; from: 18; to: 48; stepSize: 1
                             value: root.bar ? root.bar.barHeight : 28
                             leftLabel: I18n.tr("Compact"); rightLabel: I18n.tr("Large")
                             onMoved: v => { if (root.bar) root.bar.barHeight = Math.round(v); }
@@ -1639,7 +1693,7 @@ Scope {
                                     selectByMouse: true
                                     color: pal.text
                                     selectionColor: pal.accent
-                                    font.family: pal.fam
+                                    font.family: root.fontForWeight(font.weight, pal.fam)
                                     font.pixelSize: 12
                                     text: root.bar ? root.bar.barCustomLogoPath : ""
                                     onTextEdited: { if (root.bar) root.bar.barCustomLogoPath = text; }
@@ -1657,7 +1711,7 @@ Scope {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "~/Pictures/logo.png"
                                     color: pal.text3
-                                    font.family: pal.fam
+                                    font.family: root.fontForWeight(font.weight, pal.fam)
                                     font.pixelSize: 12
                                 }
                             }
@@ -1800,6 +1854,16 @@ Scope {
                             onToggled: v => { if (root.bar) root.bar.glassRealtime = v; }
                         }
                     }
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Animated wallpaper in glass")
+                        subtitle: I18n.tr("Play the animated wallpaper inside the Liquid Glass in real time. Off by default: the glass refracts a still frame and uses no video memory.")
+                        SSwitch {
+                            t: pal
+                            checked: root.bar ? root.bar.liveWallGlass : false
+                            onToggled: v => { if (root.bar) root.bar.liveWallGlass = v; }
+                        }
+                    }
                 }
 
                 SLabel { t: pal; header: true; text: I18n.tr("Top Bar Widgets") }
@@ -1916,7 +1980,7 @@ Scope {
                                     selectByMouse: true
                                     color: pal.text
                                     selectionColor: pal.accent
-                                    font.family: pal.fam
+                                    font.family: root.fontForWeight(font.weight, pal.fam)
                                     font.pixelSize: 12
                                     text: root.bar ? root.bar.screenshotDir : ""
                                     onTextEdited: { if (root.bar) root.bar.screenshotDir = text; }
@@ -1927,7 +1991,7 @@ Scope {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "~/Pictures/Screenshots"
                                     color: pal.text3
-                                    font.family: pal.fam
+                                    font.family: root.fontForWeight(font.weight, pal.fam)
                                     font.pixelSize: 12
                                 }
                             }
@@ -2153,7 +2217,7 @@ Scope {
                                     maximumLength: 7
                                     color: pal.text
                                     selectionColor: pal.accent
-                                    font.family: pal.fam
+                                    font.family: root.fontForWeight(font.weight, pal.fam)
                                     font.pixelSize: 12
                                     text: root.iconTintColor
                                     onEditingFinished: { if (/^#[0-9a-fA-F]{6}$/.test(text)) root.iconTintColor = text.toLowerCase(); else text = root.iconTintColor; }
@@ -2201,6 +2265,17 @@ Scope {
                             onMoved: v => root.margin = Math.round(v)
                         }
                     }
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Corner radius")
+                        SSlider {
+                            t: pal
+                            from: 0; to: 32; stepSize: 1
+                            value: root.cornerRadius
+                            leftLabel: I18n.tr("Square"); rightLabel: I18n.tr("Round")
+                            onMoved: v => root.cornerRadius = Math.round(v)
+                        }
+                    }
                 }
                 SLabel { t: pal; text: I18n.tr("Changes apply to the Dock immediately.") }
             }
@@ -2217,7 +2292,7 @@ Scope {
                     SRow {
                         t: pal
                         title: I18n.tr("Appearance")
-                        subtitle: I18n.tr("Light, Dark, or Auto for the Dock, Menu Bar and Settings. Spotlight and the top bar menus have their own switch below.")
+                        subtitle: I18n.tr("Light, Dark, or Auto for everything: Dock, Menu Bar, menus, Spotlight, Settings and About. The Control Center tile and the Dark Mode menu item use this same setting.")
                         Row {
                             spacing: 14
                             SThemeTile {
@@ -2235,22 +2310,6 @@ Scope {
                                 selected: root.appearanceMode === "auto"
                                 onClicked: root.setAppearance("auto")
                             }
-                        }
-                    }
-                }
-
-                SCard {
-                    t: pal
-                    SRow {
-                        t: pal
-                        title: I18n.tr("Spotlight & top bar menus")
-                        subtitle: I18n.tr("Light or Dark appearance for Spotlight and the top bar dropdown menus only")
-                        SSegmented {
-                            t: pal
-                            model: ["Light", "Dark"]
-                            segWidth: 72
-                            current: root.bar && root.bar.panelDarkMode ? 1 : 0
-                            onPicked: i => { if (root.bar) root.bar.panelDarkMode = (i === 1); }
                         }
                     }
                 }
@@ -2356,17 +2415,6 @@ Scope {
                             onMoved: v => root.setLook("glassLiquid", v)
                         }
                     }
-                    SRow {
-                        t: pal
-                        title: I18n.tr("Corner radius")
-                        SSlider {
-                            t: pal
-                            from: 0; to: 32; stepSize: 1
-                            value: root.cornerRadius
-                            leftLabel: I18n.tr("Square"); rightLabel: I18n.tr("Round")
-                            onMoved: v => root.cornerRadius = Math.round(v)
-                        }
-                    }
                 }
 
                 SCard {
@@ -2382,6 +2430,16 @@ Scope {
                             current: root.fontFamily.indexOf("Open Runde") === 0 ? 0 : (root.fontFamily === "Noto Sans" ? 1 : 2)
                             onPicked: i => root.setLook("fontFamily", ["Open Runde", "Noto Sans", "sans-serif"][i])
                         }
+                    }
+                }
+                SCard {
+                    t: pal
+                    visible: root.dockStyle === "liquid"
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Real-time glass")
+                        subtitle: I18n.tr("Windows behind the Dock stream live (every frame); workspace switches, new windows and wallpaper changes show through at once")
+                        SSwitch { t: pal; checked: root.glassLive; onToggled: v => root.glassLive = v }
                     }
                 }
                 SLabel { t: pal; text: root.dockStyle === "liquid"
@@ -2751,7 +2809,7 @@ Scope {
                                 width: 120; height: 10; radius: 5; color: pal.track; anchors.verticalCenter: parent.verticalCenter
                                 Rectangle { width: parent.width * batPane.pct / 100; height: parent.height; radius: 5; color: batPane.pct <= 20 && !batPane.charging ? "#FF453A" : "#30D158" }
                             }
-                            Text { text: batPane.pct + "%"; color: pal.text; font.family: pal.fam; font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: batPane.pct + "%"; color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
                         }
                     }
                     SRow {
@@ -2889,6 +2947,7 @@ Scope {
                 }
 
                 // ── Add ──
+                // One tidy block per widget: name + hint on top, then   Style · Size · Add   on one line that wraps on a narrow window.
                 SLabel { t: pal; header: true; text: I18n.tr("Add a Widget") }
                 SCard {
                     t: pal
@@ -2900,42 +2959,77 @@ Scope {
                             { type: "player",   name: I18n.tr("Player"),   hint: I18n.tr("Now Playing with controls and lyrics"), styles: [["liquid", I18n.tr("Liquid Glass")], ["light", I18n.tr("Light")], ["dark", I18n.tr("Dark")]] },
                             { type: "image",    name: I18n.tr("Image"),    hint: I18n.tr("Your own picture (you choose the file)"), styles: [["normal", I18n.tr("Photo")]] }
                         ]
-                        delegate: SRow {
+                        delegate: Item {
                             id: addRow
                             required property var modelData
+                            required property int index
                             property int styleIdx: 0
+                            property int sizeIdx: 1
+                            readonly property var sizeKeys: ["small", "medium", "large"]
                             readonly property int onDesktop: (wgPane.wdg && wgPane.wdg.rev >= 0) ? wgPane.wdg.count(modelData.type) : 0
-                            t: pal
-                            title: modelData.name
-                            subtitle: modelData.hint + (onDesktop > 0 ? "  \u00B7  " + onDesktop + I18n.tr(" on desktop") : "")
-                            Row {
-                                spacing: 8
+                            width: parent ? parent.width : 0
+                            height: 12 + head.height + 10 + ctl.height + 14
+
+                            Rectangle { visible: addRow.index > 0; x: 14; width: parent.width - 14; height: 1; color: pal.sep }
+
+                            // name, hint and how many are already on the desktop
+                            Item {
+                                id: head
+                                x: 14; y: 12
+                                width: parent.width - 28
+                                height: Math.max(nameCol.height, badge.height)
+                                Column {
+                                    id: nameCol
+                                    width: parent.width - badge.width - 12
+                                    spacing: 2
+                                    Text { width: parent.width; text: addRow.modelData.name; elide: Text.ElideRight; color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold }
+                                    Text { width: parent.width; text: addRow.modelData.hint; wrapMode: Text.WordWrap; color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12 }
+                                }
+                                Row {
+                                    id: badge
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    spacing: 8
+                                    visible: addRow.onDesktop > 0
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: addRow.onDesktop + I18n.tr(" on desktop")
+                                        color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12
+                                    }
+                                    SButton { t: pal; text: "\u2212"; onClicked: wgPane.removeOne(addRow.modelData.type) }
+                                }
+                            }
+
+                            // style · size · add
+                            Flow {
+                                id: ctl
+                                x: 14; y: 12 + head.height + 10
+                                width: parent.width - 28
+                                spacing: 10
                                 SSegmented {
                                     t: pal
                                     visible: addRow.modelData.styles.length > 1
                                     model: addRow.modelData.styles.map(function (s) { return s[1]; })
-                                    segWidth: 84
+                                    segWidth: 88
                                     current: addRow.styleIdx
                                     onPicked: i => addRow.styleIdx = i
                                 }
-                                Repeater {
-                                    model: ["small", "medium", "large"]
-                                    delegate: SButton {
-                                        required property string modelData
-                                        t: pal
-                                        text: "+ " + ({ small: "S", medium: "M", large: "L" })[modelData]
-                                        onClicked: {
-                                            if (!wgPane.wdg) return;
-                                            if (addRow.modelData.type === "image") wgPane.wdg.pickImage("", modelData);
-                                            else wgPane.wdg.addWidget(addRow.modelData.type, addRow.modelData.styles[addRow.styleIdx][0], modelData);
-                                        }
-                                    }
+                                SSegmented {
+                                    t: pal
+                                    model: [I18n.tr("Small"), I18n.tr("Medium"), I18n.tr("Large")]
+                                    segWidth: 64
+                                    current: addRow.sizeIdx
+                                    onPicked: i => addRow.sizeIdx = i
                                 }
                                 SButton {
                                     t: pal
-                                    visible: addRow.onDesktop > 0
-                                    text: "\u2212"
-                                    onClicked: wgPane.removeOne(addRow.modelData.type)
+                                    text: "+ " + I18n.tr("Add")
+                                    onClicked: {
+                                        if (!wgPane.wdg) return;
+                                        var sz = addRow.sizeKeys[addRow.sizeIdx];
+                                        if (addRow.modelData.type === "image") wgPane.wdg.pickImage("", sz);
+                                        else wgPane.wdg.addWidget(addRow.modelData.type, addRow.modelData.styles[addRow.styleIdx][0], sz);
+                                    }
                                 }
                             }
                         }
@@ -2949,7 +3043,7 @@ Scope {
                 }
                 SLabel {
                     t: pal
-                    text: I18n.tr("S / M / L = small, medium, large. Image widgets: the + button opens a file picker (needs zenity, kdialog or yad); to change the picture later, use Edit on Desktop and press Choose Image on the widget.")
+                    text: I18n.tr("Image widgets open a file picker (needs zenity, kdialog or yad). To change a picture later, use Edit on Desktop and press Choose Image on the widget.")
                 }
 
                 // ── On the desktop now ──
@@ -3030,7 +3124,7 @@ Scope {
                                 selectByMouse: true
                                 color: pal.text
                                 selectionColor: pal.accent
-                                font.family: pal.fam
+                                font.family: root.fontForWeight(font.weight, pal.fam)
                                 font.pixelSize: 12
                                 text: wgPane.wdg ? wgPane.wdg.cityName : ""
                                 onEditingFinished: { if (wgPane.wdg) wgPane.wdg.cityName = text; }
@@ -3085,7 +3179,7 @@ Scope {
                         x: 14; anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - 220; wrapMode: Text.WordWrap
                         text: I18n.tr("Keep these display settings? Reverting in ") + root.revertLeft + " s."
-                        color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold
+                        color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold
                     }
                     Row {
                         anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
@@ -3406,7 +3500,7 @@ Scope {
                                         }
                                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (root.bar) root.bar.applyLockClockPreset(tile.modelData.id) }
                                     }
-                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: I18n.tr(tile.modelData.name); color: tile.sel ? pal.accent : pal.text; font.family: pal.fam; font.pixelSize: 12; font.weight: tile.sel ? Font.DemiBold : Font.Normal }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: I18n.tr(tile.modelData.name); color: tile.sel ? pal.accent : pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12; font.weight: tile.sel ? Font.DemiBold : Font.Normal }
                                 }
                             }
                         }
@@ -3524,13 +3618,13 @@ Scope {
                             layer.enabled: true; layer.effect: MultiEffect { maskEnabled: true; maskSource: upMask; maskThresholdMin: 0.5; maskSpreadAtMin: 1.0 }
                         }
                     }
-                    Text { anchors.top: upic.bottom; anchors.topMargin: 8; anchors.horizontalCenter: parent.horizontalCenter; text: root.userName; color: pal.text; font.family: pal.fam; font.pixelSize: 17; font.weight: Font.DemiBold }
+                    Text { anchors.top: upic.bottom; anchors.topMargin: 8; anchors.horizontalCenter: parent.horizontalCenter; text: root.userName; color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 17; font.weight: Font.DemiBold }
                 }
                 SCard {
                     t: pal
-                    SRow { t: pal; title: I18n.tr("Full name"); Text { text: root.userName; color: pal.text2; font.family: pal.fam; font.pixelSize: 13 } }
-                    SRow { t: pal; title: I18n.tr("Account name"); Text { text: Quickshell.env("USER"); color: pal.text2; font.family: pal.fam; font.pixelSize: 13 } }
-                    SRow { t: pal; title: I18n.tr("Home folder"); Text { text: Quickshell.env("HOME"); color: pal.text2; font.family: pal.fam; font.pixelSize: 13 } }
+                    SRow { t: pal; title: I18n.tr("Full name"); Text { text: root.userName; color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13 } }
+                    SRow { t: pal; title: I18n.tr("Account name"); Text { text: Quickshell.env("USER"); color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13 } }
+                    SRow { t: pal; title: I18n.tr("Home folder"); Text { text: Quickshell.env("HOME"); color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13 } }
                     SRow {
                         t: pal; title: I18n.tr("Picture")
                         subtitle: I18n.tr("Used on the lock screen and here")
@@ -3688,18 +3782,18 @@ Scope {
                             Text {
                                 width: parent.width; elide: Text.ElideRight
                                 text: wpPane.curPath !== "" ? wpPane.nameOf(wpPane.curPath) : I18n.tr("No wallpaper")
-                                color: pal.text; font.family: pal.fam; font.pixelSize: 15; font.weight: Font.DemiBold
+                                color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 15; font.weight: Font.DemiBold
                             }
                             Text {
                                 width: parent.width
                                 text: wpPane.curVideo !== "" ? I18n.tr("Animated wallpaper") : I18n.tr("Picture")
-                                color: pal.text2; font.family: pal.fam; font.pixelSize: 12
+                                color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12
                             }
                             Text {
                                 width: parent.width; wrapMode: Text.WordWrap
                                 visible: wpPane.curVideo !== ""
                                 text: I18n.tr("Plays on every display and pauses behind fullscreen windows. The Liquid Glass and the lock screen use it too.")
-                                color: pal.text3; font.family: pal.fam; font.pixelSize: 11
+                                color: pal.text3; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 11
                             }
                             Row {
                                 spacing: 8
@@ -3707,6 +3801,21 @@ Scope {
                                 SButton { t: pal; text: I18n.tr("Open Folder"); onClicked: Quickshell.execDetached(["xdg-open", root.bar ? root.bar.wpDirEff : ""]) }
                                 SButton { t: pal; text: I18n.tr("Refresh"); onClicked: if (root.bar) root.bar.wpRefresh() }
                             }
+                        }
+                    }
+                }
+
+                SCard {
+                    t: pal
+                    visible: wpPane.curVideo !== "" || (root.bar && root.bar.liveWallGlass)
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Animated wallpaper in glass")
+                        subtitle: I18n.tr("Play the animated wallpaper inside the Liquid Glass in real time. Off by default: the glass refracts a still frame and uses no video memory.")
+                        SSwitch {
+                            t: pal
+                            checked: root.bar ? root.bar.liveWallGlass : false
+                            onToggled: v => { if (root.bar) root.bar.liveWallGlass = v; }
                         }
                     }
                 }
@@ -3774,7 +3883,7 @@ Scope {
                                 verticalAlignment: TextInput.AlignVCenter
                                 color: pal.text
                                 selectionColor: pal.accent
-                                font.family: pal.fam
+                                font.family: root.fontForWeight(font.weight, pal.fam)
                                 font.pixelSize: 12
                                 clip: true
                                 selectByMouse: true
@@ -3785,7 +3894,7 @@ Scope {
                                 verticalAlignment: Text.AlignVCenter
                                 text: I18n.tr("Search wallpapers")
                                 color: pal.text3
-                                font.family: pal.fam
+                                font.family: root.fontForWeight(font.weight, pal.fam)
                                 font.pixelSize: 12
                                 visible: wpSearchInput.text === "" && !wpSearchInput.activeFocus
                                 MouseArea { anchors.fill: parent; onClicked: wpSearchInput.forceActiveFocus() }
@@ -3878,7 +3987,7 @@ Scope {
                                             id: wtBadge
                                             anchors.centerIn: parent
                                             text: I18n.tr("\u25B6  Animated")
-                                            color: "white"; font.family: pal.fam; font.pixelSize: 9; font.weight: Font.DemiBold
+                                            color: "white"; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 9; font.weight: Font.DemiBold
                                         }
                                     }
                                 }
@@ -3924,7 +4033,7 @@ Scope {
                                 elide: Text.ElideMiddle
                                 text: wt.modelData.name
                                 color: wt.cur ? pal.text : pal.text2
-                                font.family: pal.fam; font.pixelSize: 11
+                                font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 11
                             }
                     }
                 }
@@ -3952,11 +4061,14 @@ Scope {
                     Item {
                         width: parent.width
                         height: 176
-                        SGlyph {
+                        Image {
                             x: (parent.width - width) / 2
-                            y: 44
-                            kind: "dock"
-                            scale: 3.4
+                            y: 16
+                            width: 84; height: 84
+                            source: Qt.resolvedUrl("assets/macshell-logo.png")
+                            sourceSize.width: 256; sourceSize.height: 256
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true; mipmap: true
                         }
                         Text {
                             y: 108
@@ -3964,7 +4076,7 @@ Scope {
                             horizontalAlignment: Text.AlignHCenter
                             text: "macshell"
                             color: pal.text
-                            font.family: pal.fam
+                            font.family: root.fontForWeight(font.weight, pal.fam)
                             font.pixelSize: 21
                             font.weight: Font.DemiBold
                         }
@@ -3972,9 +4084,9 @@ Scope {
                             y: 138
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            text: I18n.tr("Version 0.2.0 \u2022 Hyprland \u2022 Quickshell")
+                            text: I18n.tr("Version 0.3.2 \u2022 Hyprland \u2022 Quickshell")
                             color: pal.text2
-                            font.family: pal.fam
+                            font.family: root.fontForWeight(font.weight, pal.fam)
                             font.pixelSize: 12
                         }
                     }
@@ -3988,7 +4100,7 @@ Scope {
                         Text {
                             text: "~/.config/macdock"
                             color: pal.text2
-                            font.family: pal.fam
+                            font.family: root.fontForWeight(font.weight, pal.fam)
                             font.pixelSize: 13
                         }
                     }
@@ -4045,9 +4157,9 @@ Scope {
                     Repeater {
                         model: [
                             { img: "assets/credits/0-ss.jpg", name: "Rickky", gh: "0-ss",
-                              role: "Owner — the menu bar, the Dock, the Liquid Glass and the widgets. The one who actually knew what he was doing" },
+                              role: "Owner — the menu bar, the Dock, the Liquid Glass the widgets and more... The one who actually knew what he was doing" },
                             { img: "assets/credits/vsoultann.png", name: "vSuol", gh: "vsoultann",
-                              role: "Collaborator — improved the Settings app and window, and every bug you will ever find" }
+                              role: "Contributors — improved the Settings app, and most of the bugs you would find" }
                         ]
                         delegate: Item {
                             id: cr
@@ -4073,13 +4185,13 @@ Scope {
                                 x: 70; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 70 - 90
                                 spacing: 2
-                                Text { text: cr.modelData.name; color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                Text { width: parent.width; text: I18n.tr(cr.modelData.role); wrapMode: Text.WordWrap; color: pal.text2; font.family: pal.fam; font.pixelSize: 11 }
+                                Text { text: cr.modelData.name; color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold }
+                                Text { width: parent.width; text: I18n.tr(cr.modelData.role); wrapMode: Text.WordWrap; color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 11 }
                             }
                             Text {
                                 anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
                                 text: "@" + cr.modelData.gh
-                                color: pal.accent; font.family: pal.fam; font.pixelSize: 12
+                                color: pal.accent; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12
                                 font.underline: crMa.containsMouse
                                 MouseArea { id: crMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: Quickshell.execDetached(["xdg-open", "https://github.com/" + cr.modelData.gh]) }
                             }
@@ -4091,7 +4203,7 @@ Scope {
                     horizontalAlignment: Text.AlignHCenter
                     topPadding: 4
                     text: I18n.tr("Designed by Apple in California.\nRebuilt on Linux by two people who could not afford the Mac.")
-                    color: pal.text3; font.family: pal.fam; font.pixelSize: 11
+                    color: pal.text3; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 11
                 }
 
                 // (keep scrolling…)
@@ -4111,18 +4223,18 @@ Scope {
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter; y: 64
                             text: I18n.tr("Protect your MacShell with AppleCare+")
-                            color: pal.text; font.family: pal.fam; font.pixelSize: 17; font.weight: Font.DemiBold
+                            color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 17; font.weight: Font.DemiBold
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter; y: 90
                             width: parent.width - 60; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                             text: I18n.tr("Unlimited repairs for accidental damage, 24/7 priority access to Apple experts, and battery service coverage. Same price as for a MacBook Pro.")
-                            color: pal.text2; font.family: pal.fam; font.pixelSize: 12
+                            color: pal.text2; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 12
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter; y: 136
                             text: I18n.tr("$279.00 for 3 years or $99.99/yr.")
-                            color: pal.text; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.Medium
+                            color: pal.text; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.Medium
                         }
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter; y: 166
@@ -4130,7 +4242,7 @@ Scope {
                             color: careMa.pressed ? Qt.darker(pal.accent, 1.15) : pal.accent
                             scale: careMa.pressed ? 0.96 : 1
                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutQuint } }
-                            Text { anchors.centerIn: parent; text: I18n.tr("Add AppleCare+"); color: "white"; font.family: pal.fam; font.pixelSize: 13; font.weight: Font.DemiBold }
+                            Text { anchors.centerIn: parent; text: I18n.tr("Add AppleCare+"); color: "white"; font.family: root.fontForWeight(font.weight, pal.fam); font.pixelSize: 13; font.weight: Font.DemiBold }
                             MouseArea { id: careMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
                         }
                     }
@@ -4176,12 +4288,21 @@ Scope {
     // ───────────── LOGIC ─────────────
     function openPrefs(pane) {
         if (!settingsEnabled) return;
+        if (bar) {
+            darkMode = bar.darkMode;
+            appearanceMode = bar.appearanceMode;
+        }
         if (pane !== undefined && pane !== "") {
             for (var i = 0; i < prefsWindow.panes.length; i++)
                 if (prefsWindow.panes[i].id === pane) { prefsWindow.go(i); break; }
         }
         prefsWindow.visible = true;
         prefsWindow.requestActivate();
+    }
+
+    function togglePrefs(pane) {
+        if (prefsWindow.visible) prefsWindow.visible = false;
+        else openPrefs(pane);
     }
 
     function resetPins() {
@@ -4208,14 +4329,14 @@ Scope {
         darkMode = true; appearanceMode = "dark"; glassOpacity = 0.42; glassBlur = 5; glassLiquid = 1.0; dockStyle = "blur"; accent = "#0a84ff"; fontFamily = "Open Runde";
         iconTint = false; iconTintColor = "#0a84ff"; iconTintStrength = 1.0;
         hideMode = "smart"; hideDelay = 450; monitor = "";
-        showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true;
+        showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true; glassLive = true;
         minimizeAnimation = "genie";
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
     readonly property string settingsSig: [dockEnabled, settingsEnabled, iconSize, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, appearanceMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
-        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, iconTint, iconTintColor, iconTintStrength, minimizeAnimation].join("|")
+        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, glassLive, iconTint, iconTintColor, iconTintStrength, minimizeAnimation].join("|")
     property bool settingsReady: false
     onSettingsSigChanged: if (settingsReady) saveTimer.restart()
     onShowTrashChanged: { rebuild(); if (showTrash) trashCheck(); }
@@ -4231,7 +4352,7 @@ Scope {
             accent: String(accent), fontFamily: fontFamily,
             hideMode: hideMode, hideDelay: hideDelay, monitor: monitor,
             showTrash: showTrash, showLabels: showLabels, showIndicators: showIndicators,
-            bounceOnLaunch: bounceOnLaunch, showThumbs: showThumbs, windowCapture: windowCapture,
+            bounceOnLaunch: bounceOnLaunch, showThumbs: showThumbs, windowCapture: windowCapture, glassLive: glassLive,
             iconTint: iconTint, iconTintColor: iconTintColor, iconTintStrength: iconTintStrength,
             minimizeAnimation: minimizeAnimation
         };
@@ -4242,7 +4363,7 @@ Scope {
         if (!o || typeof o !== "object") return;
         var keys = ["dockEnabled", "settingsEnabled", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "appearanceMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
-                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "iconTint", "iconTintColor", "iconTintStrength", "minimizeAnimation"];
+                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "glassLive", "iconTint", "iconTintColor", "iconTintStrength", "minimizeAnimation"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
@@ -4261,6 +4382,11 @@ Scope {
         onLoadFailed: root.settingsReady = true
     }
     Timer { id: saveTimer; interval: 400; onTriggered: root.saveSettings() }
+
+    // MacShell's own windows (About This Linux, Settings, Finder, Photos ...) all have the app id "org.quickshell":
+    // they show the MacShell logo and name instead of a generic icon
+    readonly property string logoPath: decodeURIComponent(String(Qt.resolvedUrl("assets/macshell-logo.png")).replace(/^file:\/\//, ""))
+    function isShellApp(appId) { return appId === "org.quickshell"; }
 
     function lookup(appId) {
         if (!appId) return null;
@@ -4757,9 +4883,10 @@ Scope {
         if (extras.length > 0 && list.length > 0) list.push({ kind: "sep", key: "sep:run" });
         for (var x = 0; x < extras.length; x++) {
             var e2 = lookup(extras[x].appId);
+            var own = isShellApp(extras[x].appId);
             list.push({ kind: "app", key: extras[x].key, appId: e2 ? e2.id : extras[x].appId,
-                        name: e2 ? e2.name : extras[x].appId,
-                        icon: e2 ? e2.icon : extras[x].appId.toLowerCase(),
+                        name: own ? "MacShell" : (e2 ? e2.name : extras[x].appId),
+                        icon: own ? logoPath : (e2 ? e2.icon : extras[x].appId.toLowerCase()),
                         entry: e2, running: true, pinned: false });
         }
 
@@ -4775,9 +4902,10 @@ Scope {
                 var wid = winIdFor(tl);
                 liveWins.push(tl);
                 if (winAge(tl) < 200) { if (!youngWin.running) youngWin.start(); continue; }     // no preview (= no capture) for brand-new windows
+                var own3 = isShellApp(tl.appId);
                 winItems.push({ kind: "win", key: "win:" + wid, tl: tl,
-                                name: e3 ? e3.name : tl.appId,
-                                icon: e3 ? e3.icon : tl.appId.toLowerCase(),
+                                name: own3 ? (tl.title || "MacShell") : (e3 ? e3.name : tl.appId),
+                                icon: own3 ? logoPath : (e3 ? e3.icon : tl.appId.toLowerCase()),
                                 entry: null, running: false, pinned: false });
             }
         }
@@ -4867,6 +4995,10 @@ Scope {
     onDockStyleChanged: if (dockStyle === "liquid") startGlass()
     onGlassStateChanged: console.log("[macdock-glass] state:", glassState)
     function startGlass() {
+        if (dockGlassState === "idle" || dockGlassState === "failed") {
+            dockGlassState = "building";
+            dockQsbProc.running = true;
+        }
         if (glassState === "ready" || glassState === "building") return;
         glassState = "building";
         qsbProc.running = true;
@@ -4885,6 +5017,28 @@ Scope {
             "sh", root.glassShaderSrc, root.glassShaderOut]
         stderr: StdioCollector { onStreamFinished: if (text.trim() !== "") console.log("[macdock-glass] qsb:", text.trim()) }
         onExited: (code, status) => root.glassState = (code === 0 ? "ready" : "failed")
+    }
+
+    // The Dock has its own glass shader (dockglass.frag: Tahoe-style edge light, outer hairline, shadow, adaptive tint), built the
+    // same way. It is independent of liquidglass.frag: if it fails to build or to load, the Dock keeps using the shared shader, so
+    // the Control Center, menu bar and widgets are never affected.
+    property string dockGlassState: "idle"        // idle → building → ready | failed
+    readonly property bool dockGlassNew: dockGlassState === "ready"
+    readonly property string dockGlassSrc: decodeURIComponent(Qt.resolvedUrl("dockglass.frag").toString().replace("file://", ""))
+    readonly property string dockGlassOut: configDir + "/dockglass.frag.qsb"
+    readonly property url dockGlassUrl: dockGlassNew ? "file://" + dockGlassOut : glassShaderUrl
+    Process {
+        id: dockQsbProc
+        command: ["sh", "-c",
+            "mkdir -p \"$(dirname \"$2\")\"; "
+            + "for q in qsb qsb6 qsb-qt6 /usr/lib/qt6/bin/qsb /usr/lib64/qt6/bin/qsb /usr/lib/qt/bin/qsb; do "
+            + "  if command -v \"$q\" >/dev/null 2>&1; then \"$q\" --qt6 -o \"$2\" \"$1\" && exit 0; fi; "
+            + "done; "
+            + "[ -f \"$1.qsb\" ] && cp \"$1.qsb\" \"$2\" && exit 0; "
+            + "exit 1",
+            "sh", root.dockGlassSrc, root.dockGlassOut]
+        stderr: StdioCollector { onStreamFinished: if (text.trim() !== "") console.log("[macdock-glass] dockglass qsb:", text.trim()) }
+        onExited: (code, status) => root.dockGlassState = (code === 0 ? "ready" : "failed")
     }
 
     // wallpaper the glass refracts. Sources, in order: wallpaperPath override, Noctalia's settings.toml
@@ -4907,7 +5061,7 @@ Scope {
 
     // live window geometry for the backdrop compositor (polled only while Liquid Glass is on)
     readonly property var glassClients: hub ? hub.glassClients : []
-    Binding { target: root.hub; property: "dockWantsGeo"; value: root.liquidActive && (root.dockEnabled || prefsWindow.visible) }
+    Binding { target: root.hub; property: "dockWantsGeo"; value: (root.liquidActive || root.hideMode === "smart") && (root.dockEnabled || prefsWindow.visible) }
     // window captures are admitted by the shared gate in shell.qml (hub.tlFor): 0.2 s after a window appears, one every 110 ms
 
     // ── smart hide: which monitors have a non-floating window on their active workspace ──
@@ -4920,7 +5074,15 @@ Scope {
         monProc.running = true;
     }
 
+    // Smart hide ignores floating windows. A window that is about to float (float rule, dialog, picker, the Dock's own settings window)
+    // is reported as TILED for a moment right after it opens, and the fast data path sees that moment, so the Dock must not hide on the
+    // first sighting: a monitor only turns "busy" after it has stayed busy for 220 ms. Un-hiding is immediate.
+    property var lastClients: []
+    property bool busyForce: false
+    Timer { id: busyGrow; interval: 220; onTriggered: { root.busyForce = true; root.computeBusy(root.lastClients); root.busyForce = false; } }
+
     function computeBusy(clients) {
+        lastClients = clients;
         var busy = {};
         for (var m = 0; m < monData.length; m++) {
             var mon = monData[m];
@@ -4928,12 +5090,32 @@ Scope {
             if (mon.specialWorkspace && mon.specialWorkspace.id !== 0) ids.push(mon.specialWorkspace.id);
             for (var c = 0; c < clients.length; c++) {
                 var cl = clients[c];
-                if (cl.floating || !cl.mapped || cl.hidden) continue;
+                if (!!cl.floating || !cl.mapped || cl.hidden) continue;       // floating windows never count
                 if (cl.monitor !== mon.id) continue;
                 if (ids.indexOf(cl.workspace.id) >= 0) { busy[mon.name] = true; break; }
             }
         }
-        busyMonitors = busy;
+        if (!busyForce) {
+            var grows = false, keep = {}, k;
+            for (k in busy) { if (busyMonitors[k] === true) keep[k] = true; else grows = true; }
+            if (grows) { if (!busyGrow.running) busyGrow.start(); busy = keep; }
+            else busyGrow.stop();
+        }
+        if (JSON.stringify(busy) !== JSON.stringify(busyMonitors)) busyMonitors = busy;
+    }
+
+    // Smart hide + the glass backdrop follow the hub's fast Hyprland IPC data (≈60 Hz while something moves) instead of spawning
+    // hyprctl 120 ms after every event: a workspace switch is picked up within a frame or two.
+    readonly property bool fastGeoActive: !!hub && hub.ipcOk && hub.dockWantsGeo
+    function fastGeo() {
+        if (!fastGeoActive || !hub.monData || hub.monData.length === 0) return;
+        root.monData = hub.monData;          // (bd.sync() of every backdrop listens to this)
+        computeBusy(hub.glassClients);
+    }
+    Connections {
+        target: root.hub
+        function onGlassClientsChanged() { root.fastGeo(); }
+        function onIpcOkChanged() { root.fastGeo(); }
     }
 
     Process {
@@ -4960,7 +5142,7 @@ Scope {
         target: Hyprland
         function onRawEvent(event) { busyDebounce.restart(); tickDebounce.restart(); }
     }
-    Timer { id: busyDebounce; interval: 120; onTriggered: root.refreshBusy() }
+    Timer { id: busyDebounce; interval: 120; onTriggered: { if (!root.fastGeoActive) root.refreshBusy(); } }
 
     Component.onCompleted: {
         Quickshell.execDetached(["mkdir", "-p", configDir]);
@@ -5387,15 +5569,36 @@ Scope {
                                 GradientStop { position: 1.0; color: "#ff8a3d" }
                             }
                         }
+                        // the wallpaper that is SHOWN only switches once the new one has finished loading, so a wallpaper change never
+                        // flashes the placeholder gradient (or a black hole) through the glass
                         Image {
+                            id: wpShown
                             anchors.fill: parent
                             visible: status === Image.Ready
-                            onStatusChanged: console.log("[macdock-glass] wallpaper image status:", status, "(1 = ready, 2 = loading, 3 = error)", source)
-                            source: root.fileUrl(root.wallpaperFor(win.modelData.name))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             sourceSize.width: bd.width
                             smooth: true
+                        }
+                        Image {
+                            id: wpNext
+                            visible: false
+                            width: 1; height: 1
+                            onStatusChanged: {
+                                console.log("[macdock-glass] wallpaper image status:", status, "(1 = ready, 2 = loading, 3 = error)", source);
+                                if (status === Image.Ready) wpShown.source = source;
+                            }
+                            source: root.fileUrl(root.wallpaperFor(win.modelData.name))
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            sourceSize.width: bd.width
+                        }
+                        // animated wallpaper: plays behind the Dock glass only while Real-time glass is on
+                        LiveWall {
+                            anchors.fill: parent
+                            video: root.bar ? root.bar.glassVideo : ""
+                            live: root.glassLive
+                            paused: !!root.bar && (root.bar.gaming || root.bar.screenCovered[win.modelData.name] === true)
                         }
 
                         ListModel { id: wm }
@@ -5409,16 +5612,28 @@ Scope {
                                 required property real ww
                                 required property real wh
                                 required property real wz
-                                required property bool gone      // window closed: capture is released first, the item is swept shortly after
+                                required property bool gone      // window closed / left this workspace: hidden at once, its capture is released shortly after
                                 x: wx; y: wy; width: ww; height: wh; z: wz
-                                readonly property var tl: { if (!root.hub || gone) return null; var t = root.hub.tlTick; return root.hub.tlFor(addr); }
+                                visible: !gone                    // a window of the workspace we just left must not linger behind the Dock
+                                // the capture itself is kept 300 ms after the window is gone, so a frame that is in flight can finish
+                                // (destroying a capture mid-frame is what made the compositor drop the Wayland connection)
+                                property bool released: false
+                                onGoneChanged: { if (gone) relTimer.restart(); else { relTimer.stop(); released = false; } }
+                                Timer { id: relTimer; interval: 300; onTriggered: gw.released = true }
+                                // the closing window's own capture stops the moment Hyprland announces the close
+                                readonly property bool closing: !!root.hub && root.hub.closingWins[String(addr).replace(/^0x/, "")] === true
+                                readonly property var tl: { if (!root.hub || released || closing) return null; var t = root.hub.tlTick; return root.hub.tlFor(addr); }
+                                // does this window reach the glass (Dock + the backdrop margin the refraction / blur read from)?
+                                readonly property real dockTop: dock.y + bd.height - ui.height
+                                readonly property bool overlap: x < dock.x + dock.width + 100 && x + width > dock.x - 100
+                                    && y < dockTop + dock.height + 100 && y + height > dockTop - 100
                                 // only keep capturing windows that actually reach the Dock (+ refraction margin)
                                 // real-time: EVERY visible window stays captured (also while the Dock is tucked and for windows far from the Dock), so a window
                                 // dragged over the Dock or a revealed Dock never starts from the bare wallpaper
                                 readonly property bool nearNow: root.glassRT || (!ui.tucked
                                     && x < dock.x + dock.width + 48 && x + width > dock.x - 48
-                                    && y < dock.y + bd.height - ui.height + dock.height + 48
-                                    && y + height > dock.y + bd.height - ui.height - 48)
+                                    && y < dockTop + dock.height + 48
+                                    && y + height > dockTop - 48)
                                 // a capture is only torn down 2.5 s after the window left the dock area: creating / destroying
                                 // live window captures every time a window brushes past the dock is what the compositor can choke on
                                 property bool near: false
@@ -5427,29 +5642,29 @@ Scope {
                                 Timer { id: nearHold; interval: 2500; onTriggered: gw.near = gw.nearNow }
                                 Loader {
                                     anchors.fill: parent
-                                    active: gw.near && !gw.gone
+                                    active: gw.near && !gw.released
                                     sourceComponent: ScreencopyView {
                                         id: sc
                                         captureSource: gw.tl
-                                        // 15 fps, not the window's own rate: the glass only shows a blurred, refracted copy, and
-                                        // copying every frame of a busy window (a terminal, a video) cost several % CPU
-                                        live: false
-                                        readonly property bool wantFrames: !root.glassHold && !ui.tucked && (root.glassRT || hh.hovered)
+                                        // Real-time glass ON: a window that reaches the Dock STREAMS (live: every frame the compositor renders), windows
+                                        // elsewhere refresh at 5 Hz so they are fresh the moment they slide under the Dock. Opening / closing windows no
+                                        // longer freeze the glass: only the closing window's own capture stops.
+                                        // Real-time glass OFF: the old behaviour (15 fps polling, paused while windows open / close).
+                                        readonly property bool canRun: root.glassRT
+                                            ? !(root.hub && root.hub.captureQuiet) && !(root.bar && root.bar.gaming) && !gw.gone && !gw.closing
+                                            : (!root.glassHold && !ui.tucked)
+                                        live: root.glassRT && canRun && gw.overlap && !ui.tucked
                                         Timer {
-                                            interval: 66; repeat: true
-                                            running: sc.wantFrames && sc.captureSource !== null
+                                            interval: root.glassRT ? (gw.overlap ? 33 : 200) : 66
+                                            repeat: true
+                                            running: sc.canRun && !sc.live && sc.captureSource !== null
                                             onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
                                         }
-                                        Timer {
-                                            interval: 2500; repeat: true
-                                            running: !sc.wantFrames && !root.glassHold && !ui.tucked && sc.captureSource !== null
-                                            onTriggered: if (typeof sc.captureFrame === "function") sc.captureFrame()
-                                        }
-                                        onCaptureSourceChanged: { if (captureSource !== null && !root.glassHold) firstShot.restart(); }
+                                        onCaptureSourceChanged: { if (captureSource !== null && sc.canRun) firstShot.restart(); }
                                         Timer {
                                             id: firstShot
-                                            interval: 90
-                                            onTriggered: { if (sc.captureSource !== null && !sc.live && !root.glassHold && typeof sc.captureFrame === "function") sc.captureFrame(); }
+                                            interval: 60
+                                            onTriggered: { if (sc.captureSource !== null && !sc.live && sc.canRun && typeof sc.captureFrame === "function") sc.captureFrame(); }
                                         }
                                     }
                                 }
@@ -5517,14 +5732,17 @@ Scope {
                     Loader {
                         id: glassLayer
                         anchors.fill: parent
-                        active: root.liquidActive
+                        active: root.liquidActive          // exactly as before: runs on the shared shader until dockglass.frag is built, then swaps
                         sourceComponent: Item {
                             id: dg
+                            // wallpaper's dominant colour: the edge light leans toward it (slides to the new colour when the wallpaper changes)
+                            property color edgeCol: root.bar ? root.bar.menuBorderColor : "#8A9AB5"
+                            Behavior on edgeCol { ColorAnimation { duration: 450; easing.type: Easing.OutCubic } }
                             // blurring at half resolution is visually identical for radii >= 8 px and costs a quarter of the GPU work
                             readonly property real ds: root.glassBlur >= 8 ? 0.5 : 1.0
                             readonly property real bn: root.glassBlur * 1.4 * ds / 64.0
                             readonly property real margin: 72      // extra backdrop captured around the Dock (refraction + blur reach)
-                            readonly property real padPx: 10       // shader item padding (drop shadow)
+                            readonly property real padPx: root.dockGlassNew ? 30 : 10   // shader item padding (shadow room); dockglass.frag needs >= 30, the shared shader keeps its original 10
 
                             readonly property bool isLive: !ui.tucked && (root.glassRT || hh.hovered || ui.strength > 0.001 || ui.dragging || ui.tearing || dg.updating)
                             property bool updating: true
@@ -5548,7 +5766,6 @@ Scope {
                                 function onTuckedChanged() { dg.triggerUpdate(); }
                             }
                             Component.onCompleted: dg.triggerUpdate()
-
                             ShaderEffectSource {
                                 id: bsrc
                                 sourceItem: glassBackdrop.item
@@ -5602,11 +5819,17 @@ Scope {
                                 x: -padPx; y: -padPx
                                 width: dock.width + 2 * padPx
                                 height: dock.height + 2 * padPx
-                                fragmentShader: root.glassShaderUrl
+                                fragmentShader: root.dockGlassUrl
                                 onStatusChanged: {
                                     console.log("[macdock-glass] shader status:", status, "(0 = compiled, 1 = uncompiled, 2 = error)", log);
-                                    if (status === ShaderEffect.Error) root.glassState = "failed";
+                                    if (status === ShaderEffect.Error) {
+                                        // the Dock's own shader failed to load: drop back to the shared one; only if THAT fails too, give up on Liquid Glass
+                                        if (root.dockGlassNew) root.dockGlassState = "failed";
+                                        else root.glassState = "failed";
+                                    }
                                 }
+                                // dockglass.frag only (ignored by liquidglass.frag): rgb = wallpaper colour, a = how strongly the edge light follows it
+                                property vector4d edgeTint: Qt.vector4d(dg.edgeCol.r, dg.edgeCol.g, dg.edgeCol.b, root.dockGlassNew ? 0.5 : 0)
 
                                 property variant src: dg.bn > 1.0 ? bblur2 : bblur
                                 property real padPx: parent.padPx
@@ -5627,7 +5850,10 @@ Scope {
                                 property real saturation: 1.25
                                 property real dark: root.dockDark ? 1 : 0
                                 property real debug: root.glassDebug ? 1 : 0
-                                property real shadowAmt: 1
+                                // smart / always hide: the Tahoe shadow reaches ~24 px above the glass, so with the Dock slid down it would peek out
+                                // along the screen edge. Fade it out as the Dock tucks (finishes before the 240 ms slide does), back in on reveal.
+                                property real shadowAmt: ui.tucked ? 0 : 1
+                                Behavior on shadowAmt { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                                 property real rimTint: 0
                                 property real ringW: 0
                             }
@@ -5653,15 +5879,22 @@ Scope {
                         }
                     }
 
-                    // Control Center style border (same colour logic, follows the wallpaper), but even on all four corners and subtler
-                    CornerBorder {
+                    // Control Center style border (same colour logic, follows the wallpaper), but even on all four corners and subtler.
+                    // With dockglass.frag the edge is drawn by the shader (crisp light line + outer hairline), so this Canvas - which repaints
+                    // every frame the Dock changes width while icons magnify - is not even created. It stays for Normal Blur and as the
+                    // fallback when the Dock's own shader is unavailable.
+                    Loader {
                         anchors.fill: parent
-                        cornerR: root.cornerRadius
-                        dark: root.dockDark
-                        tint: root.bar ? root.bar.menuBorderColor : "#8A9AB5"
-                        amount: 0.5
-                        lineW: 0.8
-                        fade: false
+                        active: !(root.liquidActive && root.dockGlassNew)
+                        sourceComponent: CornerBorder {
+                            anchors.fill: parent
+                            cornerR: root.cornerRadius
+                            dark: root.dockDark
+                            tint: root.bar ? root.bar.menuBorderColor : "#8A9AB5"
+                            amount: 0.5
+                            lineW: 0.8
+                            fade: false
+                        }
                     }
 
                     Row {
@@ -5888,10 +6121,20 @@ Scope {
                                     z: 10
                                     width: label.implicitWidth + 22
                                     height: label.implicitHeight + 10
-                                    radius: 8
+                                    radius: 9
                                     color: Qt.rgba(0.12, 0.12, 0.13, 0.72)
                                     border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.12)
+                                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                                    // dark hairline just outside, so the label keeps its edge over a bright window behind it
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.margins: -1
+                                        z: -1
+                                        radius: parent.radius + 1
+                                        color: "transparent"
+                                        border.width: 1
+                                        border.color: Qt.rgba(0, 0, 0, 0.22)
+                                    }
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     y: cell.height - img.height - img.lift - height - 10
 
@@ -5901,7 +6144,7 @@ Scope {
                                         text: cell.isSep ? "" : ((cell.modelData.kind === "win" && cell.modelData.tl && cell.modelData.tl.title) ? cell.modelData.tl.title : cell.modelData.name)
                                         color: "white"
                                         font.pixelSize: 13
-                                        font.family: root.fontFamily
+                                        font.family: root.fontForWeight(font.weight, root.fontFamily)
                                     }
                                 }
 
@@ -6032,7 +6275,7 @@ Scope {
                                     text: mi.isSep ? "" : (mi.armedNow ? I18n.tr("Click again to confirm") : I18n.tr(mi.modelData.label))
                                     color: mi.off ? Qt.rgba(1, 1, 1, 0.4) : "white"
                                     font.pixelSize: 13
-                                    font.family: root.fontFamily
+                                    font.family: root.fontForWeight(font.weight, root.fontFamily)
                                 }
                                 MouseArea {
                                     id: mia

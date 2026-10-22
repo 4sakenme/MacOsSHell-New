@@ -12,12 +12,17 @@
 #   3. installs the shell to   ~/.config/quickshell/MacShell        (start it with:  qs -c MacShell)
 #      the lock screen to      ~/.config/quickshell/MacLock         (lock with:  sh ~/.config/quickshell/MacLock/lock-via-ipc.sh)
 #      (MacShell and MacLock are two separate Quickshell configs; neither is placed inside the other)
-#      helper scripts to       ~/.config/hypr-macshell/scripts      (only if the repo ships them)
+#      the helper tree to      ~/.config/hypr-macshell              (scripts/ = Game Mode, video wallpapers, AirDrop, lock helper;
+#                                                                   plus the standalone Hyprland session config, hypridle / hyprlock files;
+#                                                                   your own custom/ folder is never overwritten)
+#      app launchers to        ~/.local/share/applications          (Finder, Photos, Clock ... entries for macshell-*.desktop)
+#      icons to                ~/.local/share/icons/hicolor/scalable/apps
+#      the Apple emoji font rule to ~/.config/fontconfig/conf.d
 #      sounds to               ~/.local/share/sounds/macshell       (shipped ones, plus the rest synthesized by macshell-make-sounds.py)
 #      the update tool to      ~/.local/share/macshell/bin/macshell-update  (+ ~/.local/bin/macshell-update)
 #      the start script to     ~/.local/share/macshell/bin/macshell-start   (+ ~/.local/bin/macshell-start)
-#   4. adds the autostart to your Hyprland config: a Lua block in hyprland.lua (Hyprland 0.55+), or an exec-once line
-#      in hyprland.conf. It never writes to a config Hyprland is not using.
+#   4. installs ~/.config/hypr/macshell.lua with the autostart and keybinds, then loads it from hyprland.lua
+#      (Hyprland 0.55+), or adds an exec-once line to hyprland.conf. It never writes to a config Hyprland is not using.
 #   5. optionally sets up automatic updates (a daily systemd user timer)
 #
 # Updates
@@ -70,12 +75,18 @@ LOCK_DEST="${MACLOCK_DEST:-$CONFIG_HOME/quickshell/$LOCK_NAME}"
 STATE_DIR="$DATA_HOME/macshell"
 BIN_DIR="$STATE_DIR/bin"
 BACKUP_DIR="$STATE_DIR/backups"
-SCRIPTS_DIR="$CONFIG_HOME/hypr-macshell/scripts"
+HYPR_MAC_DIR="$CONFIG_HOME/hypr-macshell"
+SCRIPTS_DIR="$HYPR_MAC_DIR/scripts"
+APPS_DIR="$DATA_HOME/applications"
+ICONS_DIR="$DATA_HOME/icons/hicolor/scalable/apps"
+FONTCONF_DIR="$CONFIG_HOME/fontconfig/conf.d"
 SOUNDS_DIR="$DATA_HOME/sounds/macshell"
 LINK_DIR="$HOME/.local/bin"
 HYPR_DIR="$CONFIG_HOME/hypr"
 MARK_BEGIN="-- >>> MacShell (added by install.sh) >>>"
 MARK_END="-- <<< MacShell <<<"
+MACLUA_BEGIN="-- >>> MacShell module (added by install.sh) >>>"
+MACLUA_END="-- <<< MacShell module <<<"
 CONF_BEGIN="# >>> MacShell (added by install.sh) >>>"
 CONF_END="# <<< MacShell <<<"
 
@@ -215,6 +226,11 @@ remove_hypr_blocks() {
     for f in "$HYPR_DIR/hyprland.lua"; do
         [ -f "$f" ] && grep -qF -- "$MARK_BEGIN" "$f" && { sed -i "\|$MARK_BEGIN|,\|$MARK_END|d" "$f"; ok "removed the MacShell block from $f"; }
     done
+    f="$HYPR_DIR/macshell.lua"
+    if [ -f "$f" ] && grep -qF -- "$MACLUA_BEGIN" "$f"; then
+        if [ -f "$f.macshell-backup" ]; then mv -f "$f.macshell-backup" "$f"; else rm -f "$f"; fi
+        ok "removed the generated MacShell module from $f"
+    fi
     f="$HYPR_DIR/hyprland.conf"
     [ -f "$f" ] && grep -qF -- "$CONF_BEGIN" "$f" && { sed -i "\|$CONF_BEGIN|,\|$CONF_END|d" "$f"; ok "removed the MacShell block from $f"; }
     return 0
@@ -236,7 +252,7 @@ do_uninstall() {
     remove_hypr_blocks
     rm -f "$LINK_DIR/macshell-update" "$LINK_DIR/macshell-start" "$BIN_DIR/macshell-update" "$BIN_DIR/macshell-start" "$STATE_DIR/state.env"
     ok "removed the update and start tools"
-    say "Your settings were kept (~/.config/macbar, macdock, macshell, macwidgets)."
+    say "Your settings were kept (~/.config/macbar, macdock, macshell, macwidgets). The helper tree stays in $HYPR_MAC_DIR (remove it by hand if you like)."
     say "If you added them yourself, remove the MacShell autostart and the MacLock lock keybind from your Hyprland config."
     exit 0
 }
@@ -266,6 +282,7 @@ OPTIONAL=(
     "bluetoothctl:bluez-utils:Bluetooth (also needs the bluetooth service, enabled below)"
     "rfkill:util-linux:Bluetooth / Airplane Mode (unblocking the adapter)"
     "brightnessctl:brightnessctl:display brightness"
+    "playerctl:playerctl:media keys (play / pause / next / previous)"
     "powerprofilesctl:power-profiles-daemon:power profiles / Game Mode"
     "inotifywait:inotify-tools:live wallpaper watching, Trash watching"
     "hyprsunset:hyprsunset:Night Shift"
@@ -279,10 +296,13 @@ OPTIONAL=(
     "magick:imagemagick:profile picture conversion"
     "fastfetch:fastfetch:About This Linux"
     "rsync:rsync:faster, safer file sync in the installer"
+    "jq:jq:wallpaper helpers (reading the dock / shell settings)"
+    "python3:python:UI sound generation and AirDrop"
     "kitty:kitty:the default terminal"
     "espeak-ng:espeak-ng:text-to-speech voice synthesis for Siri"
     "mpv:mpv:audio playback for Siri Voice and media"
     "hypridle:hypridle:lock on idle (optional)"
+    "wtype:wtype:menu bar keyboard shortcuts in browsers and apps"
 )
 # libraries / fonts / packages without a command to test: arch-package:what-for   (a|b = first one the repositories have)
 LIBS=(
@@ -334,7 +354,7 @@ pkg_for() {
                 qt6-wayland) echo qt6-qtwayland ;; qt6-svg) echo qt6-qtsvg ;; networkmanager) echo NetworkManager ;;
                 bluez-utils) echo bluez ;; "inter-font|ttf-inter") echo rsms-inter-fonts ;;
                 noto-fonts) echo google-noto-sans-fonts ;; noto-fonts-emoji) echo "google-noto-color-emoji-fonts|google-noto-emoji-fonts" ;;
-                imagemagick) echo ImageMagick ;; awww|mpvpaper|cliphist) echo "$p" ;; *) printf '%s' "${p%%|*}" ;;
+                imagemagick) echo ImageMagick ;; python) echo python3 ;; awww|mpvpaper|cliphist) echo "$p" ;; *) printf '%s' "${p%%|*}" ;;
              esac ;;
         apt) case "$p" in
                 pipewire) echo pipewire-bin ;; pipewire-pulse) echo pipewire-pulse ;; qt6-shadertools) echo qt6-shader-baker ;;
@@ -342,7 +362,7 @@ pkg_for() {
                 portaudio) echo portaudio19-dev ;; espeak-ng) echo espeak-ng ;;
                 networkmanager) echo network-manager ;; bluez-utils) echo bluez ;; libnotify) echo libnotify-bin ;;
                 "inter-font|ttf-inter") echo fonts-inter ;; noto-fonts) echo fonts-noto-core ;;
-                noto-fonts-emoji) echo fonts-noto-color-emoji ;; qt6-declarative|qt6-wayland|qt6-svg) echo "" ;;
+                noto-fonts-emoji) echo fonts-noto-color-emoji ;; python) echo python3 ;; qt6-declarative|qt6-wayland|qt6-svg) echo "" ;;
                 *) printf '%s' "${p%%|*}" ;;
              esac ;;
     esac
@@ -432,6 +452,25 @@ install_extra_sources() {
     esac
 }
 
+# Video wallpapers need mpvpaper (+ ffmpeg for thumbnails). check_deps already tries to install it; this makes sure it
+# is not silently skipped, and says exactly what to run when the package manager cannot provide it.
+ensure_mpvpaper() {
+    have mpvpaper && return 0
+    [ -n "$PM" ] || { warn "mpvpaper is missing: video wallpapers need it"; return 0; }
+    local failed=0 m
+    for m in "${MANUAL_LIST[@]:-}"; do [ "$m" = mpvpaper ] && failed=1; done
+    if [ "$failed" = 0 ] && [ "$CAN_INSTALL" = 1 ] && confirm "Install mpvpaper now (needed for video wallpapers)?" y; then
+        if pick=$(first_available mpvpaper); then install_packages "$pick" || true
+        else install_extra_sources mpvpaper; fi
+    fi
+    if have mpvpaper; then ok "mpvpaper installed"; return 0; fi
+    case "$PM" in
+        pacman) warn "mpvpaper is not installed: video wallpapers will not work. Run:  yay -S mpvpaper   (or paru -S mpvpaper)" ;;
+        dnf)    warn "mpvpaper is not installed: video wallpapers will not work. It is not in the Fedora repositories: build it from https://github.com/GhostNaN/mpvpaper" ;;
+        *)      warn "mpvpaper is not installed: video wallpapers will not work. Install it with your package manager or build it from https://github.com/GhostNaN/mpvpaper" ;;
+    esac
+}
+
 check_deps() {
     step "Checking dependencies"
     detect_pm
@@ -493,6 +532,7 @@ check_deps() {
         warn "still missing, install by hand: ${MANUAL_LIST[*]}"
     fi
     check_hyprland_version
+    ensure_mpvpaper
 
     # whatever is still missing among the required tools
     for entry in "${REQUIRED[@]}"; do
@@ -712,6 +752,13 @@ run_doctor() {
     fi
     [ -e /etc/pam.d/hyprlock ] && d_ok "/etc/pam.d/hyprlock (MacLock passwords)" || d_bad "/etc/pam.d/hyprlock is missing: install hyprlock"
 
+    # helper scripts
+    for u in macshell-setwall.sh macshell-gaming.sh macshell-wallpause.sh macshell-wallpaper.sh maclock.sh; do
+        [ -x "$SCRIPTS_DIR/$u" ] && d_ok "helper: $u" || d_bad "helper script missing: $SCRIPTS_DIR/$u (video wallpapers / Game Mode / lock need it): run  bash install.sh"
+    done
+    have mpvpaper && d_ok "mpvpaper is installed" || say "  ${D}- mpvpaper is not installed (animated wallpapers)${N}"
+    have jq || d_bad "jq is missing (the wallpaper helpers read settings with it)"
+
     # wallpaper
     if have awww; then
         d_ok "awww is installed"
@@ -913,7 +960,7 @@ backup_current() { # backup_current <dest> <name>
 }
 
 # repository files that are not part of a Quickshell config (MacLock is excluded so it never ends up inside MacShell)
-EXCLUDES=(.git .github install.sh macshell-update macshell-start README.md README LICENSE LICENSE.md docs screenshots scripts sounds "$LOCK_NAME")
+EXCLUDES=(.git .github install.sh macshell-update macshell-start hypr-macshell README.md README LICENSE LICENSE.md docs screenshots scripts sounds "$LOCK_NAME")
 LOCK_EXCLUDES=(.git .github)
 
 sync_files() { # sync_files <source-folder> <dest> <exclude>...
@@ -1020,15 +1067,79 @@ START
     ln -sf "$BIN_DIR/macshell-start" "$LINK_DIR/macshell-start"
 }
 
-install_extras() {
-    local root="$1" f n
-    # helper scripts (Game Mode, wallpaper helpers)
+# Find the helper tree (a folder called hypr-macshell near the top of the source).
+find_hypr_root() { # find_hypr_root <source-root>
+    local d
+    d=$(find "$1" -maxdepth 3 -type d -name hypr-macshell -not -path '*/.git/*' 2>/dev/null \
+        | awk '{ print length($0) " " $0 }' | sort -n | head -n1 | cut -d' ' -f2-)
+    [ -n "$d" ] && printf '%s' "$d"
+}
+
+# Copy the helper tree into ~/.config/hypr-macshell. Files that ship with MacShell are updated; the user's own
+# custom/ folder is only filled in where files are missing, and extra files the user added are never deleted.
+install_hypr_tree() { # install_hypr_tree <hypr-macshell source folder>
+    local src="$1" f n
+    [ -d "$src/scripts" ] || return 1
+    backup_current "$HYPR_MAC_DIR" hypr-macshell
+    mkdir -p "$HYPR_MAC_DIR"
+    if have rsync; then
+        rsync -a --exclude=/custom/ "$src"/ "$HYPR_MAC_DIR"/
+        [ -d "$src/custom" ] && rsync -a --ignore-existing "$src/custom"/ "$HYPR_MAC_DIR/custom"/
+    else
+        tar -C "$src" --exclude=./custom -cf - . | tar -C "$HYPR_MAC_DIR" -xf -
+        if [ -d "$src/custom" ]; then
+            (cd "$src/custom" && find . -type f) | while IFS= read -r f; do
+                [ -e "$HYPR_MAC_DIR/custom/$f" ] || { mkdir -p "$(dirname "$HYPR_MAC_DIR/custom/$f")"; cp -p "$src/custom/$f" "$HYPR_MAC_DIR/custom/$f"; }
+            done
+        fi
+    fi
+    # the files ship with a __HOME__ placeholder for absolute paths
+    for f in hypridle.conf hyprlock/colors.conf; do
+        [ -f "$HYPR_MAC_DIR/$f" ] && sed -i "s|__HOME__|$HOME|g" "$HYPR_MAC_DIR/$f"
+    done
+    [ -f "$HYPR_MAC_DIR/hypridle.conf" ] && cp -f "$HYPR_MAC_DIR/hypridle.conf" "$HYPR_DIR/hypridle.conf"
+    find "$HYPR_MAC_DIR" -type f \( -name '*.sh' -o -name '*.py' \) -exec chmod +x {} + 2>/dev/null || true
+    n=$(find "$HYPR_MAC_DIR/scripts" -maxdepth 1 -type f \( -name 'macshell-*.sh' -o -name 'macshell-*.py' \) | wc -l)
+    ok "$n helper script(s) -> $SCRIPTS_DIR"
+    ok "session config, hypridle / hyprlock files -> $HYPR_MAC_DIR"
+    # app launchers (Finder, Photos, Clock, ...)
     n=0
-    while IFS= read -r f; do
-        mkdir -p "$SCRIPTS_DIR"
-        cp -f "$f" "$SCRIPTS_DIR/$(basename "$f")"; chmod +x "$SCRIPTS_DIR/$(basename "$f")"; n=$((n+1))
-    done < <(find "$root" -type f \( -name 'macshell-*.sh' -o -name 'macshell-*.py' \) -not -path '*/.git/*' 2>/dev/null)
-    if [ "$n" -gt 0 ]; then ok "$n helper script(s) -> $SCRIPTS_DIR"; else warn "no helper scripts (macshell-*.sh) in the source: Game Mode and video wallpapers will not work"; fi
+    if [ -d "$src/applications" ]; then
+        mkdir -p "$APPS_DIR"
+        for f in "$src"/applications/*.desktop; do [ -f "$f" ] && { cp -f "$f" "$APPS_DIR/"; n=$((n+1)); }; done
+        [ "$n" -gt 0 ] && { ok "$n app launcher(s) -> $APPS_DIR"; have update-desktop-database && update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true; }
+    fi
+    # icons
+    n=0
+    if [ -d "$src/icons" ]; then
+        mkdir -p "$ICONS_DIR"
+        for f in "$src"/icons/*.svg; do [ -f "$f" ] && { cp -f "$f" "$ICONS_DIR/"; n=$((n+1)); }; done
+        [ "$n" -gt 0 ] && { ok "$n icon(s) -> $ICONS_DIR"; have gtk-update-icon-cache && gtk-update-icon-cache -q -t "$DATA_HOME/icons/hicolor" >/dev/null 2>&1 || true; }
+    fi
+    # Apple emoji font preference
+    if [ -f "$src/75-apple-emoji.conf" ]; then
+        mkdir -p "$FONTCONF_DIR"; cp -f "$src/75-apple-emoji.conf" "$FONTCONF_DIR/"
+        have fc-cache && fc-cache -f >/dev/null 2>&1 || true
+        ok "emoji font rule -> $FONTCONF_DIR"
+    fi
+    return 0
+}
+
+install_extras() {
+    local root="$1" f n hroot
+    # helper tree: scripts (Game Mode, video wallpapers, AirDrop, lock), session config, launchers, icons
+    hroot=$(find_hypr_root "$root" || true)
+    if [ -n "$hroot" ] && install_hypr_tree "$hroot"; then
+        :
+    else
+        # older layout: loose macshell-*.sh / macshell-*.py files somewhere in the source
+        n=0
+        while IFS= read -r f; do
+            mkdir -p "$SCRIPTS_DIR"
+            cp -f "$f" "$SCRIPTS_DIR/$(basename "$f")"; chmod +x "$SCRIPTS_DIR/$(basename "$f")"; n=$((n+1))
+        done < <(find "$root" -type f \( -name 'macshell-*.sh' -o -name 'macshell-*.py' \) -not -path '*/.git/*' 2>/dev/null)
+        if [ "$n" -gt 0 ]; then ok "$n helper script(s) -> $SCRIPTS_DIR"; else warn "no helper scripts (macshell-*.sh) and no hypr-macshell/ folder in the source: Game Mode and video wallpapers will not work (the repository is missing hypr-macshell/)"; fi
+    fi
     # sounds
     n=0
     while IFS= read -r f; do
@@ -1053,6 +1164,7 @@ install_extras() {
     fi
     write_start_script
     ok "start script -> $BIN_DIR/macshell-start"
+    if [ "$SKIP_AUTOSTART" != 1 ] || [ "$UPDATE_MODE" = 1 ]; then write_macshell_lua; fi
     # a copy of this installer: run  macshell-install  any time to update, check dependencies or run the doctor
     if [ -f "$root/install.sh" ]; then
         cp -f "$root/install.sh" "$BIN_DIR/.macshell-install.new" && chmod +x "$BIN_DIR/.macshell-install.new" \
@@ -1144,10 +1256,93 @@ write_state() {
 # actually looks. (The old installer always wrote "exec-once" into hyprland.conf, which a Lua session never reads.)
 START_CMD() { printf 'sh %s' "$LINK_DIR/macshell-start"; }
 
+write_macshell_lua() {
+    mkdir -p "$HYPR_DIR"
+    local f="$HYPR_DIR/macshell.lua"
+    if [ -f "$f" ] && ! grep -qF -- "$MACLUA_BEGIN" "$f" && [ ! -e "$f.macshell-backup" ]; then
+        cp -p "$f" "$f.macshell-backup"
+        ok "saved the existing $f to $f.macshell-backup"
+    fi
+    {
+        printf '%s\n' "$MACLUA_BEGIN"
+        cat <<'MACSHELL_LUA'
+-- autostart (remove other bars / docks / notification daemons first).
+-- install.sh adds this for you; macshell-start waits for the compositor and restarts the shell if it crashes.
+hl.on("hyprland.start", function()
+    hl.exec_cmd("awww-daemon")
+    hl.exec_cmd("hypridle")
+    hl.exec_cmd("sh ~/.local/bin/macshell-start")
+end)
+-- The Settings window floats and centres itself when it opens, so it needs no window rule.
+
+-- keybinds (the name after -c is the config folder name, case-sensitive)
+local qs = "qs -c MacShell ipc call "
+
+hl.bind("SUPER + Z",          hl.dsp.exec_cmd(qs .. "settings toggle"))
+hl.bind("SUPER + V",          hl.dsp.exec_cmd(qs .. "spotlight clipboard"))
+hl.bind("SUPER + period",     hl.dsp.exec_cmd(qs .. "spotlight emoji"))
+hl.bind("SUPER + Space",      hl.dsp.exec_cmd(qs .. "spotlight toggle"))
+hl.bind("ALT + TAB",          hl.dsp.exec_cmd(qs .. "switcher next"))
+hl.bind("CTRL + ALT + W",     hl.dsp.exec_cmd(qs .. "wallpapers toggle"))
+hl.bind("PRINT",              hl.dsp.exec_cmd(qs .. "screenshot region"))
+
+-- Laptop lid switch: lock screen on screen shut
+hl.bind("switch:on:Lid Switch", hl.dsp.exec_cmd("sh ~/.config/quickshell/MacLock/lock-via-ipc.sh"), { locked = true })
+
+-- Hardware keys (laptop buttons too): volume, mute, brightness, media. MacShell handles them itself and shows its
+-- on-screen display. If the shell is not running, wpctl / brightnessctl do the work instead.
+-- "locked" keeps the keys working on the lock screen. Any earlier bind on the same key is dropped first, so a key never fires twice.
+local function hw(action, fallback)
+    return "sh -c '" .. qs .. "hardware " .. action .. " >/dev/null 2>&1 || " .. fallback .. "'"
+end
+local hwkeys = {
+    { "XF86AudioRaiseVolume",  hw("volumeUp",       "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"),   true  },
+    { "XF86AudioLowerVolume",  hw("volumeDown",     "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"),        true  },
+    { "XF86AudioMute",         hw("mute",           "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"),       false },
+    { "XF86AudioMicMute",      hw("micMute",        "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"),     false },
+    { "XF86MonBrightnessUp",   hw("brightnessUp",   "brightnessctl -q set 5%+"),                         true  },
+    { "XF86MonBrightnessDown", hw("brightnessDown", "brightnessctl -q -n1 set 5%-"),                     true  },
+    { "XF86KbdBrightnessUp",   "brightnessctl -q -d '*kbd_backlight*' set 10%+",                         true  },
+    { "XF86KbdBrightnessDown", "brightnessctl -q -d '*kbd_backlight*' set 10%-",                         true  },
+    { "XF86AudioPlay",         "playerctl play-pause",                                                   false },
+    { "XF86AudioPause",        "playerctl pause",                                                        false },
+    { "XF86AudioNext",         "playerctl next",                                                         false },
+    { "XF86AudioPrev",         "playerctl previous",                                                     false },
+}
+for _, k in ipairs(hwkeys) do
+    pcall(hl.unbind, k[1])
+    hl.bind(k[1], hl.dsp.exec_cmd(k[2]), { locked = true, repeating = k[3] })
+end
+
+-- MacShell's own windows (Settings, About This Linux): translucent like a macOS window, and no Hyprland border
+-- (these windows draw their own edge). Blur size / passes are global in Hyprland (decoration.blur), not per window.
+hl.window_rule({
+    name = "macshell-settings",
+    match = { title = "^macshell Settings$" },
+    opacity = "0.82 0.85 1",          -- active, inactive, fullscreen
+    border_size = 0,
+    rounding = 12,
+})
+hl.window_rule({
+    name = "macshell-about",
+    match = { title = "^About This Linux$" },
+    opacity = "0.82 0.85 1",
+    border_size = 0,
+    rounding = 18,
+})
+
+-- MacLock (lock screen)
+hl.bind("SUPER + L",          hl.dsp.exec_cmd("sh ~/.config/quickshell/MacLock/lock-via-ipc.sh"))
+MACSHELL_LUA
+        printf '%s\n' "$MACLUA_END"
+    } > "$f"
+    ok "MacShell autostart and keybinds -> $f"
+}
+
 lua_block() { # lua_block <with-rules 0|1>
     printf '%s\n' "$MARK_BEGIN"
-    printf '%s\n' '-- autostart: waits for the compositor, restarts MacShell if it crashes (remove this block to undo)'
-    printf 'hl.on("hyprland.start", function()\n    hl.exec_cmd("%s")\nend)\n' "$(START_CMD)"
+    printf '%s\n' '-- Load the generated MacShell autostart and keybind module.'
+    printf '%s\n' 'require("macshell")'
     if [ "${1:-0}" = 1 ]; then
         printf '%s\n' '-- Liquid Glass: blur behind the shell surfaces'
         printf '%s\n' 'hl.layer_rule({ name = "macdock",  match = { namespace = "macdock"  }, blur = true, ignore_alpha = 0.2,  no_anim = true })'
@@ -1170,17 +1365,21 @@ add_autostart() {
             { echo; lua_block "$had_rules"; } >> "$lua"
             ok "autostart block in $lua refreshed"
         elif grep -Eq "macshell-start|(qs|quickshell)[[:space:]]+(-c|--config)[[:space:]]+$NAME" "$lua"; then
-            ok "$lua already starts MacShell"
-        elif confirm "Start MacShell automatically with Hyprland (adds a block to $lua)?" y; then
+            if ! grep -qF 'require("macshell")' "$lua" && ! grep -qF 'macshell.lua' "$lua"; then
+                cp -f "$lua" "$lua.macshell-backup"
+                { echo; lua_block 0; } >> "$lua"
+                ok "added the MacShell module loader to $lua (backup: $lua.macshell-backup)"
+                have hyprctl && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && hyprctl reload >/dev/null 2>&1 && ok "Hyprland config reloaded"
+            else
+                ok "$lua already loads the MacShell module"
+            fi
+        else
             if [ "$SKIP_RULES" != 1 ] && ! grep -q 'namespace *= *"macdock"' "$lua" \
                && confirm "Also add the Liquid Glass layer rules (blur behind the Dock and menus)?" y; then rules=1; fi
             cp -f "$lua" "$lua.macshell-backup"
             { echo; lua_block "$rules"; } >> "$lua"
             ok "added the autostart to $lua (backup: $lua.macshell-backup)"
             have hyprctl && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && hyprctl reload >/dev/null 2>&1 && ok "Hyprland config reloaded"
-        else
-            say "  To start MacShell with Hyprland, add this to $lua:"
-            lua_block 0 | sed 's/^/      /'
         fi
     elif [ -f "$conf" ]; then
         if grep -qF -- "$CONF_BEGIN" "$conf"; then
@@ -1189,7 +1388,7 @@ add_autostart() {
             ok "autostart line in $conf refreshed"
         elif grep -Eq "macshell-start|(qs|quickshell)[[:space:]]+(-c|--config)[[:space:]]+$NAME" "$conf"; then
             ok "$conf already starts MacShell"
-        elif confirm "Start MacShell automatically with Hyprland (adds a line to $conf)?" y; then
+        else
             cp -f "$conf" "$conf.macshell-backup"
             { echo; printf '%s\nexec-once = %s\n%s\n' "$CONF_BEGIN" "$(START_CMD)" "$CONF_END"; } >> "$conf"
             ok "added the autostart to $conf (backup: $conf.macshell-backup)"
@@ -1197,7 +1396,7 @@ add_autostart() {
         fi
     else
         say "  No Hyprland config found in $HYPR_DIR. Start MacShell from your autostart with:"
-        say "      Lua:   hl.on(\"hyprland.start\", function() hl.exec_cmd(\"$(START_CMD)\") end)"
+        say '      Lua:   require("macshell")'
         say "      conf:  exec-once = $(START_CMD)"
     fi
     if pgrep -x waybar >/dev/null 2>&1 || pgrep -x hyprpanel >/dev/null 2>&1; then

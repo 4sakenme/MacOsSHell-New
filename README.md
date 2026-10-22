@@ -6,9 +6,15 @@
 </p>
 
 <p align="center">
+  <img width="128" height="128" alt="macshell-logo" src="https://github.com/user-attachments/assets/bc67b3fa-33a6-4326-9752-f0d271d0ed22" />
+</p>
+
+<h1 align="center">Showcase</h1>
+
+<p align="center">
   <img width="854" alt="MacShell quick showcase" src="https://github.com/user-attachments/assets/b75da31c-73a3-4830-af70-2e0b74f85bf0" />
   <br>
-  <sub>Quick showcase</sub>
+  <sub>Quick showcase (OLD)</sub>
 </p>
 
 <p align="center">
@@ -133,10 +139,10 @@ You can configure your API key in either of two ways:
   <img width="100%" alt="The MacShell Dock with Liquid Glass" src="https://github.com/user-attachments/assets/edf45f8f-b71a-4bc5-9880-46dafbebf47c" />
 </p>
 
-**Control Center**
+**Control Center (New)**
 
 <p align="center">
-  <img width="371" alt="MacShell Control Center" src="https://github.com/user-attachments/assets/681238c7-a661-44a4-8b37-6cbb0b162c87" />
+  <img width="313" height="510" alt="image" src="https://github.com/user-attachments/assets/cb6c5708-5786-4328-89bd-24737d39e482" />
 </p>
 
 ### MacLock
@@ -304,9 +310,11 @@ This shell **replaces** your bar, dock and notification daemon. Stop anything th
    ```sh
    curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/install.sh | bash
    ```
+   The installer will create a new .lua file in your /.config/hypr/ that have keybinds and auto start, so you don't need to to manually bind MacShell.
+   
    It installs **MacShell** to `~/.config/quickshell/MacShell` and **MacLock** to `~/.config/quickshell/MacLock`,
-   and adds the autostart to your Hyprland config: a block in `hyprland.lua` (Hyprland 0.55+), or an `exec-once`
-   line in `hyprland.conf` when there is no Lua config. The block runs `~/.local/bin/macshell-start`, which waits for
+   and adds the autostart and keybinds to your Hyprland config: a .lua file called `macshell.lua` which is located here `/.config/hypr/` (Hyprland 0.55+),
+   when there is no Lua config. The block runs `~/.local/bin/macshell-start`, which waits for
    the compositor, never starts a second copy and restarts the shell if it crashes. Remove the block between the
    `MacShell (added by install.sh)` markers to undo it. Your settings are never touched, and the previous
    install is backed up first (last 3 kept in `~/.local/share/macshell/backups/`).
@@ -315,13 +323,13 @@ This shell **replaces** your bar, dock and notification daemon. Stop anything th
    no uncommitted changes) it downloads and installs that one automatically.
 
    Don't reach the install folders through a symlink; Quickshell ≥ 0.3 derives its state folders from the link path.
-3. Try it:
+4. Try it:
    ```sh
    qs -c MacShell
    ```
    On first run with the Liquid Glass style, `liquidglass.frag` is compiled with `qsb` and cached in
    `~/.config/macdock/liquidglass.frag.qsb`. Watch for `[macbar-glass] state: ready` in the log.
-4. Add the Hyprland config below, then autostart it.
+5. Add the Hyprland config below, then autostart it.
 
 ### Installer options
 
@@ -362,7 +370,7 @@ Run the installer (`./install.sh` in your clone, or `macshell-install` from anyw
 ```
 MacShell (installed: a1b2c3d4e5f6)
 
-  1) Install shell
+  1) Install shell (Best for install and updating)
   2) Check for updates
   3) Uninstall shell
   4) Bind help

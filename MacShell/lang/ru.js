@@ -161,7 +161,7 @@ var strings = {
     "Shell": "Оболочка",
     "Show the Dock at the bottom of the screen": "Показывать Dock внизу экрана",
     "Show the panel at the top of the screen. Spotlight, Control Center and the calendar belong to it.": "Показывать панель вверху экрана. К ней относятся Spotlight, Пункт управления и календарь.",
-    "Spotlight & top bar menus": "Spotlight и меню верхней панели",
+    "Light, Dark, or Auto for everything: Dock, Menu Bar, menus, Spotlight, Settings and About. The Control Center tile and the Dark Mode menu item use this same setting.": "Светлое, тёмное или авто для всего: Dock, строки меню, меню, Spotlight, настроек и «Об этой системе». Плитка Пункта управления и пункт «Тёмный режим» используют эту же настройку.",
     "Set Light or Dark appearance for Spotlight and dropdown menus only": "Светлое или тёмное оформление только для Spotlight и выпадающих меню",
     "If you turn both off, reopen this window with:  qs -c macbar ipc call settings open": "Если выключить оба, это окно можно снова открыть командой:  qs -c macbar ipc call settings open",
     "Desktop Widgets": "Виджеты рабочего стола",
@@ -254,6 +254,8 @@ var strings = {
     "Opaque": "Непрозрачное",
     "Liquid Glass refracts what's behind it, Frosted blurs it, Opaque is a solid panel": "Liquid Glass преломляет то, что под ним, «Матовое» размывает, «Непрозрачное» — сплошная панель",
     "Real-time glass": "Стекло в реальном времени",
+    "Animated wallpaper in glass": "Анимированные обои в стекле",
+    "Play the animated wallpaper inside the Liquid Glass in real time. Off by default: the glass refracts a still frame and uses no video memory.": "Показывать анимированные обои внутри Liquid Glass в реальном времени. По умолчанию выключено: стекло преломляет неподвижный кадр и не занимает память под видео.",
     "Live window capture": "Живой захват окон",
     "Keep window captures live so popovers, Spotlight and the Dock open on current pixels. Turn off to save GPU.": "Держать захват окон живым, чтобы всплывающие окна, Spotlight и Dock открывались поверх актуальной картинки. Выключите, чтобы сберечь видеокарту.",
     "Capture open windows for the previews. Turn off and the previews show the app icon instead (Liquid Glass is not affected)": "Захватывать открытые окна для превью. Если выключить, вместо превью будет значок приложения (на Liquid Glass не влияет)",
@@ -299,6 +301,9 @@ var strings = {
     "Go back to the default set of apps": "Вернуть стандартный набор приложений",
     "Reset": "Сбросить",
     "Remove": "Убрать",
+    "Add": "Добавить",
+    "Medium": "Средний",
+    "Image widgets open a file picker (needs zenity, kdialog or yad). To change a picture later, use Edit on Desktop and press Choose Image on the widget.": "Виджеты с изображением открывают выбор файла (нужен zenity, kdialog или yad). Чтобы сменить картинку позже, нажмите «Править на рабочем столе» и «Выбрать изображение» на виджете.",
 
     // Settings: Displays
     "Brightness": "Яркость",
@@ -315,6 +320,8 @@ var strings = {
     "Revert": "Вернуть",
     "Menu Bar and widget size": "Размер строки меню и виджетов",
     "Scales the bar widgets; the left and right groups stay tucked into the screen corners": "Масштабирует элементы строки; левая и правая группы остаются прижаты к углам экрана",
+    "Menu Bar size": "Размер строки меню",
+    "Scales the bar, its widgets, the menus and the Control Center; the left and right groups stay tucked into the screen corners": "Масштабирует строку меню, виджеты, меню и Пункт управления; левая и правая группы остаются в углах экрана",
 
     // Settings: Menu Bar
     "Menu Bar logo": "Логотип в строке меню",

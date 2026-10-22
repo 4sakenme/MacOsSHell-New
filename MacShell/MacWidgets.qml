@@ -34,6 +34,7 @@ Scope {
     property real widgetScale: 1.0         // the "Widget size" slider: scales every widget and the grid (0.6 - 1.5)
 
     readonly property string fontFamily: dock ? dock.fontFamily : "Open Runde"
+    readonly property string boldFontFamily: hub && hub.boldFontFamily ? hub.boldFontFamily : "Open Runde Semibold"
     readonly property string configDir: Quickshell.env("HOME") + "/.config/macwidgets"
 
     // Liquid Glass look = the Appearance sliders (Translucency / Blur / Liquid strength) of the Dock + Menu Bar
@@ -54,7 +55,7 @@ Scope {
     property int rev: 0                    // bumped on every change to the list, so Settings bindings can re-evaluate count()
 
     readonly property var styleNames: ({ liquid: "Liquid Glass", normal: "Normal", light: "Light", dark: "Dark" })
-    readonly property var typeNames: ({ weather: "Weather", calendar: "Calendar", clock: "Clock", player: "Player", image: "Image", gif: "GIF", battery: "Battery", sysmon: "System Monitor", stocks: "Stocks", reminders: "Reminders" })
+    readonly property var typeNames: ({ weather: "Weather", calendar: "Calendar", clock: "Clock", player: "Player", image: "Image" })
     readonly property var sizeNames: ({ small: "Small", medium: "Medium", large: "Large" })
     function dims(size) {
         var b = size === "large" ? [375, 385] : (size === "medium" ? [395, 185] : [185, 185]);
@@ -267,40 +268,6 @@ Scope {
             }
         }
     }
-    function pickGif(id, size) {
-        if (gifPick.running) return;
-        pickTargetId = id || "";
-        pickTargetSize = size || "small";
-        pickError = "";
-        gifPick.running = true;
-    }
-    Process {
-        id: gifPick
-        command: ["sh", "-c",
-            "f=''; "
-            + "if command -v zenity >/dev/null 2>&1; then f=$(zenity --file-selection --title='Choose a GIF animation' --file-filter='GIF / WebP Animation | *.gif *.webp' 2>/dev/null); "
-            + "elif command -v kdialog >/dev/null 2>&1; then f=$(kdialog --getopenfilename \"$HOME/Pictures\" 'image/gif image/webp' 2>/dev/null); "
-            + "elif command -v yad >/dev/null 2>&1; then f=$(yad --file --title='Choose a GIF' 2>/dev/null); "
-            + "else echo 'ERR:no file chooser (install zenity, kdialog or yad)'; exit 0; fi; "
-            + "[ -n \"$f\" ] && [ -f \"$f\" ] || exit 0; "
-            + "d=\"$1/images\"; mkdir -p \"$d\" || { echo 'ERR:cannot create the images folder'; exit 0; }; "
-            + "n=\"$(date +%s)-$(printf '%s' \"$(basename \"$f\")\" | tr -c 'A-Za-z0-9._-' '_')\"; "
-            + "cp -f \"$f\" \"$d/$n\" && echo \"OK:$d/$n\" || echo 'ERR:could not copy the GIF'",
-            "sh", root.configDir]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var t = text.trim();
-                if (t.indexOf("OK:") === 0) {
-                    var p = t.substring(3);
-                    if (root.pickTargetId === "") { if (!root.addWidget("gif", "normal", root.pickTargetSize, p)) root.pickError = "No free space on the desktop for another widget."; }
-                    else root.setSource(root.pickTargetId, p);
-                } else if (t.indexOf("ERR:") === 0) {
-                    root.pickError = t.substring(4);
-                    console.log("[macwidgets] gif:", root.pickError);
-                }
-            }
-        }
-    }
 
     // ───────────── persistence ─────────────
     function scheduleSave() { if (ready) saveTimer.restart(); }
@@ -329,9 +296,9 @@ Scope {
             wmodel.clear();
             for (var i = 0; i < o.widgets.length; i++) {
                 var w = o.widgets[i];
-                if (!w || !w.type || !(w.type in root.typeNames)) continue;
+                if (!w || (w.type !== "weather" && w.type !== "calendar" && w.type !== "clock" && w.type !== "player" && w.type !== "image")) continue;
                 wmodel.append({ wid: String(w.id || ("w" + i)), wtype: w.type,
-                                wstyle: (w.type === "image" || w.type === "gif") ? "normal" : (w.type === "clock" || w.type === "player")
+                                wstyle: w.type === "image" ? "normal" : (w.type === "clock" || w.type === "player")
                                     ? ((w.style === "light" || w.style === "dark") ? w.style : "liquid")
                                     : (w.style === "normal" ? "normal" : "liquid"),
                                 wsize: (w.size === "medium" || w.size === "large") ? w.size : "small",
@@ -388,7 +355,7 @@ Scope {
     }
     function pr(i, k) { var r = playerRects[i]; return r ? r[k] : 0; }
 
-    // ───────────── lyrics (LRCLIB, fetched only while a Player widget has its lyrics open) ─────────────
+    // ───────────── lyrics (LRCLIB synced first; Genius plain-text fallback) ─────────────
     property bool lyricsWanted: false
     property var lyricsLines: []               // [{ t: seconds (-1 = not synced), text }]
     property bool lyricsSynced: false
@@ -398,7 +365,6 @@ Scope {
     property string lrcArtist: ""
     property string lrcAlbum: ""
     property string lrcDur: ""
-    readonly property string lyricsScript: decodeURIComponent(Qt.resolvedUrl("lyrics_fetcher.py").toString().replace(/^file:\/\//, ""))
     readonly property string trackKey: player ? (player.trackTitle + "|" + player.trackArtist + "|" + player.trackAlbum + "|"
                                                   + Math.round(player.lengthSupported ? player.length : 0)) : ""
     onTrackKeyChanged: {
@@ -423,7 +389,7 @@ Scope {
             var line = lines[i], re = /\[(\d+):(\d+(?:\.\d+)?)\]/g, times = [], m;
             while ((m = re.exec(line)) !== null) times.push(parseInt(m[1]) * 60 + parseFloat(m[2]));
             if (times.length === 0) continue;
-            var text = line.replace(/\[[^\]]*\]/g, "").replace(/<[^>]*>/g, "").trim();
+            var text = line.replace(/\[[^\]]*\]/g, "").trim();
             for (var j = 0; j < times.length; j++) out.push({ t: times[j], text: text });
         }
         out.sort(function (a, b) { return a.t - b.t; });
@@ -431,12 +397,7 @@ Scope {
     }
     function applyLyrics(raw) {
         var o = null;
-        try {
-            var s = String(raw).trim();
-            var b1 = s.indexOf("{"), b2 = s.lastIndexOf("}");
-            if (b1 >= 0 && b2 > b1) o = JSON.parse(s.substring(b1, b2 + 1));
-            else o = JSON.parse(s);
-        } catch (err) { }
+        try { o = JSON.parse(raw); } catch (err) { }
         if (Array.isArray(o)) {                           // search fallback: prefer a result with synced lyrics
             var pick = null;
             for (var i = 0; i < o.length; i++) {
@@ -445,11 +406,7 @@ Scope {
             }
             o = pick;
         }
-        if (!o && String(raw).indexOf("[") >= 0) {
-            var directL = parseLrc(raw);
-            if (directL.length > 0) { lyricsLines = directL; lyricsSynced = true; lyricsState = "ok"; return; }
-        }
-        if (!o || o.instrumental || o.error) { lyricsLines = []; lyricsSynced = false; lyricsState = "none"; return; }
+        if (!o || o.instrumental) { lyricsLines = []; lyricsSynced = false; lyricsState = "none"; return; }
         if (o.syncedLyrics) {
             var l = parseLrc(o.syncedLyrics);
             if (l.length > 0) { lyricsLines = l; lyricsSynced = true; lyricsState = "ok"; return; }
@@ -463,7 +420,17 @@ Scope {
     }
     Process {
         id: lrcProc
-        command: ["python3", root.lyricsScript, root.lrcTitle, root.lrcArtist, root.lrcAlbum, root.lrcDur]
+        command: ["sh", "-c",
+            "UA='macshell-widgets (quickshell)'; "
+            + "r=$(curl -fsS --max-time 8 -A \"$UA\" -G https://lrclib.net/api/get --data-urlencode \"track_name=$1\" --data-urlencode \"artist_name=$2\" "
+            + "--data-urlencode \"album_name=$3\" -d \"duration=$4\" 2>/dev/null "
+            + "|| curl -fsS --max-time 8 -A \"$UA\" -G https://lrclib.net/api/search --data-urlencode \"q=$2 $1\" 2>/dev/null || true); "
+            + "if printf '%s' \"$r\" | jq -e 'if type == \"array\" then any(.[]; (.syncedLyrics // \"\") != \"\") else (.syncedLyrics // \"\") != \"\" end' >/dev/null 2>&1; then printf '%s' \"$r\"; exit 0; fi; "
+            + "g=$(python3 \"$HOME/.config/quickshell/MacShell/genius-lyrics.py\" \"$2\" \"$1\" \"$HOME/.cache/macshell/lyrics\" 2>/dev/null || true); "
+            + "gp=$(printf '%s' \"$g\" | jq -r '.plain // empty' 2>/dev/null); "
+            + "if [ -n \"$gp\" ]; then jq -nc --arg p \"$gp\" '{plainLyrics:$p}'; "
+            + "elif [ -n \"$r\" ]; then printf '%s' \"$r\"; else printf '{}'; fi",
+            "sh", root.lrcTitle, root.lrcArtist, root.lrcAlbum, root.lrcDur]
         stdout: StdioCollector {
             onStreamFinished: {
                 if (root.lyricsReqKey !== root.trackKey) {            // the song changed while we were asking
@@ -474,81 +441,6 @@ Scope {
                 root.applyLyrics(text);
             }
         }
-    }
-
-    // ───────────── reminders (~/.config/macshell/reminders.md) ─────────────
-    FileView {
-        id: remFile
-        path: Quickshell.env("HOME") + "/.config/macshell/reminders.md"
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoadFailed: setText("- [ ] Try the new widgets\n- [x] Install MacShell\n- [ ] Click a circle to tick it off\n")
-    }
-    readonly property var reminders: {
-        var t = remFile.loaded ? remFile.text() : "", out = [], l = t.split("\n");
-        for (var i = 0; i < l.length; i++) {
-            var m = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/.exec(l[i]);
-            if (m) out.push({ line: i, done: m[1] !== " ", text: m[2] });
-        }
-        return out;
-    }
-    readonly property int remOpenCount: {
-        var a = reminders, n = 0;
-        for (var i = 0; i < a.length; i++) if (!a[i].done) n++;
-        return n;
-    }
-    ListModel { id: remModel }
-    property bool remReady: false
-    function syncReminders() {
-        var r = root.reminders, i, j;
-        for (i = remModel.count - 1; i >= 0; i--) {
-            var gone = true;
-            for (j = 0; j < r.length; j++) if (r[j].text === remModel.get(i).text) { gone = false; break; }
-            if (gone) remModel.remove(i);
-        }
-        for (var k = 0; k < r.length; k++) {
-            if (k >= remModel.count || remModel.get(k).text !== r[k].text) {
-                remModel.insert(k, { line: r[k].line, done: r[k].done, text: r[k].text, fresh: root.remReady });
-            } else {
-                if (remModel.get(k).done !== r[k].done) remModel.setProperty(k, "done", r[k].done);
-                if (remModel.get(k).line !== r[k].line) remModel.setProperty(k, "line", r[k].line);
-            }
-        }
-        while (remModel.count > r.length) remModel.remove(remModel.count - 1);
-        if (r.length > 0) root.remReady = true;
-    }
-    onRemindersChanged: syncReminders()
-    Component.onCompleted: syncReminders()
-    function toggleReminder(lineNo) {
-        var l = remFile.text().split("\n");
-        if (lineNo < 0 || lineNo >= l.length) return;
-        l[lineNo] = /\[ \]/.test(l[lineNo]) ? l[lineNo].replace("[ ]", "[x]") : l[lineNo].replace(/\[(x|X)\]/, "[ ]");
-        remFile.setText(l.join("\n"));
-        if (hub && hub.bar) hub.bar.playSound("tink", 0.6);
-    }
-    function addReminder(text) {
-        var t = String(text || "").trim();
-        if (t === "") return;
-        var cur = remFile.loaded ? remFile.text() : "";
-        if (cur !== "" && cur.charAt(cur.length - 1) !== "\n") cur += "\n";
-        remFile.setText(cur + "- [ ] " + t + "\n");
-        if (hub && hub.bar) hub.bar.playSound("pop", 0.5);
-    }
-    function setReminderText(lineNo, text) {
-        var l = remFile.text().split("\n");
-        if (lineNo < 0 || lineNo >= l.length) return;
-        var t = String(text || "").trim();
-        if (t === "") { deleteReminder(lineNo); return; }
-        l[lineNo] = l[lineNo].replace(/^(\s*[-*]\s*\[( |x|X)\]\s*).*$/, "$1" + t.replace(/\$/g, "$$$$"));
-        remFile.setText(l.join("\n"));
-    }
-    function deleteReminder(lineNo) {
-        var l = remFile.text().split("\n");
-        if (lineNo < 0 || lineNo >= l.length) return;
-        l.splice(lineNo, 1);
-        remFile.setText(l.join("\n"));
-        if (hub && hub.bar) hub.bar.playSound("tink", 0.4);
     }
 
     // ───────────── weather data (Open-Meteo) ─────────────
@@ -719,6 +611,14 @@ Scope {
     }
     Binding { target: root.hub; property: "widgetsWantWallpaper"; value: root.anyLiquid }
 
+    // animated wallpaper the widget glass plays behind itself: only while the Dock's "Real-time glass" AND "Animated wallpaper in glass" are on
+    readonly property string liveWallVideo: (dock && dock.glassLive && hub && hub.bar) ? hub.bar.glassVideo : ""
+    // the widgets sit on the first screen's desktop: their video pauses while windows cover it (or in Game Mode)
+    readonly property bool liveWallPaused: {
+        if (!hub || !hub.bar) return false;
+        if (hub.bar.gaming) return true;
+        return Quickshell.screens.length > 0 && hub.bar.screenCovered[Quickshell.screens[0].name] === true;
+    }
     // wallpaper behind the widgets (same lookup as the Dock's Liquid Glass)
     readonly property var wallpaperMap: hub ? hub.wallpaperMap : ({})
     function wallpaperFor(screenName) {
@@ -742,7 +642,6 @@ Scope {
             id: win
             required property var modelData
             screen: modelData
-            readonly property bool screenCovered: root.hub ? root.hub.isScreenCovered(win.modelData.name) : false
             anchors { left: true; right: true; top: true; bottom: true }
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
@@ -820,7 +719,6 @@ Scope {
                             wtype: ww.wtype; wstyle: ww.wstyle; wsize: ww.wsize; wmode: ww.wmode; wsrc: ww.wsrc
                             sx: ww.x; sy: ww.y
                             sname: win.modelData.name; sw: win.modelData.width; sh: win.modelData.height
-                            screenCovered: win.screenCovered
                         }
 
                         scale: dragArea.pressed ? 1.03 : 1.0
@@ -857,16 +755,16 @@ Scope {
                                 ww.dragDX = 0; ww.dragDY = 0;
                             }
                         }
-                        Rectangle {   // image or gif widget: choose another picture
-                            visible: root.editing && (ww.wtype === "image" || ww.wtype === "gif")
+                        Rectangle {   // image widget: choose another picture
+                            visible: root.editing && ww.wtype === "image"
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom; anchors.bottomMargin: 10
                             width: chooseText.width + 22; height: 26; radius: 13
                             color: chooseMa.pressed ? "#D8D8DC" : "#F2F2F5"
                             border.width: 1
                             border.color: Qt.rgba(0, 0, 0, 0.18)
-                            Text { id: chooseText; anchors.centerIn: parent; text: ww.wtype === "gif" ? "Choose GIF\u2026" : I18n.tr("Choose Image\u2026"); color: "#3A3A3C"; font.family: root.fontFamily; font.pixelSize: 12 }
-                            MouseArea { id: chooseMa; anchors.fill: parent; onClicked: ww.wtype === "gif" ? root.pickGif(ww.wid, "small") : root.pickImage(ww.wid, "small") }
+                            Text { id: chooseText; anchors.centerIn: parent; text: I18n.tr("Choose Image\u2026"); color: "#3A3A3C"; font.family: root.fontFamily; font.pixelSize: 12 }
+                            MouseArea { id: chooseMa; anchors.fill: parent; onClicked: root.pickImage(ww.wid, "small") }
                         }
                         Rectangle {   // "−" remove badge
                             visible: root.editing
@@ -886,7 +784,7 @@ Scope {
 
     IpcHandler {
         target: "widgets"
-        function refresh() { root.refresh(); }
-        function edit(on: bool) { root.editing = on; }
+        function refresh(): void { root.refresh(); }
+        function edit(on: bool): void { root.editing = on; }
     }
 }

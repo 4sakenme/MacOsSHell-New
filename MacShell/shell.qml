@@ -27,6 +27,7 @@ ShellRoot {
     // The UI font ("Open Runde") ships with MacShell: registered here, first, so every Text below can use it
     // without installing anything. (The installer also copies it to ~/.local/share/fonts.)
     FontLoader { id: uiFontLoader; source: Qt.resolvedUrl("assets/fonts/OpenRunde-Regular.otf") }
+    FontLoader { id: uiBoldFontLoader; source: Qt.resolvedUrl("assets/fonts/OpenRunde-Semibold.otf") }
 
     Scope {
         id: sharedHub
@@ -34,6 +35,7 @@ ShellRoot {
         property var monData: []
         property var glassClients: []
         property var wallpaperMap: ({})
+        readonly property string boldFontFamily: uiBoldFontLoader.status === FontLoader.Ready ? uiBoldFontLoader.name : "Open Runde Semibold"
 
         // the single settings window lives in MacDock.qml; everything else reaches it through here
         property var bar: macBar
@@ -42,6 +44,7 @@ ShellRoot {
         property var clock: clockApp
         property var airdrop: airDrop
         property var reminders: remindersApp
+        property var about: aboutApp
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // ── macOS App Nap / Resource Throttling: detect when user is focused on an application ──
@@ -105,6 +108,7 @@ ShellRoot {
             for (k in tlState.ready) if (!live[k]) delete tlState.ready[k];
         }
 
+        Timer { id: wpKick; interval: 250; onTriggered: sharedHub.refreshWallpaper() }
         function refreshWallpaper() { if (!wpProc.running) wpProc.running = true; }
 
         // window + monitor geometry for the Liquid Glass backdrops
@@ -142,6 +146,14 @@ ShellRoot {
                 if (en === "windowtitle" || en === "windowtitlev2" || en === "activewindow") return;
                 // our own window previews / screen captures announce themselves as "screencast": not a change
                 if (en === "screencast" || en === "screencastv2") return;
+                // workspace switch, window moved to another workspace / monitor, fullscreen, float toggle, special workspace:
+                // refresh monitors + windows NOW so the glass (and smart hide) follow within a frame, not on the next poll
+                if (en === "workspace" || en === "workspacev2" || en === "focusedmon" || en === "focusedmonv2" || en === "activespecial" || en === "activespecialv2"
+                    || en === "moveworkspace" || en === "moveworkspacev2" || en === "movewindow" || en === "movewindowv2" || en === "fullscreen"
+                    || en === "changefloatingmode" || en === "openwindow" || en === "closewindow") {
+                    try { Hyprland.refreshMonitors(); Hyprland.refreshToplevels(); } catch (err) { }
+                    if (en.indexOf("workspace") >= 0 || en.indexOf("focusedmon") === 0) wpKick.restart();   // per-workspace wallpapers
+                }
                 // focus only matters when it moves to ANOTHER window (titles changing re-send the same one)
                 if (en === "activewindowv2") { if (event.data === sharedHub.lastActive) return; sharedHub.lastActive = event.data; }
                 sharedHub.geoHot = true; geoCool.restart(); tlDebounce.restart();
@@ -157,11 +169,20 @@ ShellRoot {
         property int tlTick: 0
         property var tlState: ({ ready: {}, last: 0, next: 0 })     // plain bookkeeping: mutated inside bindings WITHOUT notifying (no binding loop)
         Timer { id: tlYoung; onTriggered: { sharedHub.tlState.next = 0; sharedHub.tlTick++; } }
-        Timer { id: tlDebounce; interval: 120; onTriggered: { sharedHub.tlPrune(); sharedHub.tlTick++; } }
+        Timer { id: tlDebounce; interval: 120; onTriggered: { sharedHub.tlPrune(); sharedHub.tlSeed(); sharedHub.tlTick++; } }
         function tlArm() {
             var st = tlState, d = st.next - Date.now();
             tlYoung.interval = Math.max(10, d) + 15;
             tlYoung.restart();
+        }
+        // Windows are admitted the moment Hyprland first lists them (not the first time their workspace becomes visible), so switching to a
+        // workspace whose windows are already open captures them AT ONCE instead of after the 0.2 s "young window" delay.
+        function tlSeed() {
+            var ts = Hyprland.toplevels.values, st = tlState, now = Date.now();
+            for (var i = 0; i < ts.length; i++) {
+                var a = ts[i].address;
+                if (st.ready[a] === undefined) { st.ready[a] = Math.max(now + 200, st.last + 110); st.last = st.ready[a]; }
+            }
         }
         function tlFor(addr) {
             var a = String(addr).replace(/^0x/, "");
@@ -207,6 +228,7 @@ ShellRoot {
             } catch (err) { ipcBroken = true; ipcOk = false; return; }
             if (mo.length === 0 || (ts.length > 0 && cl.length === 0)) { ipcOk = false; return; }
             ipcOk = true;
+            tlSeed();
             // fingerprint the GEOMETRY only: a window retitling itself (a terminal, a browser tab, a player) is no
             // reason to wake the 60 Hz path — that kept it hot (and the main thread busy) the whole time
             var gk = [], j, c;
@@ -222,6 +244,22 @@ ShellRoot {
             geoHot = true; geoCool.restart();
             monData = mo;
             glassClients = cl;
+        }
+        // Re-read monitors + windows right now (the bar changed size, so every tiled window just moved) and keep re-reading for a moment
+        // while Hyprland settles, even when nothing is polling at the time. Forgets the last fingerprint so the result is always applied.
+        function kickGeo() {
+            geoLast = ""; geoHot = true; geoCool.restart(); tlDebounce.restart();
+            kickPass = 0; kickT.restart();
+        }
+        property int kickPass: 0
+        Timer {
+            id: kickT; interval: 120; repeat: true
+            onTriggered: {
+                sharedHub.kickPass++;
+                if (sharedHub.ipcOk && !sharedHub.ipcBroken) sharedHub.ipcPoll();
+                else { try { Hyprland.refreshMonitors(); Hyprland.refreshToplevels(); } catch (err) { } if (!geoProc.running) geoProc.running = true; }
+                if (sharedHub.kickPass >= 6) kickT.stop();
+            }
         }
         Timer {
             // fast (60 Hz) for 1.5 s after any window event, otherwise a relaxed 2.5 Hz check (idle CPU)
@@ -276,7 +314,7 @@ ShellRoot {
         }
 
         Timer {
-            interval: 15000
+            interval: 4000        // was 15 s: a wallpaper change reaches the glass within a few seconds
             repeat: true
             running: sharedHub.barWantsWallpaper || sharedHub.dockWantsWallpaper || sharedHub.widgetsWantWallpaper
             onTriggered: sharedHub.refreshWallpaper()
@@ -284,13 +322,25 @@ ShellRoot {
     }
 
     MacBar { id: macBar; hub: sharedHub }
-    MacDock { id: macDock; hub: sharedHub }
+    MacDock { id: macDock; hub: sharedHub; bar: macBar }
     MacWidgets { id: macWidgets; hub: sharedHub }
     ClockApp { id: clockApp; hub: sharedHub }
+    AboutApp { id: aboutApp; hub: sharedHub }
     AirDrop { id: airDrop; hub: sharedHub }
     Reminders { id: remindersApp; hub: sharedHub }
+    Desktop { id: desktopIcons; hub: sharedHub }
+    MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect !== undefined ? macDock.minimizeEffect : "genie"; speed: macDock.minimizeSecs !== undefined ? macDock.minimizeSecs : 0.42 }
+    WindowBar { id: windowBar; hub: sharedHub }
+    Installer { id: depsInstaller; hub: sharedHub }
     SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub; typeToSiri: typeToSiri }
     TypeToSiri { id: typeToSiri; edgeGlow: siriEdgeGlow }
+
+    Component.onCompleted: {
+        sharedHub.bar = macBar;
+        sharedHub.dock = macDock;
+        sharedHub.widgets = macWidgets;
+        sharedHub.about = aboutApp;
+    }
 
     // qs -c MacShell ipc call siri activate true | false
     // qs -c MacShell ipc call siri toggle
@@ -354,7 +404,11 @@ ShellRoot {
     //   qs -c macbar ipc call settings open
     IpcHandler {
         target: "settings"
-        function open() { macDock.openPrefs("general"); }
+        function open(): void { macDock.openPrefs("general"); }
+        function toggle(): void { macDock.togglePrefs("general"); }
+        // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
+        function pane(id: string): void { macDock.openPrefs(id); }
+    }
         // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
         function pane(id: string) { macDock.openPrefs(id); }
     }
@@ -371,6 +425,13 @@ ShellRoot {
         function open() { airDrop.open(); }
         function stage(path: string) { airDrop.stagePaths(airDrop.pending.concat([path])); }
         function clear() { airDrop.pending = []; }
+    }
+    // qs -c MacShell ipc call about open | close | toggle      (the Apple menu's "About This Linux")
+    IpcHandler {
+        target: "about"
+        function open(): void { aboutApp.open(); }
+        function close(): void { aboutApp.close(); }
+        function toggle(): void { aboutApp.toggle(); }
     }
     IpcHandler {
         target: "notifications"

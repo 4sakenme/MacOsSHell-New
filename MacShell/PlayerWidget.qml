@@ -3,20 +3,16 @@
 //          "medium" – the wide Now Playing card: art, title, scrolling subtitle, waves, progress + times, shuffle / back / play / forward / repeat
 //          "large"  – the same card, taller, with big artwork
 //   Everything is drawn in "reference units" (RU): the wide card scales to the shell's 358 x 168 Medium footprint.
-//   style: "light"  – pastel card tinted with the artwork's colour, dark text
-//          "dark"   – deep card tinted with the artwork's colour, white text
-//          "liquid" – Liquid Glass (Appearance sliders) with the artwork's colour washed over it
+//   style: "light"  – plain light card (same face as the Clock widget), dark text
+//          "dark"   – plain dark card (same face as the Clock widget), white text
+//          "liquid" – normal Liquid Glass (Appearance sliders), exactly like the Clock / Calendar / Weather widgets
 //
-// The card colour is taken from the album artwork (a 24x24 sample of it, see `sampler`), and fades to the next song's colour.
-// Without artwork a stable colour is derived from the title instead.
+// The light and dark cards take their colour from the artwork (a pale / deep version of it). The liquid card never does.
 //
 // This file only draws. MacWidgets.qml owns the MPRIS player and feeds the data properties; the buttons emit
 // togglePlaying() / nextTrack() / previousTrack().
 import QtQuick
 import QtQuick.Effects
-import QtMultimedia
-import Quickshell
-import Quickshell.Io
 import "I18n.js" as I18n
 
 Item {
@@ -32,7 +28,6 @@ Item {
     property real screenY: y
     property bool preview: false             // inside the Settings gallery: sample data, no wallpaper, not clickable
     property bool editing: false
-    property color tintOverride: "transparent"   // preview only: pretend the artwork has this colour
 
     // ── data (from MacWidgets) ──
     property bool hasPlayer: false
@@ -43,47 +38,6 @@ Item {
     property bool playing: false
     property real position: 0                // seconds
     property real length: 0                  // seconds (0 = unknown)
-    // ── background resource throttling / occlusion (macOS App Nap) ──
-    property bool desktopCovered: false
-    property bool appFocused: false
-    readonly property bool isHovered: hoverHandler.hovered
-    readonly property bool occluded: (desktopCovered || appFocused) && !isHovered && !editing
-
-    HoverHandler { id: hoverHandler }
-
-    property real livePos: position
-    property real liveAt: Date.now()
-    onPositionChanged: { livePos = position; liveAt = Date.now(); }
-    Timer {
-        id: lyricsTick
-        interval: 40
-        repeat: true
-        running: w.playing && w.lyricsOn && !w.occluded
-        onTriggered: {
-            if (w.playing) {
-                var delta = (Date.now() - w.liveAt) / 1000;
-                w.livePos = w.position + delta;
-            }
-        }
-    }
-    readonly property real evalPos: (w.playing && w.lyricsOn) ? w.livePos : w.position
-
-    onOccludedChanged: {
-        if (!occluded) {
-            if (w.playing) {
-                var delta = (Date.now() - w.liveAt) / 1000;
-                w.livePos = w.position + delta;
-            }
-            if (w.lyricsView && w.lyricsSynced) {
-                Qt.callLater(() => {
-                    var idx = w.lyricIdx;
-                    if (idx >= 0 && typeof lyrList !== "undefined" && lyrList) {
-                        lyrList.positionViewAtIndex(idx, ListView.Center);
-                    }
-                });
-            }
-        }
-    }
 
     property bool shuffle: false
     property int loop: 0                     // 0 = off, 1 = repeat song, 2 = repeat all
@@ -110,6 +64,8 @@ Item {
     property bool glassReady: false
     property url shaderUrl: ""
     property url wallUrl: ""
+    property string wallVideo: ""        // animated wallpaper to play behind the glass ("" = none / real-time glass off)
+    property bool wallPaused: false      // desktop covered / Game Mode: keep the decoder idle
     property real screenW: 1920
     property real screenH: 1080
     property real glassOpacity: 0.42
@@ -141,13 +97,7 @@ Item {
     readonly property bool dark: style === "dark" || (style === "liquid" && darkGlass)
     readonly property real tint: Math.min(0.92, dark ? 0.25 + glassOpacity * 0.8 : 0.45 + glassOpacity * 0.9)
 
-    // ───────────────────────── colours from the artwork ─────────────────────────
-    function mix(c, o, t) { return Qt.rgba(c.r * (1 - t) + o.r * t, c.g * (1 - t) + o.g * t, c.b * (1 - t) + o.b * t, 1); }
-    function hashColor(str) {
-        var h = 7;
-        for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
-        return Qt.hsva(h / 360, 0.55, 0.66, 1);
-    }
+    // ───────────────────────── colours ─────────────────────────
     function fileUrl(p) {
         if (!p) return "";
         if (p.indexOf("/") === 0) return "file://" + encodeURI(p).replace(/#/g, "%23").replace(/\?/g, "%3F");
@@ -155,63 +105,6 @@ Item {
     }
     readonly property url artSrc: fileUrl(artUrl)
 
-    property color sampled: "transparent"     // the colour found in the artwork (alpha 0 = nothing yet)
-    readonly property color artColor: {
-        if (tintOverride.a > 0) return tintOverride;
-        if (!hasPlayer) return Qt.rgba(0.36, 0.38, 0.44, 1);
-        if (sampled.a > 0 && artSrc != "") return sampled;
-        return hashColor(title + "|" + artist);
-    }
-    property color ac: artColor
-    Behavior on ac { ColorAnimation { duration: 450 } }
-
-    // 24x24 sample of the artwork: the average of its colourful pixels (grey / black / white ones count for little)
-    Canvas {
-        id: sampler
-        width: 24; height: 24
-        opacity: 0                           // painted, but never seen
-        renderTarget: Canvas.Image
-        renderStrategy: Canvas.Immediate
-        property string loaded: ""
-        function load(u) {
-            if (loaded !== "") { unloadImage(loaded); loaded = ""; }
-            if (u === "") { w.sampled = "transparent"; return; }
-            loaded = u;
-            loadImage(u);
-        }
-        onImageLoaded: requestPaint()
-        onPaint: {
-            if (loaded === "" || !isImageLoaded(loaded)) return;
-            var ctx = getContext("2d");
-            ctx.clearRect(0, 0, 24, 24);
-            ctx.drawImage(loaded, 0, 0, 24, 24);
-            var d = ctx.getImageData(0, 0, 24, 24).data, r = 0, g = 0, b = 0, wt = 0, ar = 0, ag = 0, ab = 0;
-            for (var i = 0; i < d.length; i += 4) {
-                var R = d[i] / 255, G = d[i + 1] / 255, B = d[i + 2] / 255;
-                var mx = Math.max(R, G, B), mn = Math.min(R, G, B), sat = mx > 0 ? (mx - mn) / mx : 0;
-                var k = sat * sat * (0.25 + mx) + 0.002;            // vivid, reasonably bright pixels win
-                r += R * k; g += G * k; b += B * k; wt += k;
-                ar += R; ag += G; ab += B;
-            }
-            if (wt <= 0) return;
-            var c = Qt.rgba(r / wt, g / wt, b / wt, 1);
-            // keep it a real colour, neither black nor white
-            var s = c.hsvSaturation < 0.10 ? c.hsvSaturation : Math.max(c.hsvSaturation, 0.38);
-            var v = Math.max(0.42, Math.min(0.88, c.hsvValue));
-            w.sampled = Qt.hsva(c.hsvHue < 0 ? 0 : c.hsvHue, Math.min(1, s), v, 1);
-        }
-    }
-    onArtSrcChanged: sampler.load(String(artSrc))
-    Component.onCompleted: {
-        sampler.load(String(artSrc));
-        colCur = topCol;
-        colPrev = topCol;
-    }
-
-    // card colours
-    readonly property color topCol: style === "light" ? mix(ac, Qt.rgba(1, 1, 1, 1), 0.70) : mix(ac, Qt.rgba(0, 0, 0, 1), 0.42)
-    readonly property color botCol: style === "light" ? mix(ac, Qt.rgba(1, 1, 1, 1), 0.84) : mix(ac, Qt.rgba(0, 0, 0, 1), 0.66)
-    readonly property color cardMid: mix(topCol, botCol, 0.5)
     function fa(a) { return dark ? Qt.rgba(1, 1, 1, a) : Qt.rgba(0, 0, 0, a); }
     readonly property color fg: fa(dark ? 0.90 : 0.86)          // title
     readonly property color fg2: fa(dark ? 0.52 : 0.50)         // subtitle, times
@@ -219,65 +112,83 @@ Item {
     readonly property color fgDim: fa(dark ? 0.52 : 0.48)       // shuffle / repeat when off
     readonly property color trackCol: fa(dark ? 0.12 : 0.10)
     readonly property color fillCol: fa(dark ? 0.58 : 0.50)
-    // thin border: the card's own colour, a bit brighter
-    readonly property color borderCol: {
-        var c = Qt.lighter(cardMid, 1.55);
-        return Qt.rgba(c.r, c.g, c.b, 0.9);
-    }
 
-    // ───────────────────────── album colour spread ─────────────────────────
-    property color colPrev: topCol
-    property color colCur: topCol
-    property real spreadProg: 1.0
-
-    NumberAnimation {
-        id: spreadAnim
-        target: w
-        property: "spreadProg"
-        from: 0
-        to: 1
-        duration: 1000
-        easing.type: Easing.InOutCubic
-        onFinished: w.colPrev = w.colCur
+    // ───────────────────────── artwork colour ─────────────────────────
+    // The cover is drawn onto a tiny hidden canvas and averaged (saturated pixels count more, so a mostly-grey cover with
+    // one bright subject still gives that colour). artH / artS are the hue and saturation of the result.
+    property bool tintKnown: false
+    property real tintH: 0
+    property real tintS: 0
+    Canvas {
+        id: tintSampler
+        width: 16; height: 16
+        visible: false
+        renderTarget: Canvas.Image
+        property url want: w.artSrc
+        property url loaded: ""
+        property int tries: 0
+        // A new cover always starts from scratch: the previous colour is dropped at once (never kept for the next song),
+        // the previous image is unloaded, and a cover that is not on disk / downloaded yet is retried a few times.
+        function startLoad() {
+            if (loaded != "") { try { unloadImage(loaded); } catch (e) {} loaded = ""; }
+            if (want == "") { w.tintKnown = false; retry.stop(); return; }
+            loaded = want;
+            if (isImageLoaded(want)) requestPaint(); else { loadImage(want); retry.restart(); }
+        }
+        onWantChanged: { w.tintKnown = false; tries = 0; retry.stop(); startLoad(); }
+        Component.onCompleted: startLoad()
+        onImageLoaded: { retry.stop(); requestPaint(); }
+        Timer {
+            id: retry
+            interval: 600
+            // Canvas has no "load failed" signal: if the cover still is not loaded, try again (up to 8 times)
+            onTriggered: { if (tintSampler.loaded != "" && !tintSampler.isImageLoaded(tintSampler.loaded) && ++tintSampler.tries <= 8) tintSampler.startLoad(); }
+        }
+        onPaint: {
+            if (want == "" || loaded != want || !isImageLoaded(want)) return;
+            var ctx = getContext("2d");
+            ctx.clearRect(0, 0, 16, 16);
+            ctx.drawImage(want, 0, 0, 16, 16);
+            var d = ctx.getImageData(0, 0, 16, 16).data;
+            var sr = 0, sg = 0, sb = 0, sw = 0;
+            for (var i = 0; i < d.length; i += 4) {
+                var r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+                var mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+                var wt = 0.05 + (mx - mn) * (mx - mn) * 4;           // favour saturated pixels
+                sr += r * wt; sg += g * wt; sb += b * wt; sw += wt;
+            }
+            if (sw <= 0) { w.tintKnown = false; return; }
+            var c = Qt.rgba(sr / sw, sg / sw, sb / sw, 1);
+            w.tintH = c.hslHue < 0 ? 0 : c.hslHue;
+            w.tintS = c.hslSaturation;
+            w.tintKnown = true;
+        }
     }
-
-    function triggerSpread() {
-        colPrev = spreadProg > 0.5 ? colCur : colPrev;
-        colCur = w.topCol;
-        spreadAnim.restart();
-    }
+    readonly property bool faceTint: tintKnown && !preview && hasPlayer
+    function tintFace(l, satMul) { return Qt.hsla(tintH, Math.min(0.7, tintS * satMul), l, 1); }
 
     // ───────────────────────── background ─────────────────────────
-    // Light / Dark: card tinted with the artwork colour spreading out from cover
-    ShaderEffect {
-        anchors.fill: parent
-        visible: w.style !== "liquid"
-        fragmentShader: Qt.resolvedUrl("tintcard.frag.qsb")
-        property vector2d itemSize: Qt.vector2d(width, height)
-        property real radius: w.radiusPx
-        property vector2d center: Qt.vector2d(w.artX * w.k + (w.artS * w.k) / 2, w.artY * w.k + (w.artS * w.k) / 2)
-        property real soft: 70
-        property real spreadR: w.spreadProg * (Math.sqrt(width * width + height * height) + 2 * soft)
-        property color colOld: w.colPrev
-        property color colNew: w.colCur
-        property real alpha: 0.94
-    }
-
+    // Light face
     Rectangle {
         anchors.fill: parent
-        visible: w.style !== "liquid"
+        visible: w.style === "light"
         radius: w.radiusPx
-        color: "transparent"
-        border.width: 1
-        border.color: w.borderCol
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: w.faceTint ? w.tintFace(0.92, 0.85) : "#E9EAEB"; Behavior on color { ColorAnimation { duration: 400 } } }
+            GradientStop { position: 0.55; color: w.faceTint ? w.tintFace(0.88, 0.85) : "#DFE0E2"; Behavior on color { ColorAnimation { duration: 400 } } }
+            GradientStop { position: 1.0; color: w.faceTint ? w.tintFace(0.83, 0.85) : "#D6D7DA"; Behavior on color { ColorAnimation { duration: 400 } } }
+        }
+    }
 
-        Rectangle {   // soft top sheen
-            anchors.fill: parent
-            radius: parent.radius
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, w.dark ? 0.08 : 0.30) }
-                GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0.0) }
-            }
+    // Dark face
+    Rectangle {
+        anchors.fill: parent
+        visible: w.style === "dark"
+        radius: w.radiusPx
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: w.faceTint ? w.tintFace(0.29, 0.75) : "#38393D"; Behavior on color { ColorAnimation { duration: 400 } } }
+            GradientStop { position: 0.55; color: w.faceTint ? w.tintFace(0.23, 0.75) : "#303135"; Behavior on color { ColorAnimation { duration: 400 } } }
+            GradientStop { position: 1.0; color: w.faceTint ? w.tintFace(0.15, 0.75) : "#242529"; Behavior on color { ColorAnimation { duration: 400 } } }
         }
     }
 
@@ -303,29 +214,6 @@ Item {
             readonly property real ds: w.glassBlur >= 8 ? 0.5 : 1.0
             readonly property real bn: Math.min(1.0, w.glassBlur * 1.4 * ds / 64.0)
 
-            property bool updating: true
-            Timer {
-                id: settleTimer
-                interval: 350
-                onTriggered: gl.updating = false
-            }
-            function triggerUpdate() {
-                gl.updating = true;
-                settleTimer.restart();
-            }
-            Connections {
-                target: w
-                function onScreenXChanged() { gl.triggerUpdate(); }
-                function onScreenYChanged() { gl.triggerUpdate(); }
-                function onWallUrlChanged() { gl.triggerUpdate(); }
-                function onGlassBlurChanged() { gl.triggerUpdate(); }
-                function onGlassLiquidChanged() { gl.triggerUpdate(); }
-                function onWidthChanged() { gl.triggerUpdate(); }
-                function onHeightChanged() { gl.triggerUpdate(); }
-                function onEditingChanged() { if (!w.editing) gl.triggerUpdate(); }
-            }
-            Component.onCompleted: gl.triggerUpdate()
-
             Item {
                 id: backdrop
                 width: w.width + 2 * (gl.padPx + gl.margin)
@@ -340,7 +228,6 @@ Item {
                     }
                 }
                 Image {
-                    id: bgImg
                     x: -(w.screenX - gl.padPx - gl.margin)
                     y: -(w.screenY - gl.padPx - gl.margin)
                     width: w.screenW
@@ -350,14 +237,22 @@ Item {
                     asynchronous: true
                     sourceSize.width: w.screenW
                     smooth: true
-                    onStatusChanged: if (status === Image.Ready) gl.triggerUpdate()
+                }
+                LiveWall {
+                    x: -(w.screenX - gl.padPx - gl.margin)
+                    y: -(w.screenY - gl.padPx - gl.margin)
+                    width: w.screenW
+                    height: w.screenH
+                    video: w.wallVideo
+                    live: w.wallVideo !== ""
+                    paused: w.wallPaused
                 }
             }
             ShaderEffectSource {
                 id: bsrc
                 sourceItem: backdrop
                 hideSource: true
-                live: (w.editing || gl.updating) && !w.occluded
+                live: true
                 visible: false
                 textureSize: Qt.size(Math.max(1, Math.round(backdrop.width * gl.ds)),
                                      Math.max(1, Math.round(backdrop.height * gl.ds)))
@@ -376,7 +271,7 @@ Item {
             ShaderEffectSource {
                 id: blurred
                 sourceItem: blurFx
-                live: (w.editing || gl.updating) && !w.occluded
+                live: true
                 visible: false
             }
             ShaderEffect {
@@ -413,15 +308,6 @@ Item {
         }
     }
 
-    // the artwork's colour washed over the glass (Liquid style)
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: 1
-        visible: w.style === "liquid"
-        radius: Math.max(0, w.radiusPx - 1)
-        color: Qt.rgba(w.ac.r, w.ac.g, w.ac.b, w.dark ? 0.46 : 0.34)
-    }
-
     // Control Center border (all styles)
     CornerBorder {
         z: 2
@@ -444,7 +330,7 @@ Item {
     readonly property int lyricIdx: {
         var L = lyrics;
         if (!lyricsSynced || !L || L.length === 0) return -1;
-        var p = evalPos + 0.25, lo = 0, hi = L.length - 1, r = -1;
+        var p = position + 0.3, lo = 0, hi = L.length - 1, r = -1;
         while (lo <= hi) {
             var mid = (lo + hi) >> 1;
             if (L[mid].t <= p) { r = mid; lo = mid + 1; } else hi = mid - 1;
@@ -568,9 +454,9 @@ Item {
         Item {
             id: lyr
             x: w.mx * w.k
-            y: 12 * w.k
-            width: (w.wr - 2 * w.mx - 44) * w.k
-            height: Math.max(86, (w.ctlCY - 30 - 12)) * w.k
+            y: 16 * w.k
+            width: (w.wr - 2 * w.mx - 52) * w.k
+            height: ((w.lyricsView ? w.ctlCY - 40 : w.barCY - 14) - 16) * w.k
             Behavior on height { NumberAnimation { duration: 480; easing.type: Easing.OutCubic } }
             opacity: w.lyricsView ? 1 : 0
             visible: opacity > 0
@@ -588,12 +474,17 @@ Item {
                 anchors.fill: lyrList
                 visible: false
                 layer.enabled: true
-                readonly property real fpTop: Math.min(0.12, 14 * w.k / Math.max(1, height))
-                readonly property real fpBot: Math.min(0.22, 26 * w.k / Math.max(1, height))
+                readonly property real fp: Math.min(0.32, 46 * w.k / Math.max(1, height))      // feather depth: 46 reference px at each end (raise for a longer fade)
                 gradient: Gradient {
                     GradientStop { position: 0.0;                  color: Qt.rgba(0, 0, 0, 0.0) }
-                    GradientStop { position: lyrMask.fpTop;        color: Qt.rgba(0, 0, 0, 1.0) }
-                    GradientStop { position: 1.0 - lyrMask.fpBot;  color: Qt.rgba(0, 0, 0, 1.0) }
+                    GradientStop { position: lyrMask.fp * 0.25;    color: Qt.rgba(0, 0, 0, 0.04) }
+                    GradientStop { position: lyrMask.fp * 0.50;    color: Qt.rgba(0, 0, 0, 0.30) }
+                    GradientStop { position: lyrMask.fp * 0.75;    color: Qt.rgba(0, 0, 0, 0.72) }
+                    GradientStop { position: lyrMask.fp;           color: Qt.rgba(0, 0, 0, 1.0) }
+                    GradientStop { position: 1 - lyrMask.fp;       color: Qt.rgba(0, 0, 0, 1.0) }
+                    GradientStop { position: 1 - lyrMask.fp * 0.75; color: Qt.rgba(0, 0, 0, 0.72) }
+                    GradientStop { position: 1 - lyrMask.fp * 0.50; color: Qt.rgba(0, 0, 0, 0.30) }
+                    GradientStop { position: 1 - lyrMask.fp * 0.25; color: Qt.rgba(0, 0, 0, 0.04) }
                     GradientStop { position: 1.0;                  color: Qt.rgba(0, 0, 0, 0.0) }
                 }
             }
@@ -606,9 +497,9 @@ Item {
                 model: w.lyrics
                 currentIndex: Math.max(0, w.lyricIdx)
                 highlightRangeMode: w.lyricsSynced ? ListView.StrictlyEnforceRange : ListView.NoHighlightRange
-                preferredHighlightBegin: w.isLarge ? Math.round(height * 0.24) : Math.round(height * 0.18)
-                preferredHighlightEnd: preferredHighlightBegin
-                highlightMoveDuration: 550
+                preferredHighlightBegin: height * 0.30
+                preferredHighlightEnd: height * 0.30
+                highlightMoveDuration: 650
                 highlightMoveVelocity: -1
                 layer.enabled: true
                 layer.effect: MultiEffect { maskEnabled: true; maskSource: lyrMask }
@@ -619,111 +510,34 @@ Item {
                     required property int index
                     readonly property real dist: w.lyricsSynced ? Math.abs(index - w.lyricIdx) : 0
                     readonly property bool cur: w.lyricsSynced && index === w.lyricIdx
-                    readonly property bool hovered: mouseArea.containsMouse
-                    readonly property bool isGap: !modelData.text || modelData.text.trim() === ""
-                    readonly property var words: !isGap ? modelData.text.trim().split(/\s+/) : []
-                    readonly property real lineStart: modelData.t
-                    readonly property real lineEnd: (index + 1 < w.lyrics.length && w.lyrics[index + 1].t > lineStart)
-                                                    ? w.lyrics[index + 1].t
-                                                    : (lineStart + Math.max(2.8, words.length * 0.45))
-                    readonly property real lineDur: Math.max(0.6, lineEnd - lineStart)
-
-                    property real bl: (!w.lyricsSynced || cur || hovered) ? 0 : Math.min(1, 0.18 + dist * 0.14)
-                    Behavior on bl { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-
+                    property real bl: (!w.lyricsSynced || cur) ? 0 : Math.min(1, 0.22 + dist * 0.16)
+                    Behavior on bl { NumberAnimation { duration: 480; easing.type: Easing.OutCubic } }
                     width: ListView.view.width
-                    height: isGap ? (22 * w.k) : (flowWrap.implicitHeight + 8 * w.k)
-
-                    Item {
-                        id: lineContent
+                    height: txt.implicitHeight + 12 * w.k
+                    Text {
+                        id: txt
                         width: parent.width
-                        anchors.top: parent.top
-                        anchors.topMargin: 4 * w.k
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 4 * w.k
-                        x: cur ? 6 * w.k : 0
-                        scale: cur ? 1.0 : (ln.hovered ? 0.96 : 0.92)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ln.modelData.text !== "" ? ln.modelData.text : "\u266A"
+                        wrapMode: Text.Wrap
+                        color: w.fg
+                        font.family: w.fam
+                        font.pixelSize: 25 * w.k
+                        font.weight: Font.Bold
+                        opacity: !w.lyricsSynced ? 0.9 : (ln.cur ? 1 : Math.max(0.16, 0.46 - ln.dist * 0.08))
+                        scale: (!w.lyricsSynced || ln.cur) ? 1 : 0.86
                         transformOrigin: Item.Left
-                        Behavior on x { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
-                        Behavior on scale { NumberAnimation { duration: 420; easing.type: Easing.OutQuint } }
-
-                        // ── Apple Music style Word-by-word karaoke illumination ──
-                        Flow {
-                            id: flowWrap
-                            visible: !ln.isGap
-                            width: parent.width
-                            spacing: 6 * w.k
-
-                            Repeater {
-                                model: ln.words
-                                delegate: Text {
-                                    id: wTxt
-                                    required property var modelData
-                                    required property int index
-
-                                    readonly property real wFrac: ln.words.length > 0 ? (index / ln.words.length) : 0
-                                    readonly property real wStart: ln.lineStart + wFrac * ln.lineDur
-                                    readonly property real wDur: ln.words.length > 0 ? (ln.lineDur / ln.words.length) : 0.35
-                                    readonly property real rawProg: ln.cur ? ((w.evalPos - wStart) / Math.max(0.16, wDur)) : (ln.index < w.lyricIdx ? 1.0 : 0.0)
-                                    readonly property real prog: Math.max(0.0, Math.min(1.0, rawProg))
-                                    readonly property bool activeNow: ln.cur && prog > 0.05 && prog < 0.96
-
-                                    text: modelData
-                                    font.family: w.fam
-                                    font.pixelSize: (w.isLarge ? (ln.cur ? 26 : 21) : (ln.cur ? 21 : 17)) * w.k
-                                    font.weight: ln.cur ? (prog > 0.1 ? Font.Bold : Font.DemiBold) : Font.DemiBold
-
-                                    color: (!w.lyricsSynced || !ln.cur) ? w.fg : (prog > 0.05 ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.42))
-                                    opacity: {
-                                        if (!w.lyricsSynced) return 0.9;
-                                        if (!ln.cur) return ln.hovered ? 0.88 : Math.max(0.12, 0.42 - ln.dist * 0.10);
-                                        return 0.40 + 0.60 * prog;
-                                    }
-
-                                    scale: activeNow ? 1.06 : 1.0
-                                    transformOrigin: Item.Left
-                                    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                    Behavior on color { ColorAnimation { duration: 160; easing.type: Easing.OutQuad } }
-                                    Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
-                                }
-                            }
-                        }
-
-                        // ── Instrumental break: 3 breathing / pulsing rhythm dots ──
-                        Row {
-                            visible: ln.isGap
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8 * w.k
-                            Repeater {
-                                model: 3
-                                delegate: Rectangle {
-                                    required property int index
-                                    width: 8 * w.k; height: width; radius: width / 2
-                                    color: ln.cur ? "#FFFFFF" : Qt.rgba(1, 1, 1, 0.35)
-                                    opacity: ln.cur ? 0.95 : 0.35
-                                    SequentialAnimation on scale {
-                                        running: ln.cur; loops: Animation.Infinite
-                                        PauseAnimation { duration: index * 160 }
-                                        NumberAnimation { from: 0.75; to: 1.25; duration: 480; easing.type: Easing.InOutSine }
-                                        NumberAnimation { from: 1.25; to: 0.75; duration: 480; easing.type: Easing.InOutSine }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Depth of field blur on distant lines
-                        layer.enabled: ln.bl > 0.05
+                        Behavior on opacity { NumberAnimation { duration: 480; easing.type: Easing.OutCubic } }
+                        Behavior on scale { NumberAnimation { duration: 480; easing.type: Easing.OutCubic } }
+                        layer.enabled: ln.bl > 0.01
                         layer.sourceRect: Qt.rect(-12, -8, width + 24, height + 16)
-                        layer.effect: MultiEffect { blurEnabled: true; blurMax: 20; blur: ln.bl }
+                        layer.effect: MultiEffect { blurEnabled: true; blurMax: 24; blur: ln.bl }
                     }
-
                     MouseArea {
-                        id: mouseArea
                         anchors.fill: parent
-                        hoverEnabled: true
                         enabled: w.lyricsSynced && w.canSeek && !w.preview && !w.editing
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: w.seek(ln.modelData.t)
+                        onClicked: w.seek(ln.modelData.t)       // tap a line to jump to it
                     }
                 }
             }
