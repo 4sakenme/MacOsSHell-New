@@ -23,6 +23,8 @@ Item {
     property string size: "small"
     property real scaleF: 1.0
     property real contentScale: 1.0          // scales art / text / buttons; the card itself keeps the widget's full size
+    property bool appFocused: false
+    property bool desktopCovered: false
     property string fam: "Open Runde"
     property real screenX: x
     property real screenY: y

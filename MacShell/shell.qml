@@ -409,9 +409,6 @@ ShellRoot {
         // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
         function pane(id: string): void { macDock.openPrefs(id); }
     }
-        // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
-        function pane(id: string) { macDock.openPrefs(id); }
-    }
     // qs -c MacShell ipc call clock open | tab alarms | stop | snooze
     IpcHandler {
         target: "clock"
