@@ -320,11 +320,11 @@ Scope {
                 }
             }
 
-            // Click-through mask: covers entire stage sidebar when open (360px) or edge strip (26px) when closed
+            // Click-through mask: covers entire stage sidebar when open (330px) or edge strip (26px) when closed
             Item {
                 id: inputArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: win.stageVisible ? 360 : 26
+                width: win.stageVisible ? 330 : 26
             }
 
             mask: Region {
@@ -335,7 +335,7 @@ Scope {
             Item {
                 id: panelHoverArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 360
+                width: 330
 
                 HoverHandler {
                     id: panelHover
@@ -357,18 +357,19 @@ Scope {
             // ── 3D Stage Cards Container ──
             Item {
                 id: stageContainer
-                width: 300
+                width: 270
                 height: cardsColumn.implicitHeight + 40
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
-                // Slide in/out animation (settles at x: 32 for comfortable spacing from screen edge)
-                x: win.stageVisible ? 32 : -300
+                // Slide in/out animation (settles at x: 12 close to screen edge like macOS)
+                x: win.stageVisible ? 12 : -300
                 Behavior on x { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                 Column {
                     id: cardsColumn
-                    anchors.centerIn: parent
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     spacing: 26
 
                     Repeater {
@@ -754,7 +755,7 @@ Scope {
                                             }
                                         }
 
-                                        if (dropP.x > 320) {
+                                        if (dropP.x > 290) {
                                             // Dropped out onto desktop: detach into own cluster
                                             root.assignWindowToGroup(win.draggingAddr, null);
                                         } else if (targetId && targetId !== clusterWrapper.modelData.id) {
