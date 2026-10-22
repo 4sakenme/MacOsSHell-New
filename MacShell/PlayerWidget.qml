@@ -46,6 +46,8 @@ Item {
     // ── background resource throttling / occlusion (macOS App Nap) ──
     property bool desktopCovered: false
     property bool appFocused: false
+    property string wallVideo: ""
+    property bool wallPaused: false
     readonly property bool isHovered: hoverHandler.hovered
     readonly property bool occluded: (desktopCovered || appFocused) && !isHovered && !editing
 
