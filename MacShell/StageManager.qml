@@ -291,6 +291,7 @@ Scope {
 
             property bool isRevealed: false
             readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 320)
+            property int hoveredCardsCount: 0
 
             // Drag and drop state across clusters
             property string draggingAddr: ""
@@ -299,8 +300,12 @@ Scope {
 
             Timer {
                 id: hideTimer
-                interval: 420
-                onTriggered: win.isRevealed = false
+                interval: 500
+                onTriggered: {
+                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !edgeHover.hovered && !win.draggingAddr) {
+                        win.isRevealed = false;
+                    }
+                }
             }
 
             // Click-through mask: covers entire stage sidebar when open (360px) or edge strip (26px) when closed
@@ -341,7 +346,7 @@ Scope {
                         if (hovered) {
                             hideTimer.stop();
                             win.isRevealed = true;
-                        } else if (!win.draggingAddr) {
+                        } else if (!win.draggingAddr && win.hoveredCardsCount === 0) {
                             hideTimer.restart();
                         }
                     }
@@ -384,11 +389,14 @@ Scope {
                             readonly property bool isHovered: cardMouseArea.containsMouse
                             readonly property bool isTargetDrop: win.hoverTargetClusterId === clusterWrapper.modelData.id && win.draggingAddr !== ""
 
-                            // ── 3D Cluster Stack Item (Stable 3D orientation, no wobbling on hover) ──
+                            // ── 3D Cluster Stack Item (3D Perspective Skew & Hover Animation) ──
                             Item {
                                 id: stackContainer
                                 width: 248
                                 height: 154
+
+                                property real pK: clusterWrapper.isHovered ? 0.0004 : 0.0016
+                                Behavior on pK { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
                                 transform: [
                                     Matrix4x4 {
@@ -396,25 +404,27 @@ Scope {
                                             1, 0, 0, 0,
                                             0, 1, 0, 0,
                                             0, 0, 1, 0,
-                                            0.0014, 0, 0, 1
+                                            stackContainer.pK, 0, 0, 1
                                         )
                                     },
                                     Rotation {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
                                         axis { x: 0; y: 1; z: 0 }
-                                        angle: -22
+                                        angle: clusterWrapper.isHovered ? -7 : -25
+                                        Behavior on angle { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                                     },
                                     Translate {
-                                        x: clusterWrapper.isTargetDrop ? 10 : 0
-                                        Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                        x: (clusterWrapper.isHovered ? 14 : 0) + (clusterWrapper.isTargetDrop ? 10 : 0)
+                                        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                     },
                                     Scale {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
-                                        xScale: clusterWrapper.isHovered ? 1.025 : 1.0
+                                        xScale: (clusterWrapper.isHovered ? 1.05 : 0.96) * (clusterWrapper.isTargetDrop ? 1.06 : 1.0)
                                         yScale: xScale
-                                        Behavior on xScale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                        Behavior on xScale { NumberAnimation { duration: 200 } }
+                                        Behavior on yScale { NumberAnimation { duration: 200 } }
                                     }
                                 ]
 
@@ -431,14 +441,14 @@ Scope {
                                         readonly property int depth: index
                                         z: 10 - depth
 
-                                        x: depth * (clusterWrapper.isHovered ? 16 : 10)
-                                        y: -depth * (clusterWrapper.isHovered ? 8 : 6)
-                                        Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                        Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                        x: depth * (clusterWrapper.isHovered ? 24 : 12)
+                                        y: -depth * (clusterWrapper.isHovered ? 13 : 7)
+                                        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
                                         width: 248
                                         height: 154
-                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.92 : 0.84) : (clusterWrapper.isHovered ? 0.84 : 0.72))
+                                        opacity: depth === 0 ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.94 : 0.84) : (clusterWrapper.isHovered ? 0.88 : 0.72))
                                         Behavior on opacity { NumberAnimation { duration: 180 } }
 
                                         // 3D Shadow per deck layer
@@ -560,8 +570,8 @@ Scope {
                                             color: Qt.rgba(0.12, 0.12, 0.15, 0.95)
                                             border.width: 1
                                             border.color: Qt.rgba(1, 1, 1, 0.35)
-                                            scale: clusterWrapper.isHovered ? 1.08 : 1.0
-                                            Behavior on scale { NumberAnimation { duration: 180 } }
+                                            scale: clusterWrapper.isHovered ? 1.12 : 1.0
+                                            Behavior on scale { NumberAnimation { duration: 200 } }
 
                                             layer.enabled: true
                                             layer.effect: MultiEffect {
@@ -662,6 +672,7 @@ Scope {
                                 cursorShape: Qt.PointingHandCursor
 
                                 onEntered: {
+                                    win.hoveredCardsCount++;
                                     hideTimer.stop();
                                     win.isRevealed = true;
                                     if (win.draggingAddr !== "") {
@@ -670,8 +681,12 @@ Scope {
                                 }
 
                                 onExited: {
+                                    win.hoveredCardsCount = Math.max(0, win.hoveredCardsCount - 1);
                                     if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
                                         win.hoverTargetClusterId = "";
+                                    }
+                                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !edgeHover.hovered && !win.draggingAddr) {
+                                        hideTimer.restart();
                                     }
                                 }
 
