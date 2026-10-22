@@ -54,7 +54,9 @@ Scope {
     Binding { target: root.hub; property: "winBarWantsGeo"; value: root.enabled; when: root.hub !== null }
     function dispatch(d) { Hyprland.dispatch(d + "({ window = \"address:" + activeAddr + "\" })"); }
     function close() { Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + activeAddr + '" })'); }
-    function minimize() { Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = "address:' + activeAddr + '" })'); }
+    function minimize() {
+        Quickshell.execDetached(["sh", "-c", "if [ -x \"$HOME/.local/bin/macshell-genie\" ]; then \"$HOME/.local/bin/macshell-genie\" min; else hyprctl dispatch 'hl.dsp.window.move({ workspace = \"special:minimized\", follow = false, window = \"address:" + activeAddr + "\" })'; fi"]);
+    }
     function zoom() { Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 2, client = 0, window = "address:' + activeAddr + '" })'); }
 
     Variants {

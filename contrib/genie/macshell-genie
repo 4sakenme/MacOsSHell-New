@@ -85,11 +85,15 @@ elif cmd == "restore":
     restore()
 elif cmd == "dock" and len(sys.argv) > 2:
     # argv[2] is the window the Dock picked, the rest are all windows of that app: a minimized one comes back
-    # out of the lamp, otherwise the picked window is focused
+    # out of the lamp, otherwise the picked window is focused (or minimized if already active)
     mine = [s["addr"] for s in load() if s["addr"] in set(sys.argv[2:])]
     if mine:
         restore(mine[-1])
     else:
-        ctl("dispatch", f"hl.dsp.focus({{ window = 'address:{sys.argv[2]}' }})")
+        active = json.loads(ctl("-j", "activewindow") or "{}")
+        if active.get("address") in set(sys.argv[2:]):
+            minimize()
+        else:
+            ctl("dispatch", f"hl.dsp.focus({{ window = 'address:{sys.argv[2]}' }})")
 else:
     sys.exit(__doc__)
