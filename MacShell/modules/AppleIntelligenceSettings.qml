@@ -16,6 +16,7 @@ Column {
     // Settings state
     property bool siriEnabled: true
     property bool wakeWordEnabled: true
+    property bool liveVoiceStreaming: true
     property string language: "vi-VN"
     property string voice: "vi"
     property string ttsVoiceVi: "vi-VN-HoaiMyNeural"
@@ -39,6 +40,7 @@ Column {
                 var o = JSON.parse(text());
                 if (o.enabled !== undefined) root.siriEnabled = o.enabled;
                 if (o.wake_word_enabled !== undefined) root.wakeWordEnabled = o.wake_word_enabled;
+                if (o.live_voice_streaming !== undefined) root.liveVoiceStreaming = o.live_voice_streaming;
                 if (o.language !== undefined) root.language = o.language;
                 if (o.voice !== undefined) root.voice = o.voice;
                 if (o.tts_voice_vi !== undefined) root.ttsVoiceVi = o.tts_voice_vi;
@@ -76,6 +78,7 @@ Column {
         var o = {
             enabled: root.siriEnabled,
             wake_word_enabled: root.wakeWordEnabled,
+            live_voice_streaming: root.liveVoiceStreaming,
             wake_words: ["hey siri", "siri", "ơi siri"],
             language: root.language,
             voice: activeVoice,
@@ -263,6 +266,29 @@ Column {
                     anchors.verticalCenter: parent.verticalCenter
                     checked: root.wakeWordEnabled
                     onToggled: { root.wakeWordEnabled = checked; root.saveSettings(); }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: t ? t.cardBorder : Qt.rgba(1, 1, 1, 0.08) }
+
+            // Live Voice Streaming Switch
+            Item {
+                width: parent.width
+                height: 36
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text { text: I18n.tr("Live Voice Streaming"); color: t ? t.text : "white"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Text { text: I18n.tr("Tự động hiện thanh gõ lệnh và stream chữ trực tiếp từ giọng nói theo thời gian thực"); color: t ? t.text2 : "#8E8E93"; font.family: t ? t.fam : "Open Runde"; font.pixelSize: 11 }
+                }
+
+                Switch {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    checked: root.liveVoiceStreaming
+                    onToggled: { root.liveVoiceStreaming = checked; root.saveSettings(); }
                 }
             }
         }

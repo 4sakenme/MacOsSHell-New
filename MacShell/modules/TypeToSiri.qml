@@ -374,8 +374,9 @@ Scope {
                                 Connections {
                                     target: root
                                     function onPromptChanged() {
-                                        if (root.prompt !== "" && (!mainInput.activeFocus || mainInput.text === "")) {
+                                        if (root.prompt !== "") {
                                             mainInput.text = root.prompt;
+                                            mainInput.cursorPosition = mainInput.text.length;
                                         }
                                     }
                                     function onIsOpenChanged() {

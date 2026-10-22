@@ -168,6 +168,7 @@ Scope {
     property bool bounceOnLaunch: true
     property bool showThumbs: true       // open windows get a live preview cell next to the Trash
     property bool windowCapture: true    // live window capture for those previews (off: the cells show the app icon, nothing is captured). Liquid Glass is not affected
+    property string minimizeAnimation: "genie" // "genie", "scale", "none"
     property int hideDelay: 450          // ms before the dock hides after the pointer leaves
     readonly property var accentChoices: [
         { name: "Blue",     c: "#0a84ff" }, { name: "Purple", c: "#bf5af2" },
@@ -953,7 +954,7 @@ Scope {
                         hoverEnabled: true
                         onClicked: mouse => {
                             if (mouse.x < 22) prefsWindow.visible = false;
-                            else if (mouse.x < 44) prefsWindow.showMinimized();
+                            else if (mouse.x < 44) root.minimizeActive();
                             else if (mouse.x < 58) {
                                 if (prefsWindow.visibility === Window.FullScreen) prefsWindow.showNormal();
                                 else prefsWindow.showFullScreen();
@@ -2462,6 +2463,20 @@ Scope {
                         title: I18n.tr("Live window capture")
                         subtitle: I18n.tr("Capture open windows for the previews. Turn off and the previews show the app icon instead (Liquid Glass is not affected)")
                         SSwitch { t: pal; checked: root.windowCapture; onToggled: v => root.windowCapture = v }
+                    }
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Minimize windows using")
+                        subtitle: I18n.tr("Genie effect bends windows into the Dock; Scale effect zooms them smoothly")
+                        SSegmented {
+                            t: pal
+                            model: ["Genie", "Scale", "None"]
+                            segWidth: 72
+                            current: root.minimizeAnimation === "genie" ? 0 : (root.minimizeAnimation === "scale" ? 1 : 2)
+                            onPicked: i => {
+                                root.minimizeAnimation = (i === 0) ? "genie" : ((i === 1) ? "scale" : "none");
+                            }
+                        }
                     }
                     SRow {
                         t: pal
@@ -4194,12 +4209,13 @@ Scope {
         iconTint = false; iconTintColor = "#0a84ff"; iconTintStrength = 1.0;
         hideMode = "smart"; hideDelay = 450; monitor = "";
         showTrash = true; showLabels = true; showIndicators = true; bounceOnLaunch = true; showThumbs = true; windowCapture = true;
+        minimizeAnimation = "genie";
     }
 
     // ── settings persistence (~/.config/macdock/settings.json) ──
     readonly property string settingsSig: [dockEnabled, settingsEnabled, iconSize, magnification, magnificationEnabled, spacing, margin,
         cornerRadius, darkMode, appearanceMode, glassOpacity, glassBlur, glassLiquid, dockStyle, wallpaperPath, String(accent), fontFamily, hideMode, hideDelay, monitor,
-        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, iconTint, iconTintColor, iconTintStrength].join("|")
+        showTrash, showLabels, showIndicators, bounceOnLaunch, showThumbs, windowCapture, iconTint, iconTintColor, iconTintStrength, minimizeAnimation].join("|")
     property bool settingsReady: false
     onSettingsSigChanged: if (settingsReady) saveTimer.restart()
     onShowTrashChanged: { rebuild(); if (showTrash) trashCheck(); }
@@ -4216,7 +4232,8 @@ Scope {
             hideMode: hideMode, hideDelay: hideDelay, monitor: monitor,
             showTrash: showTrash, showLabels: showLabels, showIndicators: showIndicators,
             bounceOnLaunch: bounceOnLaunch, showThumbs: showThumbs, windowCapture: windowCapture,
-            iconTint: iconTint, iconTintColor: iconTintColor, iconTintStrength: iconTintStrength
+            iconTint: iconTint, iconTintColor: iconTintColor, iconTintStrength: iconTintStrength,
+            minimizeAnimation: minimizeAnimation
         };
         settingsStore.setText(JSON.stringify(o, null, 2));
     }
@@ -4225,7 +4242,7 @@ Scope {
         if (!o || typeof o !== "object") return;
         var keys = ["dockEnabled", "settingsEnabled", "iconSize", "magnification", "magnificationEnabled", "spacing", "margin", "cornerRadius",
                     "darkMode", "appearanceMode", "glassOpacity", "dockStyle", "wallpaperPath", "glassDebug", "glassRim", "glassGrain", "glassLiquid", "glassBlur", "accent", "fontFamily", "hideMode", "hideDelay", "monitor",
-                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "iconTint", "iconTintColor", "iconTintStrength"];
+                    "showTrash", "showLabels", "showIndicators", "bounceOnLaunch", "showThumbs", "windowCapture", "iconTint", "iconTintColor", "iconTintStrength", "minimizeAnimation"];
         for (var i = 0; i < keys.length; i++) {
             if (o[keys[i]] === undefined) continue;
             try { root[keys[i]] = o[keys[i]]; } catch (err) { }
@@ -4354,8 +4371,219 @@ Scope {
         return out;
     }
 
+    // Optional genie minimize (see contrib/genie): when ~/.local/bin/macshell-genie exists, Dock clicks go through it, because
+    // a window minimized with the genie sits on a hidden special workspace where Hyprland ignores activate().
+    // Without the helper nothing changes.
+    readonly property string genieHelper: Quickshell.env("HOME") + "/.local/bin/macshell-genie"
+    FileView { id: genieProbe; path: root.genieHelper; printErrors: false }
+    function genieAddr(tl) {
+        var v = Hyprland.toplevels.values;
+        for (var i = 0; i < v.length; i++) if (v[i].wayland === tl) return "0x" + String(v[i].address).replace(/^0x/, "");
+        return "";
+    }
+    function genieDock(chosen, all) {
+        if (!genieProbe.loaded) return false;
+        var a = genieAddr(chosen);
+        if (!a) return false;
+        var args = [genieHelper, "dock", a];
+        for (var i = 0; i < all.length; i++) { var b = genieAddr(all[i]); if (b) args.push(b); }
+        Quickshell.execDetached(args);
+        return true;
+    }
+
+    Timer {
+        id: hideWinTimer
+        interval: 40
+        repeat: false
+        property string addr: ""
+        onTriggered: {
+            if (addr !== "") {
+                Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:minimized", silent = true, window = "address:0x' + addr + '" })');
+                addr = "";
+            }
+        }
+    }
+
+    GenieAnimation {
+        id: genieAnim
+        minimizeAnimation: root.minimizeAnimation
+    }
+
+    property var minimizedWindows: ({})
+
+    function dockPointFor(addr, appId, mon) {
+        var a = String(addr || "").replace(/^0x/, "").toLowerCase();
+        var appKey = appId ? keyOf(appId) : "";
+        var sw = (mon && mon.width) ? mon.width : (Quickshell.screens.length > 0 ? Quickshell.screens[0].width : 1920);
+        var sh = (mon && mon.height) ? mon.height : (Quickshell.screens.length > 0 ? Quickshell.screens[0].height : 1080);
+        var defX = sw / 2;
+        var defY = sh - root.bottomPad - root.iconSize / 2;
+
+        var targetItem = null;
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            if (!it) continue;
+            if (it.kind === "win" && it.tl) {
+                var wAddr = String(it.tl.address || "").replace(/^0x/, "").toLowerCase();
+                if (wAddr === a) { targetItem = it; break; }
+            } else if (it.kind === "app" && appKey !== "" && it.key === appKey) {
+                targetItem = it;
+                break;
+            }
+        }
+
+        if (targetItem && itemMap && itemMap[targetItem.key]) {
+            var m = itemMap[targetItem.key];
+            var lastItem = items.length > 0 ? itemMap[items[items.length - 1].key] : null;
+            var totalW = lastItem
+                ? (lastItem.nA * (root.iconSize + root.spacing) + lastItem.nS * (root.sepWidth + root.spacing) + root.iconSize)
+                : 600;
+            var rowLeft = (sw - totalW) / 2;
+            var c0 = m.nA * (root.iconSize + root.spacing) + m.nS * (root.sepWidth + root.spacing) + (targetItem.kind === "sep" ? root.sepWidth : root.iconSize) / 2;
+            return { x: rowLeft + c0, y: defY };
+        }
+        return { x: defX, y: defY };
+    }
+
+    function minimizeWindow(addr) {
+        if (!addr) return;
+        var a = String(addr).replace(/^0x/, "").toLowerCase();
+
+        // 1. Locate toplevel in Hyprland
+        var targetTl = null;
+        var ts = Hyprland.toplevels.values;
+        for (var t = 0; t < ts.length; t++) {
+            if (String(ts[t].address || "").replace(/^0x/, "").toLowerCase() === a) {
+                targetTl = ts[t];
+                break;
+            }
+        }
+
+        // 2. Locate geometry info
+        var o = targetTl ? targetTl.lastIpcObject : null;
+        if (!o) {
+            var cs = root.glassClients || [];
+            for (var i = 0; i < cs.length; i++) {
+                if (String(cs[i].address || "").replace(/^0x/, "").toLowerCase() === a) {
+                    o = cs[i];
+                    break;
+                }
+            }
+        }
+
+        var mon = Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
+        if (o && o.monitor !== undefined) {
+            for (var m = 0; m < Quickshell.screens.length; m++) {
+                if (Quickshell.screens[m].name === o.monitor || m === o.monitor) {
+                    mon = Quickshell.screens[m];
+                    break;
+                }
+            }
+        }
+
+        var rect = {
+            x: (o && o.at) ? (o.at[0] - (mon ? mon.x : 0)) : 100,
+            y: (o && o.at) ? (o.at[1] - (mon ? mon.y : 0)) : 100,
+            width: (o && o.size) ? o.size[0] : 800,
+            height: (o && o.size) ? o.size[1] : 600
+        };
+
+        var appId = (o && (o.class || o.initialClass)) ? (o.class || o.initialClass) : "";
+        var dockPt = dockPointFor(a, appId, mon);
+        var waylandTl = targetTl ? targetTl.wayland : (root.hub ? root.hub.tlFor(a) : null);
+
+        var minMap = {};
+        for (var k in root.minimizedWindows) minMap[k] = root.minimizedWindows[k];
+        minMap[a] = {
+            prevWorkspace: (o && o.workspace && o.workspace.id > 0) ? o.workspace.id : 1,
+            rect: rect,
+            dockPt: dockPt,
+            appId: appId,
+            screen: mon,
+            tl: waylandTl
+        };
+        root.minimizedWindows = minMap;
+
+        // Start Genie minimize animation and hide window cleanly
+        genieAnim.startMinimize(rect, dockPt, waylandTl, mon, null);
+        hideWinTimer.addr = a;
+        hideWinTimer.restart();
+    }
+
+    function unminimizeWindow(addr) {
+        if (!addr) return;
+        var a = String(addr).replace(/^0x/, "").toLowerCase();
+        var minInfo = root.minimizedWindows[a];
+        var mon = minInfo ? minInfo.screen : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
+        var targetWs = (minInfo && minInfo.prevWorkspace) ? minInfo.prevWorkspace : 1;
+        var rect = (minInfo && minInfo.rect) ? minInfo.rect : { x: 100, y: 100, width: 800, height: 600 };
+        var dockPt = (minInfo && minInfo.dockPt) ? minInfo.dockPt : dockPointFor(a, minInfo ? minInfo.appId : "", mon);
+
+        var waylandTl = minInfo ? minInfo.tl : (root.hub ? root.hub.tlFor(a) : null);
+        if (!waylandTl) {
+            var ts = Hyprland.toplevels.values;
+            for (var t = 0; t < ts.length; t++) {
+                if (String(ts[t].address || "").replace(/^0x/, "").toLowerCase() === a) {
+                    waylandTl = ts[t].wayland;
+                    break;
+                }
+            }
+        }
+
+        // Run reverse Genie animation from Dock to original window position, then unhide window
+        genieAnim.startUnminimize(rect, dockPt, waylandTl, mon, function() {
+            Hyprland.dispatch('hl.dsp.window.move({ workspace = ' + targetWs + ', silent = false, window = "address:0x' + a + '" })');
+            Hyprland.dispatch('hl.dsp.window.focus({ window = "address:0x' + a + '" })');
+
+            var minMap = {};
+            for (var k in root.minimizedWindows) {
+                if (k !== a) minMap[k] = root.minimizedWindows[k];
+            }
+            root.minimizedWindows = minMap;
+        });
+    }
+
+    function minimizeActive() {
+        var atl = ToplevelManager.activeToplevel;
+        if (atl) {
+            var ts = Hyprland.toplevels.values;
+            for (var i = 0; i < ts.length; i++) {
+                if (ts[i].wayland === atl) {
+                    minimizeWindow(ts[i].address);
+                    return;
+                }
+            }
+            if (atl.address) {
+                minimizeWindow(atl.address);
+                return;
+            }
+        }
+        var ts2 = Hyprland.toplevels.values;
+        for (var j = 0; j < ts2.length; j++) {
+            if (ts2[j].wayland && ts2[j].wayland.activated) {
+                minimizeWindow(ts2[j].address);
+                return;
+            }
+        }
+    }
+
     function activate(item, forceNew) {
-        if (item.kind === "win") { if (item.tl) item.tl.activate(); return; }
+        if (item.kind === "win") {
+            if (genieProbe.loaded && item.tl && genieDock(item.tl, [item.tl])) return;
+            var wAddr = item.tl ? String(item.tl.address || "").replace(/^0x/, "") : "";
+            if (wAddr !== "" && root.minimizedWindows[wAddr]) {
+                unminimizeWindow(wAddr);
+                return;
+            }
+            if (item.tl) {
+                if (item.tl.activated) {
+                    minimizeWindow(wAddr);
+                } else {
+                    item.tl.activate();
+                }
+            }
+            return;
+        }
         if (item.special === "trash") {
             // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
             Quickshell.execDetached(["sh", "-c",
@@ -4368,7 +4596,21 @@ Scope {
         if (wins.length > 0 && !forceNew) {
             var idx = -1;
             for (var i = 0; i < wins.length; i++) if (wins[i].activated) idx = i;
-            wins[(idx + 1) % wins.length].activate();
+            var chosen = wins[(idx + 1) % wins.length];
+            if (genieProbe.loaded && genieDock(chosen, wins)) return;
+            for (var m = 0; m < wins.length; m++) {
+                var wa = String(wins[m].address || "").replace(/^0x/, "");
+                if (root.minimizedWindows[wa]) {
+                    unminimizeWindow(wa);
+                    return;
+                }
+            }
+            if (idx >= 0 && wins.length === 1) {
+                var actAddr = String(wins[idx].address || "").replace(/^0x/, "");
+                minimizeWindow(actAddr);
+                return;
+            }
+            chosen.activate();
             return;
         }
         if (item.entry || item.key) {
@@ -4431,6 +4673,12 @@ Scope {
     function menuFor(item) {
         var m = [];
         if (item.kind === "win") {
+            var wAddr = item.tl ? String(item.tl.address || "").replace(/^0x/, "") : "";
+            if (wAddr !== "" && root.minimizedWindows[wAddr]) {
+                m.push({ kind: "item", label: I18n.tr("Restore"), run: function () { unminimizeWindow(wAddr); } });
+            } else {
+                m.push({ kind: "item", label: I18n.tr("Minimize"), run: function () { minimizeWindow(wAddr); } });
+            }
             m.push({ kind: "item", label: I18n.tr("Show"), run: function () { activate(item, false); } });
             m.push({ kind: "item", label: I18n.tr("Close"), run: function () { if (item.tl) item.tl.close(); } });
             m.push({ kind: "sep" });
@@ -4874,6 +5122,29 @@ Scope {
             Item {
                 id: ui
                 anchors.fill: parent
+
+                // Optional genie minimize (see contrib/genie): where each app icon sits on screen (global logical px), so the
+                // genie can aim at the app's own icon. ~/.cache/macshell-dock-rects.json = { "<app id, lowercase>": [x, y, w, h] }.
+                // Only written when the helper is installed.
+                FileView { id: genieRectsFile; path: Quickshell.env("HOME") + "/.cache/macshell-dock-rects.json"; printErrors: false }
+                Timer { id: genieRectsTimer; interval: 300; onTriggered: ui.genieWriteRects() }
+                Connections { target: row; function onWidthChanged() { genieRectsTimer.restart(); } function onXChanged() { genieRectsTimer.restart(); } }
+                Connections { target: root; function onItemsChanged() { genieRectsTimer.restart(); } }
+                Component.onCompleted: genieRectsTimer.restart()
+                function genieWriteRects() {
+                    if (!genieProbe.loaded) return;
+                    var map = {};
+                    var top = win.modelData.y + win.modelData.height - win.height;
+                    for (var i = 0; i < rep.count; i++) {
+                        var c = rep.itemAt(i);
+                        if (!c || c.isSep || c.modelData.kind !== "app") continue;
+                        var p = c.mapToItem(null, 0, 0);
+                        var r = [Math.round(win.modelData.x + p.x), Math.round(top + p.y), Math.round(c.width), Math.round(c.height)];
+                        if (c.modelData.key) map[String(c.modelData.key).toLowerCase()] = r;
+                        if (c.modelData.appId) map[String(c.modelData.appId).toLowerCase()] = r;
+                    }
+                    genieRectsFile.setText(JSON.stringify(map));
+                }
 
                 property real mx: 0
                 Behavior on mx { NumberAnimation { duration: 55; easing.type: Easing.OutQuad } }

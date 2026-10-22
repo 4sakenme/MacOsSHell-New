@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "api_key": os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE"),
     "model": "gemini-2.5-flash",
     "wake_words": ["hey siri", "siri", "ơi siri"],
+    "live_voice_streaming": True,
     "language": "auto",       # "auto", "vi-VN", "en-US"
     "tts_engine": "espeak-ng", # "espeak-ng", "piper"
     "tts_voice_en": "en-us+f3",
@@ -110,6 +111,14 @@ class SiriIPC:
     @classmethod
     def set_audio_level(cls, level: float):
         cls.call("audioLevel", f"{level:.2f}")
+
+    @classmethod
+    def set_voice_active(cls, active: bool):
+        cls.call("voiceActive", "true" if active else "false")
+
+    @classmethod
+    def open_type(cls):
+        cls.call("open_type")
 
     @classmethod
     def dismiss(cls):
@@ -633,11 +642,12 @@ def speak(text: str):
 
 
 # ── UNIFIED REAL-TIME AUDIO RECORDER & LEVEL STREAMER (ZERO-NUMPY PURE C AUDIOOP) ──
-def record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_timeout=2.0):
+def record_speech_with_levels(recognizer=None, timeout=15.0, phrase_time_limit=30.0, silence_timeout=2.5, live_streaming=True):
     """
     Record speech using lightweight sounddevice and native C audioop (Zero numpy overhead).
     Continuously streams live microphone volume to QML edge glow waves.
     Automatically detects speech start and speech finish (VAD), returns sr.AudioData.
+    Supports real-time partial STT streaming directly into TypeToSiri text box.
     Saves over 500MB+ virtual memory, zero segfaults!
     """
     import sounddevice as sd
@@ -646,31 +656,75 @@ def record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_time
 
     frames = []
     has_spoken = False
+    is_voice_active = False
+    has_opened_type = False
     silence_start = None
     start_time = time.time()
     last_ipc_send = 0.0
+    last_stream_transcribe = 0.0
+    stream_worker_busy = False
+    frame_lock = threading.Lock()
+
+    def partial_transcribe_worker(snapshot_bytes):
+        nonlocal stream_worker_busy
+        try:
+            if recognizer is None:
+                return
+            part_audio = sr.AudioData(snapshot_bytes, 16000, 2)
+            lang_pref = CONFIG.get("language", "auto")
+            text = ""
+            if lang_pref == "auto":
+                try:
+                    text = recognizer.recognize_google(part_audio, language="vi-VN")
+                except sr.UnknownValueError:
+                    try:
+                        text = recognizer.recognize_google(part_audio, language="en-US")
+                    except Exception:
+                        pass
+            else:
+                try:
+                    text = recognizer.recognize_google(part_audio, language=lang_pref)
+                except Exception:
+                    pass
+            if text and text.strip():
+                print(f"[Streaming STT] 💬 \"{text.strip()}\"")
+                SiriIPC.set_prompt(text.strip())
+        except Exception:
+            pass
+        finally:
+            stream_worker_busy = False
 
     def audio_callback(indata, frame_count, time_info, status):
-        nonlocal has_spoken, silence_start, last_ipc_send
+        nonlocal has_spoken, is_voice_active, has_opened_type, silence_start, last_ipc_send
         raw_chunk = bytes(indata)
-        frames.append(raw_chunk)
+        with frame_lock:
+            frames.append(raw_chunk)
 
         # Ultra-fast native C calculation of audio RMS (0 memory allocations)
         rms = audioop.rms(raw_chunk, 2) / 32768.0
 
         now = time.time()
-        if now - last_ipc_send >= 0.035: # ~28 updates/sec
-            last_ipc_send = now
-            clean = max(0.0, rms - 0.002)
-            lvl = min(1.0, clean * 30.0)
-            SiriIPC.set_audio_level(lvl)
-
         # Voice Activity Detection (VAD)
-        if rms > 0.004:
+        if rms > 0.005:
             has_spoken = True
             silence_start = None
+            if not is_voice_active:
+                is_voice_active = True
+                SiriIPC.set_voice_active(True)
+                if live_streaming and not has_opened_type:
+                    has_opened_type = True
+                    SiriIPC.open_type()
         elif has_spoken and silence_start is None:
             silence_start = time.time()
+            if is_voice_active:
+                is_voice_active = False
+                SiriIPC.set_voice_active(False)
+
+        # Throttled audio level indicator
+        if now - last_ipc_send >= 0.05:
+            last_ipc_send = now
+            lvl = 1.0 if is_voice_active else 0.0
+            SiriIPC.set_audio_level(lvl)
 
     try:
         with sd.InputStream(channels=1, samplerate=16000, dtype='int16', blocksize=512, callback=audio_callback):
@@ -679,8 +733,9 @@ def record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_time
                 now = time.time()
                 elapsed = now - start_time
 
-                # If silence has elapsed after speaking, finish recording immediately
+                # Silence timeout: if user stopped speaking for 2.5s, finalize and break!
                 if has_spoken and silence_start and (now - silence_start >= silence_timeout):
+                    print(f"[VAD] ⏱️  Silence detected for {silence_timeout}s. Finalizing request automatically...")
                     break
 
                 # Max phrase limit
@@ -690,7 +745,18 @@ def record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_time
                 # Timeout if no speech heard at all
                 if not has_spoken and (elapsed >= timeout):
                     break
+
+                # Live Voice Streaming: periodically transcribe accumulated audio in background
+                if live_streaming and has_spoken and (now - last_stream_transcribe >= 0.85):
+                    last_stream_transcribe = now
+                    if not stream_worker_busy:
+                        with frame_lock:
+                            if len(frames) >= 16:
+                                snapshot = b"".join(frames)
+                                stream_worker_busy = True
+                                threading.Thread(target=partial_transcribe_worker, args=(snapshot,), daemon=True).start()
     finally:
+        SiriIPC.set_voice_active(False)
         SiriIPC.set_audio_level(0.0)
 
     if not has_spoken or not frames:
@@ -710,6 +776,10 @@ def run_assistant_cycle(recognizer=None, mic=None):
     5. Speak response and update UI.
     6. Automatically dismiss Siri once task/speech is finished.
     """
+    global CONFIG
+    CONFIG = load_config()
+    live_streaming = CONFIG.get("live_voice_streaming", True)
+
     import speech_recognition as sr
     if recognizer is None:
         recognizer = sr.Recognizer()
@@ -723,7 +793,13 @@ def run_assistant_cycle(recognizer=None, mic=None):
     user_query = ""
 
     try:
-        audio = record_speech_with_levels(timeout=15.0, phrase_time_limit=30.0, silence_timeout=2.0)
+        audio = record_speech_with_levels(
+            recognizer=recognizer,
+            timeout=15.0,
+            phrase_time_limit=30.0,
+            silence_timeout=2.5,
+            live_streaming=live_streaming
+        )
         if not audio:
             print("[Siri] No speech heard in time.")
             SiriIPC.set_prompt("Listening timed out. Press Space to type.")
@@ -736,7 +812,7 @@ def run_assistant_cycle(recognizer=None, mic=None):
         SiriIPC.set_state("idle")
         return
 
-    print("[Siri] 🧠 Processing speech...")
+    print("[Siri] 🧠 Processing speech (Silence 2.5s reached)...")
     SiriIPC.set_state("thinking")
     SiriIPC.set_prompt("Processing speech...")
 
@@ -754,7 +830,6 @@ def run_assistant_cycle(recognizer=None, mic=None):
         print(f"[Siri] Recognition error: {e}")
         SiriIPC.set_prompt("Sorry, could not understand audio.")
         time.sleep(1.2)
-        SiriIPC.activate(False)
         SiriIPC.set_state("idle")
         return
 

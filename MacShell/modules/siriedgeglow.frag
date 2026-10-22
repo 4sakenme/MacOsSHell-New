@@ -31,6 +31,8 @@ layout(std140, binding = 0) uniform buf {
     float u_bloomProgress; // 0.0 to 1.0 perimeter bloom animation (forward in intro, reverse in outro)
     float u_introMist;     // 0.0 to 1.0 fullscreen vignette mist overlay during intro
     float u_shrinkFactor;  // 1.0 active, collapses to 0.0 during outro
+    float u_voiceActive;   // 0.0 to 1.0 binary voice state (100ms smooth transition)
+    float u_isThinking;    // 0.0 to 1.0 thinking / processing state (shimmer ripples)
 };
 
 const float PI = 3.14159265358979323846;
@@ -141,25 +143,36 @@ void main()
     float perimeterCoord = (angleP / TWO_PI) + 0.5;
     float pRad = perimeterCoord * TWO_PI;
 
-    // TIER 1: Ambient Idle Flow (bồng bềnh uốn lượn rõ nét, ~0.26 undulation)
+    // TIER 1: Ambient Idle Flow (minimal breathing ~0.20 when idle)
     float amb1 = sin(pRad * 5.0 - u_time * 1.3) * 0.65;
     float amb2 = cos(pRad * 11.0 + u_time * 1.0) * 0.35;
-    float ambientWave = (amb1 + amb2) * 0.26;
+    float ambientWave = (amb1 + amb2) * 0.20;
 
-    // TIER 2: Voice Micro-Ripples (delicate, high-frequency water ripples when speaking)
-    float voiceRipple = sin(perimeterCoord * 45.0 - u_time * 6.0) 
-                      * cos(perimeterCoord * 25.0 + u_time * 4.0);
-    float voiceOffset = voiceRipple * clamp(audioLevel, 0.0, 1.0) * 0.18;
+    // TIER 2: Active Voice State Wave (giảm nhẹ độ cao ~0.50 cho sóng uốn lượn vừa vặn, thanh lịch)
+    float voiceRip1 = sin(perimeterCoord * 28.0 - u_time * 4.2) * 0.55;
+    float voiceRip2 = cos(perimeterCoord * 52.0 + u_time * 3.6) * 0.45;
+    float voiceWave = (voiceRip1 + voiceRip2) * 0.50 * u_voiceActive;
+
+    // TIER 3: Thinking / Processing Mode (bình thường, nhịp nhàng êm dịu, không bị giật hay quá dày)
+    float thinkRip1 = sin(perimeterCoord * 32.0 - u_time * 2.8) * 0.55;
+    float thinkRip2 = cos(perimeterCoord * 56.0 + u_time * 2.2) * 0.45;
+    float thinkWave = (thinkRip1 + thinkRip2) * 0.32 * u_isThinking;
+
+    // Combined perimeter wave displacement
+    float totalWave = ambientWave * (1.0 - max(u_voiceActive, u_isThinking) * 0.3) + voiceWave + thinkWave;
 
     // Settle Bloom: initial energy convergence (reaches ~48px-52px, then settles to base width)
     float settleBoost = (u_bloomProgress < 0.999) ? (0.50 * sin(u_bloomProgress * PI)) : 0.0;
-    float dynamicBaseW = glowWidth * (1.0 + settleBoost);
+    
+    // Dynamic width expansion when voice or thinking is active
+    float stateBoost = 0.20 * u_voiceActive + 0.12 * u_isThinking;
+    float dynamicBaseW = glowWidth * (1.0 + settleBoost + stateBoost);
 
     // Border Shrink in Outro: collapses cleanly to 0px
     dynamicBaseW *= clamp(u_shrinkFactor, 0.0, 1.0);
 
-    // Dynamic width modulated cleanly by ambient breathing and voice micro-ripples
-    float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + ambientWave + voiceOffset));
+    // Dynamic width modulated cleanly by waves
+    float dynamicWidth = dynamicBaseW * max(0.35, (1.0 + totalWave));
 
     float maxReach = dynamicWidth * 2.2;
     if ((inwardDist < 0.0 || inwardDist > maxReach) && shockwaveOutput.a <= 0.001) {
@@ -229,8 +242,8 @@ void main()
         float halo = exp(-pow(normDistToEdge / 0.80, 1.6)) * 0.60;
         float aura = exp(-pow(normDistToEdge / 1.50, 1.2)) * 0.22;
 
-        // Gentle voice gleam when speaking
-        float crestGleam = 1.0 + max(0.0, voiceRipple) * clamp(audioLevel, 0.0, 1.0) * 0.35;
+        // Voice & Thinking gleam boost
+        float crestGleam = 1.0 + (0.55 * u_voiceActive) + (0.80 * u_isThinking);
         float edgeIntensity = (core + halo + aura) * crestGleam * animProgress * (bloomMask + bounceEcho);
 
         // Activation spark near origin

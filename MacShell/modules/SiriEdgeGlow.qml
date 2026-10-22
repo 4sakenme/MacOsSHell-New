@@ -37,6 +37,37 @@ Scope {
     readonly property bool isThinking: siriState === "thinking"
     readonly property bool isSpeaking: siriState === "speaking"
 
+    // Binary Voice State (Active Voice vs Silent Breathing)
+    property bool voiceActive: false
+    property real voiceActiveSmooth: 0.0
+
+    Behavior on voiceActiveSmooth {
+        NumberAnimation {
+            duration: 100
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    onVoiceActiveChanged: {
+        voiceActiveSmooth = voiceActive ? 1.0 : 0.0;
+    }
+
+    // Thinking / Task Processing State
+    property real thinkingSmooth: 0.0
+
+    Behavior on thinkingSmooth {
+        NumberAnimation {
+            duration: 150
+            easing.type: Easing.OutQuad
+        }
+    }
+
+    onIsThinkingChanged: {
+        thinkingSmooth = isThinking ? 1.0 : 0.0;
+    }
+
+    readonly property real effectiveVoiceActive: Math.max(voiceActiveSmooth, isSpeaking ? 0.75 : 0.0)
+
     // Animation progress & state tracking
     property bool isRenderActive: false
     property real smoothProgress: 0.0
@@ -239,7 +270,9 @@ Scope {
     FrameAnimation {
         running: root.isRenderActive || root.smoothProgress > 0.001
         onTriggered: {
-            root.animTime += 0.016;
+            // Moderate smooth speed during thinking/processing mode (~1.25x instead of 2.5x)
+            var speed = 1.0 + 0.25 * root.thinkingSmooth;
+            root.animTime += 0.016 * speed;
             if (root.animTime > 10000.0) root.animTime = 0.0;
         }
     }
@@ -315,6 +348,8 @@ Scope {
                         property real u_bloomProgress: root.bloomProgress
                         property real u_introMist: root.introMist
                         property real u_shrinkFactor: root.shrinkFactor
+                        property real u_voiceActive: root.effectiveVoiceActive
+                        property real u_isThinking: root.thinkingSmooth
                     }
                 }
             }

@@ -324,8 +324,18 @@ ShellRoot {
         function open_type() { typeToSiri.open(); }
         function close_type() { typeToSiri.close(); }
         function ask(text: string) { typeToSiri.ask(text); }
-        function state(st: string) { siriEdgeGlow.siriState = st; }
-        function prompt(text: string) { siriEdgeGlow.userPrompt = text; }
+        function state(st: string) {
+            siriEdgeGlow.siriState = st;
+            if (st === "thinking") {
+                typeToSiri.isThinking = true;
+            } else if (st === "speaking" || st === "idle") {
+                typeToSiri.isThinking = false;
+            }
+        }
+        function prompt(text: string) {
+            siriEdgeGlow.userPrompt = text;
+            typeToSiri.prompt = text;
+        }
         function response(text: string) {
             siriEdgeGlow.siriResponse = text;
             typeToSiri.response = text;
@@ -333,6 +343,7 @@ ShellRoot {
             if (text && text !== "") typeToSiri.open();
         }
         function audioLevel(lvl: real) { siriEdgeGlow.audioLevel = lvl; }
+        function voiceActive(active: bool) { siriEdgeGlow.voiceActive = active; }
         function dismiss() {
             siriEdgeGlow.dismiss();
             typeToSiri.close();
@@ -380,5 +391,16 @@ ShellRoot {
     IpcHandler {
         target: "glass"
         function captures(on: bool) { macDock.windowCapture = on; }
+    }
+
+    // macOS Genie / Window Minimize IPC:
+    // qs -c MacShell ipc call dock minimizeActive
+    // qs -c MacShell ipc call dock minimize "<addr>"
+    // qs -c MacShell ipc call dock unminimize "<addr>"
+    IpcHandler {
+        target: "dock"
+        function minimizeActive() { macDock.minimizeActive(); }
+        function minimize(addr: string) { macDock.minimizeWindow(addr); }
+        function unminimize(addr: string) { macDock.unminimizeWindow(addr); }
     }
 }
