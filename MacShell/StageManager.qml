@@ -6,7 +6,9 @@
 // 3. Multi-icon squircle badges overlapping at bottom-left and group title labels underneath
 // 4. Genuine 3D Perspective Skew & Foreshortening via Matrix4x4 + Y-Rotation
 // 5. Drag & Drop grouping: drag windows between clusters to merge or separate them
-// 6. Full-stage Swap & Zoom transition when activating a group onto the workspace
+// 6. Full macOS-style Swap Transition: 300ms InOutCubic rotate/scale/translate animation
+// 7. Auto-shove: panel hides when active window touches left edge, re-appears on edge hover
+// 8. Shuffle / loop: repeated clicks on same multi-window group cycle focus among sub-windows
 
 import QtQuick
 import QtQuick.Effects
@@ -29,6 +31,16 @@ Scope {
     property var clusters: []
     property string activeAddress: ""
     property var activeIpcObject: null
+
+    // ── Animation state for swap transition ──
+    // ID of the cluster currently being animated in (incoming)
+    property string animatingInClusterId: ""
+    // ID of the cluster currently being animated out (outgoing)
+    property string animatingOutClusterId: ""
+
+    // ── Auto-shove state ──
+    // true = active window is too close to left edge, panel should hide
+    property bool autoShove: false
 
     function normAddr(a) {
         if (!a) return "";
@@ -76,6 +88,10 @@ Scope {
         root.activeAddress = actAddr;
         root.activeWindowLeft = activeLeft;
         root.activeIpcObject = actObj;
+
+        // ── Auto-shove: hide panel when active window touches left edge ──
+        // Stage panel width is ~270px; hide when window.x < 290
+        root.autoShove = (activeLeft < 290);
 
         var vals = ToplevelManager.toplevels.values;
         var bgWindows = [];
@@ -247,71 +263,29 @@ Scope {
         return 9;
     }
 
-    // Cycle through apps in a grouped stage, or directly activate a chosen sub-app
-    function cycleOrActivateCluster(cluster, specificWinIndex) {
-        if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
-
-        var wins = cluster.windows;
-        var targetWin = null;
-
-        if (specificWinIndex !== undefined && specificWinIndex >= 0 && specificWinIndex < wins.length) {
-            // User hovered and clicked directly on a specific stacked card behind
-            targetWin = wins[specificWinIndex];
-        } else if (wins.length === 1) {
-            targetWin = wins[0];
-        } else {
-            // Group stage with multiple windows: cycle / loop through windows one by one!
-            var actAddr = root.normAddr(root.activeAddress);
-            var activeInClusterIdx = -1;
-            for (var i = 0; i < wins.length; i++) {
-                if (root.normAddr(wins[i].address) === actAddr) {
-                    activeInClusterIdx = i;
-                    break;
+    // Helper to get currently active cluster (the one containing the active window)
+    function getActiveCluster() {
+        var actAddr = root.activeAddress;
+        if (!actAddr) return null;
+        for (var i = 0; i < root.clusters.length; i++) {
+            var cl = root.clusters[i];
+            for (var j = 0; j < cl.windows.length; j++) {
+                if (cl.windows[j].address === actAddr) {
+                    return cl;
                 }
             }
-
-            var nextIdx = 0;
-            if (activeInClusterIdx >= 0) {
-                // Currently working on a window from this stage: cycle to the next window!
-                nextIdx = (activeInClusterIdx + 1) % wins.length;
-            } else {
-                var lastIdx = root.clusterCycleMap[cluster.id] || 0;
-                nextIdx = lastIdx % wins.length;
-            }
-
-            root.clusterCycleMap[cluster.id] = (nextIdx + 1) % wins.length;
-            targetWin = wins[nextIdx];
         }
+        return null;
+    }
 
+    // ── Focus a specific window via Hyprland IPC (no cursor warp) ──
+    function focusWindow(targetWin) {
         if (!targetWin) return;
-
-        var targetWs = targetWin.workspace || 1;
         var targetAddr = String(targetWin.address || "").replace(/^0x/, "");
+        if (targetAddr === "") return;
 
-        // Đảm bảo "1 lần ấn chỉ mở 1 app thôi, các app khác ẩn đi":
-        // Nếu có cửa sổ khác trong cluster đang ở cùng workspace, dời nó sang workspace riêng để không che nhau
-        for (var w = 0; w < wins.length; w++) {
-            if (wins[w] !== targetWin) {
-                var otherAddr = String(wins[w].address || "").replace(/^0x/, "");
-                if (wins[w].workspace === targetWs && otherAddr !== "") {
-                    var freeWs = root.getFreeWorkspace(targetWs);
-                    wins[w].workspace = freeWs;
-                    Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent", String(freeWs) + ",address:0x" + otherAddr]);
-                }
-            }
-        }
-
-        // Focus duy nhất targetWin
-        var lua = "";
-        if (targetWs) {
-            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
-        }
-        if (targetAddr !== "") {
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
-        }
-
-        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        // hyprctl dispatch focuswindow address:0x<addr>  — does NOT warp cursor
+        Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + targetAddr]);
 
         if (targetWin.tl && typeof targetWin.tl.activate === "function") {
             try { targetWin.tl.activate(); } catch (e) {}
@@ -324,8 +298,101 @@ Scope {
         root.updateWindows();
     }
 
-    function activateCluster(cluster) {
-        cycleOrActivateCluster(cluster, 0);
+    // ── Cycle through apps in a grouped stage (Shuffle), or directly activate a chosen sub-app ──
+    function cycleOrActivateCluster(cluster, specificWinIndex) {
+        if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
+
+        var wins = cluster.windows;
+        var targetWin = null;
+
+        if (specificWinIndex !== undefined && specificWinIndex >= 0 && specificWinIndex < wins.length) {
+            // User hovered and clicked directly on a specific stacked card behind
+            targetWin = wins[specificWinIndex];
+        } else if (wins.length === 1) {
+            targetWin = wins[0];
+        } else {
+            // Multi-window group: shuffle / cycle windows one by one
+            var actAddr = root.normAddr(root.activeAddress);
+            var activeInClusterIdx = -1;
+            for (var i = 0; i < wins.length; i++) {
+                if (root.normAddr(wins[i].address) === actAddr) {
+                    activeInClusterIdx = i;
+                    break;
+                }
+            }
+
+            var nextIdx = 0;
+            if (activeInClusterIdx >= 0) {
+                // Currently active on a window from this cluster: cycle to the next
+                nextIdx = (activeInClusterIdx + 1) % wins.length;
+            } else {
+                var lastIdx = root.clusterCycleMap[cluster.id] || 0;
+                nextIdx = lastIdx % wins.length;
+            }
+
+            root.clusterCycleMap[cluster.id] = (nextIdx + 1) % wins.length;
+            targetWin = wins[nextIdx];
+        }
+
+        if (!targetWin) return;
+
+        // Move other windows in the cluster to separate workspaces so they don't overlap
+        var targetWs = targetWin.workspace || 1;
+        for (var w = 0; w < wins.length; w++) {
+            if (wins[w] !== targetWin) {
+                var otherAddr = String(wins[w].address || "").replace(/^0x/, "");
+                if (wins[w].workspace === targetWs && otherAddr !== "") {
+                    var freeWs = root.getFreeWorkspace(targetWs);
+                    wins[w].workspace = freeWs;
+                    Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent",
+                        String(freeWs) + ",address:0x" + otherAddr]);
+                }
+            }
+        }
+
+        root.focusWindow(targetWin);
+    }
+
+    // ── macOS-style Swap Transition (300ms, InOutCubic) ──
+    // Called when user clicks a stage card. Animates the visual clusterWrapper items.
+    // incomingClusterId: cluster being brought to foreground
+    // outgoingClusterId: cluster currently in foreground (being sent back)
+    // After animation completes, focuses the window via Hyprland IPC.
+    function triggerSwapAnimation(incomingCluster, outgoingCluster, subIdx) {
+        // Signal the Repeater delegates via the animating IDs.
+        // The delegates watch these IDs and animate themselves accordingly.
+        root.animatingInClusterId  = incomingCluster ? incomingCluster.id : "";
+        root.animatingOutClusterId = outgoingCluster  ? outgoingCluster.id  : "";
+
+        // After 300ms animation completes, focus the window and clear animation state
+        swapEndTimer.pendingCluster = incomingCluster;
+        swapEndTimer.pendingSubIdx  = (subIdx !== undefined) ? subIdx : -1;
+        swapEndTimer.restart();
+    }
+
+    // Timer that fires when the 300ms swap animation finishes
+    Timer {
+        id: swapEndTimer
+        interval: 310   // slightly after animation duration (300ms)
+        repeat: false
+        property var pendingCluster: null
+        property int pendingSubIdx: -1
+        onTriggered: {
+            if (pendingSubIdx >= 0) {
+                root.cycleOrActivateCluster(pendingCluster, pendingSubIdx);
+            } else {
+                root.cycleOrActivateCluster(pendingCluster, undefined);
+            }
+            // Clear animating IDs so delegates return to normal state
+            root.animatingInClusterId  = "";
+            root.animatingOutClusterId = "";
+        }
+    }
+
+    // ── Click handler entry point called from MouseArea ──
+    function activateCluster(cluster, subIdx) {
+        var outgoing = getActiveCluster();
+        triggerSwapAnimation(cluster, outgoing, subIdx);
     }
 
     // Merge or separate window via drag-and-drop
@@ -361,7 +428,11 @@ Scope {
             visible: root.enabled && root.clusters.length > 0
 
             property bool isRevealed: false
-            readonly property bool stageVisible: root.forceReveal || isRevealed || (root.alwaysShow && root.activeWindowLeft > 320)
+            // edgeHoverOverride: set true when user hovers the very left edge while auto-shoved
+            property bool edgeHoverOverride: false
+            readonly property bool stageVisible: root.forceReveal || isRevealed ||
+                (root.alwaysShow && root.activeWindowLeft > 320) ||
+                edgeHoverOverride
             property int hoveredCardsCount: 0
 
             // Drag and drop state across clusters
@@ -379,18 +450,37 @@ Scope {
                 }
             }
 
-            // Click-through mask: covers entire stage sidebar when open (330px) or edge strip (26px) when closed
+            // Click-through mask: covers entire stage sidebar when open (330px) or edge strip (6px) when closed
             Item {
                 id: inputArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: win.stageVisible ? 330 : 26
+                width: win.stageVisible ? 330 : 6
             }
 
             mask: Region {
                 item: inputArea
             }
 
-            // ── Unified hover area across the stage panel (auto-clipped to 26px by Wayland mask when hidden) ──
+            // ── Thin invisible edge-hover zone so user can re-reveal panel after auto-shove ──
+            Item {
+                id: edgeHoverZone
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: 6
+                z: 100
+
+                HoverHandler {
+                    id: edgeHover
+                    onHoveredChanged: {
+                        if (hovered && root.autoShove) {
+                            win.edgeHoverOverride = true;
+                        } else if (!hovered) {
+                            win.edgeHoverOverride = false;
+                        }
+                    }
+                }
+            }
+
+            // ── Unified hover area across the stage panel (auto-clipped to 6px by Wayland mask when hidden) ──
             Item {
                 id: panelHoverArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
@@ -419,9 +509,14 @@ Scope {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
-                // Slide in/out animation (settles at x: 12 close to screen edge like macOS)
-                x: win.stageVisible ? 12 : -300
-                Behavior on x { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                // Slide in/out:
+                //   - Normally: 12px from edge when visible, -300 when hidden
+                //   - Auto-shove: hide to -300 unless edgeHoverOverride
+                x: {
+                    if (root.autoShove && !win.edgeHoverOverride) return -300;
+                    return win.stageVisible ? 12 : -300;
+                }
+                Behavior on x { NumberAnimation { duration: 270; easing.type: Easing.OutCubic } }
 
                 Column {
                     id: cardsColumn
@@ -445,7 +540,25 @@ Scope {
                             readonly property bool isHovered: cardMouseArea.containsMouse
                             readonly property bool isTargetDrop: win.hoverTargetClusterId === clusterWrapper.modelData.id && win.draggingAddr !== ""
 
-                            // ── 3D Cluster Stack Item (3D Perspective Skew & Hover Animation) ──
+                            // ── Swap animation state per-delegate ──
+                            readonly property bool isAnimatingIn:  root.animatingInClusterId  === clusterWrapper.modelData.id
+                            readonly property bool isAnimatingOut: root.animatingOutClusterId === clusterWrapper.modelData.id
+
+                            // Extra rotation driven by swap animation (-30° → 0° for incoming, 0° → -30° for outgoing)
+                            property real swapAngle: isAnimatingIn ? 0 : (isAnimatingOut ? -30 : 0)
+                            Behavior on swapAngle { NumberAnimation { duration: 300; easing.type: Easing.InOutCubic } }
+
+                            // Extra scale driven by swap animation (0.2 → 1.0 for incoming, 1.0 → 0.2 for outgoing)
+                            property real swapScale: isAnimatingIn ? 1.0 : (isAnimatingOut ? 0.15 : 1.0)
+                            Behavior on swapScale { NumberAnimation { duration: 300; easing.type: Easing.InOutCubic } }
+
+                            // Extra X translation (slide from/to center of screen during swap)
+                            // incoming: slides from 0 to +screen offset (handled by swapScale growing)
+                            // We slide the card toward the screen center when incoming by translating right
+                            property real swapTranslateX: isAnimatingIn ? 0 : 0
+                            // No explicit translateX needed — scale + rotation from origin.x=0 provides the macOS look.
+
+                            // ── 3D Cluster Stack Item (3D Perspective Skew + Swap rotation) ──
                             Item {
                                 id: stackContainer
                                 width: 248
@@ -454,7 +567,11 @@ Scope {
                                 property real pK: clusterWrapper.isHovered ? 0.0004 : 0.0016
                                 Behavior on pK { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
+                                // Combined 3D rotation = idle skew angle + swap animation angle
+                                property real idleAngle: clusterWrapper.isHovered ? -7 : -25
+
                                 transform: [
+                                    // Perspective foreshortening matrix
                                     Matrix4x4 {
                                         matrix: Qt.matrix4x4(
                                             1, 0, 0, 0,
@@ -463,24 +580,39 @@ Scope {
                                             stackContainer.pK, 0, 0, 1
                                         )
                                     },
+                                    // Y-axis rotation: idle tilt + swap angle (swap takes precedence)
                                     Rotation {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
                                         axis { x: 0; y: 1; z: 0 }
-                                        angle: clusterWrapper.isHovered ? -7 : -25
+                                        angle: {
+                                            // During swap animation, add the swap angle on top of idle angle
+                                            if (clusterWrapper.isAnimatingIn || clusterWrapper.isAnimatingOut) {
+                                                return clusterWrapper.swapAngle;
+                                            }
+                                            return stackContainer.idleAngle;
+                                        }
                                         Behavior on angle { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                                     },
+                                    // Hover translate X
                                     Translate {
                                         x: (clusterWrapper.isHovered ? 14 : 0) + (clusterWrapper.isTargetDrop ? 10 : 0)
                                         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                     },
+                                    // Scale: hover scale * swap scale
                                     Scale {
                                         origin.x: 0
                                         origin.y: stackContainer.height / 2
-                                        xScale: (clusterWrapper.isHovered ? 1.05 : 0.96) * (clusterWrapper.isTargetDrop ? 1.06 : 1.0)
+                                        xScale: {
+                                            var base = (clusterWrapper.isHovered ? 1.05 : 0.96) * (clusterWrapper.isTargetDrop ? 1.06 : 1.0);
+                                            if (clusterWrapper.isAnimatingIn || clusterWrapper.isAnimatingOut) {
+                                                return base * clusterWrapper.swapScale;
+                                            }
+                                            return base;
+                                        }
                                         yScale: xScale
-                                        Behavior on xScale { NumberAnimation { duration: 200 } }
-                                        Behavior on yScale { NumberAnimation { duration: 200 } }
+                                        Behavior on xScale { NumberAnimation { duration: 250; easing.type: Easing.InOutCubic } }
+                                        Behavior on yScale { NumberAnimation { duration: 250; easing.type: Easing.InOutCubic } }
                                     }
                                 ]
 
@@ -498,7 +630,7 @@ Scope {
                                         readonly property bool isThisSubHovered: clusterWrapper.hoveredSubIndex === index
                                         z: isThisSubHovered ? 45 : (10 - depth)
 
-                                        // Sub-app hover peek: khi rê chuột vào app đằng sau, thẻ đó nhô hẳn ra ngoài và nhô lên
+                                        // Sub-app hover peek: when hovering a background app, it fans out
                                         x: depth * (clusterWrapper.isHovered ? 26 : 12) + (isThisSubHovered && depth > 0 ? 34 : 0)
                                         y: -depth * (clusterWrapper.isHovered ? 14 : 7) - (isThisSubHovered && depth > 0 ? 10 : 0)
                                         Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
@@ -512,7 +644,7 @@ Scope {
                                         opacity: (depth === 0 || isThisSubHovered) ? 1.0 : (depth === 1 ? (clusterWrapper.isHovered ? 0.94 : 0.84) : (clusterWrapper.isHovered ? 0.88 : 0.72))
                                         Behavior on opacity { NumberAnimation { duration: 180 } }
 
-                                        // Hover detector riêng cho từng app đằng sau lúc gộp
+                                        // Hover detector for each background app in a group
                                         HoverHandler {
                                             id: subHover
                                             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -783,14 +915,14 @@ Scope {
                                     if (!hasMoved && (dx > 8 || dy > 8)) {
                                         hasMoved = true;
                                         if (win.draggingWinObj) {
-                                            var p = mapToItem(win, mouse.x, mouse.y);
+                                            var p = mapToItem(stageContainer, mouse.x, mouse.y);
                                             dragProxy.x = p.x - 34;
                                             dragProxy.y = p.y - 34;
                                             dragProxy.visible = true;
                                         }
                                     }
                                     if (hasMoved && win.draggingAddr !== "") {
-                                        var p2 = mapToItem(win, mouse.x, mouse.y);
+                                        var p2 = mapToItem(stageContainer, mouse.x, mouse.y);
                                         dragProxy.x = p2.x - 34;
                                         dragProxy.y = p2.y - 34;
 
@@ -814,7 +946,7 @@ Scope {
                                 onReleased: (mouse) => {
                                     if (hasMoved && win.draggingAddr !== "") {
                                         dragProxy.visible = false;
-                                        var dropP = mapToItem(win, mouse.x, mouse.y);
+                                        var dropP = mapToItem(stageContainer, mouse.x, mouse.y);
                                         var targetId = win.hoverTargetClusterId;
                                         if (!targetId) {
                                             var posInCol = mapToItem(cardsColumn, mouse.x, mouse.y);
@@ -830,7 +962,7 @@ Scope {
                                             }
                                         }
 
-                                        if (dropP.x > 290 || dropP.x < 0) {
+                                        if (dropP.x > 270 || dropP.x < 0) {
                                             // Dropped out onto desktop: detach into own cluster
                                             root.assignWindowToGroup(win.draggingAddr, null);
                                         } else if (targetId && targetId !== clusterWrapper.modelData.id) {
@@ -838,9 +970,12 @@ Scope {
                                             root.assignWindowToGroup(win.draggingAddr, targetId);
                                         }
                                     } else {
-                                        // User clicked: cycle through grouped apps one by one, or directly focus hovered sub-card
-                                        var clickedSubIdx = clusterWrapper.hoveredSubIndex >= 0 ? clusterWrapper.hoveredSubIndex : undefined;
-                                        root.cycleOrActivateCluster(clusterWrapper.modelData, clickedSubIdx);
+                                        // ── Click: trigger macOS-style swap animation ──
+                                        // If hovering a specific sub-card, open that app directly
+                                        var clickedSubIdx = clusterWrapper.hoveredSubIndex >= 0
+                                            ? clusterWrapper.hoveredSubIndex
+                                            : undefined;
+                                        root.activateCluster(clusterWrapper.modelData, clickedSubIdx);
                                     }
                                     win.draggingAddr = "";
                                     win.draggingWinObj = null;
