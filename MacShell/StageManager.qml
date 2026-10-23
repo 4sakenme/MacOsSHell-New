@@ -428,11 +428,11 @@ Scope {
             visible: root.enabled && root.clusters.length > 0
 
             property bool isRevealed: false
-            // edgeHoverOverride: set true when user hovers the very left edge while auto-shoved
-            property bool edgeHoverOverride: false
+            // anyHovered: true khi bất kỳ hover nào đang active trên panel
+            readonly property bool anyHovered: panelHover.hovered || hoveredCardsCount > 0 || draggingAddr !== ""
             readonly property bool stageVisible: root.forceReveal || isRevealed ||
                 (root.alwaysShow && root.activeWindowLeft > 320) ||
-                edgeHoverOverride
+                anyHovered
             property int hoveredCardsCount: 0
 
             // Drag and drop state across clusters
@@ -444,43 +444,27 @@ Scope {
                 id: hideTimer
                 interval: 500
                 onTriggered: {
-                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !win.draggingAddr) {
+                    if (!win.anyHovered) {
                         win.isRevealed = false;
                     }
                 }
             }
 
-            // Click-through mask: covers entire stage sidebar when open (330px) or edge strip (6px) when closed
+            // Click-through mask: covers entire stage sidebar when open (330px) or narrow edge strip when hidden
+            // When auto-shoved, mask stays narrow (6px) for edge-reveal hover to work
             Item {
                 id: inputArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: win.stageVisible ? 330 : 6
+                // When autoShove is hiding panel, keep mask narrow unless user is actively hovering
+                width: win.stageVisible || win.anyHovered ? 330 : 6
             }
 
             mask: Region {
                 item: inputArea
             }
 
-            // ── Thin invisible edge-hover zone so user can re-reveal panel after auto-shove ──
-            Item {
-                id: edgeHoverZone
-                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: 6
-                z: 100
-
-                HoverHandler {
-                    id: edgeHover
-                    onHoveredChanged: {
-                        if (hovered && root.autoShove) {
-                            win.edgeHoverOverride = true;
-                        } else if (!hovered) {
-                            win.edgeHoverOverride = false;
-                        }
-                    }
-                }
-            }
-
-            // ── Unified hover area across the stage panel (auto-clipped to 6px by Wayland mask when hidden) ──
+            // ── Unified hover area across the stage panel ──
+            // This 330px area is always present; Wayland mask clips it to 6px when closed.
             Item {
                 id: panelHoverArea
                 anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
@@ -492,7 +476,7 @@ Scope {
                         if (hovered) {
                             hideTimer.stop();
                             win.isRevealed = true;
-                        } else if (!win.draggingAddr && win.hoveredCardsCount === 0) {
+                        } else if (!win.anyHovered) {
                             hideTimer.restart();
                         }
                     }
@@ -509,11 +493,11 @@ Scope {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.verticalCenterOffset: -10
 
-                // Slide in/out:
-                //   - Normally: 12px from edge when visible, -300 when hidden
-                //   - Auto-shove: hide to -300 unless edgeHoverOverride
+                // Slide in/out logic:
+                //   - Auto-shove (active window touching left edge): hide, BUT not when user is hovering.
+                //   - Normal: show at x=12 when stageVisible, hide at x=-300.
                 x: {
-                    if (root.autoShove && !win.edgeHoverOverride) return -300;
+                    if (root.autoShove && !win.anyHovered) return -300;
                     return win.stageVisible ? 12 : -300;
                 }
                 Behavior on x { NumberAnimation { duration: 270; easing.type: Easing.OutCubic } }
@@ -892,7 +876,7 @@ Scope {
                                     if (win.hoverTargetClusterId === clusterWrapper.modelData.id) {
                                         win.hoverTargetClusterId = "";
                                     }
-                                    if (win.hoveredCardsCount === 0 && !panelHover.hovered && !win.draggingAddr) {
+                                    if (!win.anyHovered) {
                                         hideTimer.restart();
                                     }
                                 }
