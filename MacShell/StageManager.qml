@@ -331,13 +331,15 @@ Scope {
         var targetAddr = String(targetWin.address || "").replace(/^0x/, "");
         var targetWs = targetWin.workspace || 1;
 
+        var lua = "";
         if (targetWs) {
-            Quickshell.execDetached(["hyprctl", "dispatch", "workspace", String(targetWs)]);
+            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
         }
         if (targetAddr !== "") {
-            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + targetAddr]);
-            Quickshell.execDetached(["hyprctl", "dispatch", "bring_to_top"]);
+            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
         }
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
 
         if (targetWin.tl && typeof targetWin.tl.activate === "function") {
             try { targetWin.tl.activate(); } catch (e) {}
@@ -350,6 +352,34 @@ Scope {
         root.activeAddress = root.normAddr(targetWin.address);
         // Force model refresh to trigger deck layer animation
         root.clusters = root.clusters.slice();
+        root.updateWindows();
+    }
+
+    // Direct activation fallback
+    function activateCluster(cluster, specificIdx) {
+        if (!cluster || !cluster.windows || cluster.windows.length === 0) return;
+        var tWin = (specificIdx !== undefined && specificIdx >= 0 && specificIdx < cluster.windows.length)
+            ? cluster.windows[specificIdx]
+            : cluster.windows[0];
+        if (!tWin) return;
+        var targetAddr = String(tWin.address || "").replace(/^0x/, "");
+        var targetWs = tWin.workspace || 1;
+        var lua = "";
+        if (targetWs) {
+            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
+        }
+        if (targetAddr !== "") {
+            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
+            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+        }
+        Quickshell.execDetached(["hyprctl", "eval", lua]);
+        if (tWin.tl && typeof tWin.tl.activate === "function") {
+            try { tWin.tl.activate(); } catch (e) {}
+        }
+        if (root.hub && root.hub.bar && typeof root.hub.bar.playSound === "function") {
+            root.hub.bar.playSound("tink", 0.35);
+        }
+        root.activeAddress = root.normAddr(targetAddr);
         root.updateWindows();
     }
 
@@ -395,8 +425,13 @@ Scope {
             property var draggingWinObj: null
             property string hoverTargetClusterId: ""
 
-            // Reference to swap overlay for child items
-            property alias swapOverlayRef: swapOverlay
+            function triggerSwap(clusterWrapper, subIdx) {
+                if (typeof swapOverlay !== "undefined" && swapOverlay) {
+                    swapOverlay.startSwap(clusterWrapper, subIdx);
+                } else {
+                    root.activateCluster(clusterWrapper.modelData, subIdx);
+                }
+            }
 
             // ── Hide Timer: smooth delay before auto-tucking away ──
             Timer {
@@ -906,7 +941,7 @@ Scope {
                                         } else {
                                             // Click 1 (or switching to inactive cluster):
                                             // Trigger macOS App Set Swap Transition!
-                                            win.swapOverlayRef.startSwap(clusterWrapper, clickedSubIdx);
+                                            win.triggerSwap(clusterWrapper, clickedSubIdx);
                                         }
                                     }
                                     win.draggingAddr = "";
@@ -1003,7 +1038,7 @@ Scope {
                     incomingTargetWs = tWin.workspace || 1;
 
                     // Slot position of clicked card
-                    var pt = clusterWrapper.mapToItem(win, 0, 0);
+                    var pt = clusterWrapper.mapToItem(swapOverlay, 0, 0);
                     startSlotX = pt.x;
                     startSlotY = pt.y;
 
@@ -1072,14 +1107,16 @@ Scope {
                             }
                         }
 
-                        // Send IPC Hyprland: focuswindow address:<addr> (no cursor warp)
+                        // Send IPC Hyprland via Lua dispatch: focus window & workspace without cursor warp
+                        var lua = "";
                         if (ws) {
-                            Quickshell.execDetached(["hyprctl", "dispatch", "workspace", String(ws)]);
+                            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + ws + "\" })); ";
                         }
                         if (addr !== "") {
-                            Quickshell.execDetached(["hyprctl", "dispatch", "focuswindow", "address:0x" + addr]);
-                            Quickshell.execDetached(["hyprctl", "dispatch", "bring_to_top"]);
+                            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + addr + "\" })); ";
+                            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
                         }
+                        Quickshell.execDetached(["hyprctl", "eval", lua]);
 
                         if (swapOverlay.incomingWin && swapOverlay.incomingWin.tl && typeof swapOverlay.incomingWin.tl.activate === "function") {
                             try { swapOverlay.incomingWin.tl.activate(); } catch (e) {}
