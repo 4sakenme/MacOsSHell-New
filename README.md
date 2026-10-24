@@ -5,6 +5,24 @@
   with a real-time <b>Liquid Glass</b> refraction shader, and a lock screen, <b>MacLock</b>.
 </p>
 
+---
+
+### ⚡ Cài đặt nhanh bằng 1 dòng lệnh (One-line Quick Install)
+
+Chạy lệnh duy nhất sau trên Arch Linux (bên trong phiên Hyprland) để tự động khởi chạy **macOS Setup Assistant (OOBE)** với đầy đủ giao diện đồ họa:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/bootstrap.sh)"
+```
+
+> **Trình cài đặt tự động:**
+> - Tự kiểm tra môi trường Wayland / Hyprland & cài đặt Quickshell nếu chưa có.
+> - Mở màn hình chào mừng **"hello"** viết tay chuẩn Apple với nền **Pastel Mesh Gradient**.
+> - Cho phép tùy chọn các mô-đun: Giao diện Sáng/Tối, Wi-Fi Manager, Stage Manager 3D, Apple Intelligence & Siri.
+> - Tự động đồng bộ phông chữ SF Pro / Open Runde, âm thanh F# Major Chime và cấu hình hệ thống.
+
+---
+
 <p align="center">
   <img width="128" height="128" alt="macshell-logo" src="https://github.com/user-attachments/assets/bc67b3fa-33a6-4326-9752-f0d271d0ed22" />
 </p>
