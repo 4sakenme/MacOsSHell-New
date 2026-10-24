@@ -331,15 +331,13 @@ Scope {
         var targetAddr = String(targetWin.address || "").replace(/^0x/, "");
         var targetWs = targetWin.workspace || 1;
 
-        var lua = "";
         if (targetWs) {
-            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + targetWs + " })"]);
         }
         if (targetAddr !== "") {
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })"]);
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.window.bring_to_top()"]);
         }
-        Quickshell.execDetached(["hyprctl", "eval", lua]);
 
         if (targetWin.tl && typeof targetWin.tl.activate === "function") {
             try { targetWin.tl.activate(); } catch (e) {}
@@ -364,15 +362,15 @@ Scope {
         if (!tWin) return;
         var targetAddr = String(tWin.address || "").replace(/^0x/, "");
         var targetWs = tWin.workspace || 1;
-        var lua = "";
+
         if (targetWs) {
-            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + targetWs + "\" })); ";
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + targetWs + " })"]);
         }
         if (targetAddr !== "") {
-            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })); ";
-            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ window = \"address:0x" + targetAddr + "\" })"]);
+            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.window.bring_to_top()"]);
         }
-        Quickshell.execDetached(["hyprctl", "eval", lua]);
+
         if (tWin.tl && typeof tWin.tl.activate === "function") {
             try { tWin.tl.activate(); } catch (e) {}
         }
@@ -424,6 +422,7 @@ Scope {
             property string draggingAddr: ""
             property var draggingWinObj: null
             property string hoverTargetClusterId: ""
+            property bool isDraggingProxyVisible: false
 
             function triggerSwap(clusterWrapper, subIdx) {
                 if (typeof swapOverlay !== "undefined" && swapOverlay) {
@@ -864,6 +863,7 @@ Scope {
                                 onPressed: (mouse) => {
                                     pressPos = Qt.point(mouse.x, mouse.y);
                                     hasMoved = false;
+                                    win.isDraggingProxyVisible = false;
                                     if (clusterWrapper.modelData.windows.length > 0) {
                                         win.draggingAddr = clusterWrapper.modelData.windows[0].address;
                                         win.draggingWinObj = clusterWrapper.modelData.windows[0];
@@ -873,17 +873,12 @@ Scope {
                                 onPositionChanged: (mouse) => {
                                     var dx = Math.abs(mouse.x - pressPos.x);
                                     var dy = Math.abs(mouse.y - pressPos.y);
-                                    if (!hasMoved && (dx > 8 || dy > 8)) {
+                                    if (!hasMoved && (dx > 28 || dy > 28)) {
                                         hasMoved = true;
-                                        if (win.draggingWinObj) {
-                                            var p = mapToItem(stageContainer, mouse.x, mouse.y);
-                                            dragProxy.x = p.x - 34;
-                                            dragProxy.y = p.y - 34;
-                                            dragProxy.visible = true;
-                                        }
+                                        win.isDraggingProxyVisible = true;
                                     }
                                     if (hasMoved && win.draggingAddr !== "") {
-                                        var p2 = mapToItem(stageContainer, mouse.x, mouse.y);
+                                        var p2 = mapToItem(swapOverlay, mouse.x, mouse.y);
                                         dragProxy.x = p2.x - 34;
                                         dragProxy.y = p2.y - 34;
 
@@ -903,10 +898,20 @@ Scope {
                                     }
                                 }
 
+                                onCanceled: {
+                                    win.isDraggingProxyVisible = false;
+                                    win.draggingAddr = "";
+                                    win.draggingWinObj = null;
+                                    win.hoverTargetClusterId = "";
+                                    hasMoved = false;
+                                }
+
                                 onReleased: (mouse) => {
+                                    win.isDraggingProxyVisible = false;
+                                    var droppedOnOther = false;
+
                                     if (hasMoved && win.draggingAddr !== "") {
-                                        dragProxy.visible = false;
-                                        var dropP = mapToItem(stageContainer, mouse.x, mouse.y);
+                                        var dropP = mapToItem(swapOverlay, mouse.x, mouse.y);
                                         var targetId = win.hoverTargetClusterId;
                                         if (!targetId) {
                                             var posInCol = mapToItem(cardsColumn, mouse.x, mouse.y);
@@ -922,15 +927,19 @@ Scope {
                                             }
                                         }
 
-                                        if (dropP.x > 270 || dropP.x < 0) {
+                                        if (dropP.x > 300 || dropP.x < 0) {
                                             // Dropped out onto desktop: detach into own cluster
+                                            droppedOnOther = true;
                                             root.assignWindowToGroup(win.draggingAddr, null);
                                         } else if (targetId && targetId !== clusterWrapper.modelData.id) {
                                             // Merged into target cluster
+                                            droppedOnOther = true;
                                             root.assignWindowToGroup(win.draggingAddr, targetId);
                                         }
-                                    } else {
-                                        // ── Click Action: Shuffle (if active cluster) OR Swap Animation (if switching cluster) ──
+                                    }
+
+                                    // If not dropped onto another target or desktop, treat as CLICK!
+                                    if (!droppedOnOther) {
                                         var clickedSubIdx = clusterWrapper.hoveredSubIndex >= 0 ? clusterWrapper.hoveredSubIndex : undefined;
                                         var isAlreadyActive = root.isClusterActive(clusterWrapper.modelData);
 
@@ -944,6 +953,7 @@ Scope {
                                             win.triggerSwap(clusterWrapper, clickedSubIdx);
                                         }
                                     }
+
                                     win.draggingAddr = "";
                                     win.draggingWinObj = null;
                                     win.hoverTargetClusterId = "";
@@ -962,7 +972,7 @@ Scope {
                 color: Qt.rgba(0.12, 0.12, 0.16, 0.94)
                 border.width: 2
                 border.color: "#38bdf8"
-                visible: false
+                visible: win.draggingAddr !== "" && win.isDraggingProxyVisible
                 z: 200
 
                 layer.enabled: true
@@ -1100,23 +1110,21 @@ Scope {
                                     if (clusterWins[w].workspace === ws && otherAddr !== "") {
                                         var freeWs = root.getFreeWorkspace(ws);
                                         clusterWins[w].workspace = freeWs;
-                                        Quickshell.execDetached(["hyprctl", "dispatch", "movetoworkspacesilent",
-                                            String(freeWs) + ",address:0x" + otherAddr]);
+                                        Quickshell.execDetached(["hyprctl", "dispatch",
+                                            "hl.dsp.window.move({ workspace = " + freeWs + ", silent = true, window = \"address:0x" + otherAddr + "\" })"]);
                                     }
                                 }
                             }
                         }
 
                         // Send IPC Hyprland via Lua dispatch: focus window & workspace without cursor warp
-                        var lua = "";
                         if (ws) {
-                            lua += "hl.dispatch(hl.dsp.focus({ workspace = \"" + ws + "\" })); ";
+                            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + ws + " })"]);
                         }
                         if (addr !== "") {
-                            lua += "hl.dispatch(hl.dsp.focus({ window = \"address:0x" + addr + "\" })); ";
-                            lua += "hl.dispatch(hl.dsp.window.bring_to_top()); ";
+                            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.focus({ window = \"address:0x" + addr + "\" })"]);
+                            Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.window.bring_to_top()"]);
                         }
-                        Quickshell.execDetached(["hyprctl", "eval", lua]);
 
                         if (swapOverlay.incomingWin && swapOverlay.incomingWin.tl && typeof swapOverlay.incomingWin.tl.activate === "function") {
                             try { swapOverlay.incomingWin.tl.activate(); } catch (e) {}
@@ -1179,6 +1187,7 @@ Scope {
 
                         // Wayland live capture if available
                         Loader {
+                            id: inScLoader
                             anchors.fill: parent
                             active: swapOverlay.incomingWin && swapOverlay.incomingWin.tl !== null
                             sourceComponent: ScreencopyView {
@@ -1192,6 +1201,7 @@ Scope {
                         // Frosted fallback with app icon and title
                         Item {
                             anchors.fill: parent
+                            visible: !inScLoader.item || !inScLoader.item.hasContent
 
                             Rectangle {
                                 anchors.fill: parent
@@ -1315,6 +1325,7 @@ Scope {
                         }
 
                         Loader {
+                            id: outScLoader
                             anchors.fill: parent
                             active: swapOverlay.outgoingWin && swapOverlay.outgoingWin.tl !== null
                             sourceComponent: ScreencopyView {
@@ -1327,6 +1338,7 @@ Scope {
 
                         Item {
                             anchors.fill: parent
+                            visible: !outScLoader.item || !outScLoader.item.hasContent
 
                             Rectangle {
                                 anchors.fill: parent
