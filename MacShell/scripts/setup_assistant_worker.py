@@ -244,6 +244,39 @@ def check_dependencies(options_raw: str = ""):
         "required": False
     })
 
+    # 7. Authentic macOS Cursor Pack (apple_cursor)
+    has_cursor = (
+        (HOME / ".local" / "share" / "icons" / "macOS").exists() or
+        (HOME / ".icons" / "macOS").exists() or
+        Path("/usr/share/icons/macOS").exists() or
+        Path("/usr/share/icons/capitaine-cursors").exists()
+    )
+    deps.append({
+        "id": "cursor_pack",
+        "name": "macOS Authentic Cursor Theme (apple_cursor)",
+        "category": "cursor",
+        "status": "installed" if has_cursor else "ready",
+        "detail": "macOS XCursors ready" if has_cursor else "Ready to download Apple cursors",
+        "size_mb": 0 if has_cursor else 5,
+        "required": False
+    })
+
+    # 8. macOS Tahoe Icon Theme (Scrimas/MacOS-Like)
+    has_icons = (
+        (HOME / ".local" / "share" / "icons" / "MacOS-Like-Dark").exists() or
+        (HOME / ".local" / "share" / "icons" / "MacOS-Like-Light").exists() or
+        Path("/usr/share/icons/MacOS-Like-Dark").exists()
+    )
+    deps.append({
+        "id": "icon_theme",
+        "name": "macOS Tahoe Icon Theme (Scrimas/MacOS-Like)",
+        "category": "icons",
+        "status": "installed" if has_icons else "ready",
+        "detail": "MacOS-Like Tahoe icons ready" if has_icons else "Ready to compile Tahoe icons",
+        "size_mb": 0 if has_icons else 15,
+        "required": False
+    })
+
     output = {
         "dependencies": deps,
         "all_ready": all(d["status"] in ["installed", "ready", "skipped"] for d in deps),
@@ -546,35 +579,30 @@ def run_setup(options_raw: str = ""):
     elif MACSHELL_DIR.exists() and (MACSHELL_DIR / "shell.qml").exists():
         src_macshell = MACSHELL_DIR
 
-    if src_macshell and src_macshell.resolve() != MACSHELL_CONFIG.resolve():
+    # Check if MacShell is already active in MACSHELL_CONFIG
+    is_already_active = (MACSHELL_CONFIG / "shell.qml").exists()
+    if is_already_active:
+        emit(20, "Source Code", "Verified", "MacShell configuration active in ~/.config/quickshell/MacShell")
+    elif src_macshell and src_macshell.resolve() != MACSHELL_CONFIG.resolve():
         emit(20, "Copying Code", "Local", "Synchronizing files directly into ~/.config/quickshell/MacShell...")
         for item in src_macshell.iterdir():
             dest = MACSHELL_CONFIG / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest, dirs_exist_ok=True)
-            else:
-                shutil.copy2(item, dest)
+            if not dest.exists():
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
 
         # Deploy MacLock if available
         src_maclock = bootstrap_repo / "MacLock" if (bootstrap_repo / "MacLock").exists() else (MACSHELL_DIR.parent / "MacLock")
         if src_maclock.exists() and src_maclock.resolve() != MACLOCK_CONFIG.resolve():
             for item in src_maclock.iterdir():
                 dest = MACLOCK_CONFIG / item.name
-                if item.is_dir():
-                    shutil.copytree(item, dest, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(item, dest)
-
-    # Flatten nested MacShell directory if created accidentally
-    nested_macshell = MACSHELL_CONFIG / "MacShell"
-    if (nested_macshell / "shell.qml").exists():
-        for item in nested_macshell.iterdir():
-            dest = MACSHELL_CONFIG / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest, dirs_exist_ok=True)
-            else:
-                shutil.copy2(item, dest)
-        shutil.rmtree(nested_macshell, ignore_errors=True)
+                if not dest.exists():
+                    if item.is_dir():
+                        shutil.copytree(item, dest, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, dest)
 
     # 2. Soundpack
     if sound_requested:
@@ -626,10 +654,42 @@ def run_setup(options_raw: str = ""):
     else:
         emit(80, "Apple Intelligence", "Disabled", "Skipping AI libraries (Siri disabled).")
 
-    # 5. Save Configuration Files
-    emit(92, "Configuration", "Local", "Writing ~/.config/macshell/config.json and settings.json...")
+    # 5. Apply macOS Cursor Theme & Tahoe Icon Theme
+    emit(88, "macOS Theme", "Applying", "Configuring macOS Cursor & Tahoe Icon theme...")
+    chosen_icon_theme = "MacOS-Like-Dark" if dark_mode else "MacOS-Like-Light"
+    chosen_cursor_theme = "macOS"
+
+    # Verify if cursor is present, download fallback if needed
+    user_icons = HOME / ".local" / "share" / "icons"
+    user_icons.mkdir(parents=True, exist_ok=True)
+    if not (user_icons / "macOS").exists() and not Path("/usr/share/icons/macOS").exists():
+        try:
+            emit(89, "macOS Cursor", "Downloading", "Fetching authentic Apple cursor pack...")
+            cursor_tar = user_icons / "macOS.tar.xz"
+            urllib.request.urlretrieve("https://github.com/ful1e5/apple_cursor/releases/latest/download/macOS.tar.xz", str(cursor_tar))
+            subprocess.run(["tar", "-xJf", str(cursor_tar), "-C", str(user_icons)], check=False)
+            cursor_tar.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    # Apply via gsettings & hyprctl
+    try:
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "cursor-theme", chosen_cursor_theme], check=False)
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", chosen_icon_theme], check=False)
+    except Exception:
+        pass
+    if check_command("hyprctl"):
+        try:
+            subprocess.run(["hyprctl", "setcursor", chosen_cursor_theme, "24"], check=False)
+        except Exception:
+            pass
+
+    # 6. Save Configuration Files
+    emit(94, "Configuration", "Local", "Writing ~/.config/macshell/config.json and settings.json...")
     config_data = {
         "theme": "dark" if dark_mode else "light",
+        "icon_theme": chosen_icon_theme,
+        "cursor_theme": chosen_cursor_theme,
         "modules": {
             "core_ui": True,
             "stage_manager": stage_manager,

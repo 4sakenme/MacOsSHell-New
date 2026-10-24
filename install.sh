@@ -132,6 +132,18 @@ done
 
 banner
 
+# ── Upfront Administrative Authentication (sudo) ──
+log_info "Verifying administrative privileges (sudo) upfront..."
+if ! sudo -v; then
+    log_err "Administrative privileges (sudo) are required for installation."
+    exit 1
+fi
+# Keep sudo timestamp updated in background while install.sh runs
+( while true; do sudo -n true; sleep 50; kill -0 "$$" || exit; done ) 2>/dev/null &
+SUDO_KEEP_ALIVE_PID=$!
+trap 'kill "$SUDO_KEEP_ALIVE_PID" 2>/dev/null || true' EXIT
+log_ok "Root access verified."
+
 # ── 1. Environment & Distribution Verification ──
 log_info "Verifying system environment..."
 
@@ -197,8 +209,19 @@ else
     fi
 fi
 
-# ── 2. Check & Install Essential Dependencies (git, curl, python3, quickshell) ──
+# ── 2. Check & Install Essential Dependencies ──
 log_info "Checking minimum bootstrap dependencies..."
+
+if [ "$PKG_MGR" = "pacman" ]; then
+    log_info "Synchronizing core packages via pacman..."
+    sudo pacman -S --needed --noconfirm git curl python3 python-pillow librsvg rsync tar xz networkmanager pipewire wireplumber 2>/dev/null || true
+elif [ "$PKG_MGR" = "dnf" ]; then
+    log_info "Synchronizing core packages via dnf..."
+    sudo dnf install -y git curl python3 python3-pillow librsvg2-tools rsync tar xz NetworkManager pipewire wireplumber 2>/dev/null || true
+elif [ "$PKG_MGR" = "apt" ]; then
+    log_info "Synchronizing core packages via apt..."
+    sudo apt-get update -qq && sudo apt-get install -y git curl python3 python3-pil librsvg2-bin rsync tar xz-utils network-manager pipewire wireplumber 2>/dev/null || true
+fi
 
 for pkg in git curl python3; do
     if need_cmd "$pkg"; then
@@ -243,7 +266,55 @@ else
     fi
 fi
 
-# ── 3. Locate / Download MacShell Source ──
+# ── 3. Install Authentic macOS Cursor Pack (apple_cursor) ──
+USER_ICONS_DIR="$HOME/.local/share/icons"
+SYS_ICONS_DIR="/usr/share/icons"
+mkdir -p "$USER_ICONS_DIR"
+
+if [ ! -d "$USER_ICONS_DIR/macOS" ] && [ ! -d "$SYS_ICONS_DIR/macOS" ]; then
+    log_info "Downloading authentic Apple cursor pack (ful1e5/apple_cursor)..."
+    TMP_CURSOR=$(mktemp -d)
+    if curl -fsSL -o "$TMP_CURSOR/macOS.tar.xz" "https://github.com/ful1e5/apple_cursor/releases/latest/download/macOS.tar.xz"; then
+        tar -xJf "$TMP_CURSOR/macOS.tar.xz" -C "$TMP_CURSOR/"
+        cp -r "$TMP_CURSOR/macOS" "$TMP_CURSOR/macOS-White" "$USER_ICONS_DIR/" 2>/dev/null || true
+        sudo cp -r "$TMP_CURSOR/macOS" "$TMP_CURSOR/macOS-White" "$SYS_ICONS_DIR/" 2>/dev/null || true
+        log_ok "macOS cursor pack installed (macOS & macOS-White)."
+    else
+        log_warn "Could not download apple_cursor archive. Falling back to default system cursor."
+    fi
+    rm -rf "$TMP_CURSOR"
+else
+    log_ok "macOS cursor pack already available."
+fi
+
+# Apply cursor theme to GTK and Hyprland
+gsettings set org.gnome.desktop.interface cursor-theme 'macOS' 2>/dev/null || true
+if need_cmd hyprctl; then
+    hyprctl setcursor macOS 24 2>/dev/null || true
+fi
+
+# ── 4. Install macOS Tahoe Icon Theme (Scrimas/MacOS-Like) ──
+if [ ! -d "$USER_ICONS_DIR/MacOS-Like-Dark" ] && [ ! -d "$SYS_ICONS_DIR/MacOS-Like-Dark" ]; then
+    log_info "Downloading and building macOS Tahoe icon theme (Scrimas/MacOS-Like)..."
+    TMP_ICONS=$(mktemp -d)
+    if git clone --depth 1 "https://github.com/Scrimas/MacOS-Like.git" "$TMP_ICONS/MacOS-Like"; then
+        (cd "$TMP_ICONS/MacOS-Like" && bash setup.sh --force) || log_warn "MacOS-Like setup script reported warnings."
+        if [ -d "$USER_ICONS_DIR/MacOS-Like-Dark" ]; then
+            sudo cp -ru "$USER_ICONS_DIR/MacOS-Like"* "$SYS_ICONS_DIR/" 2>/dev/null || true
+            log_ok "macOS Tahoe icon theme (MacOS-Like) installed successfully."
+        fi
+    else
+        log_warn "Could not clone Scrimas/MacOS-Like repository."
+    fi
+    rm -rf "$TMP_ICONS"
+else
+    log_ok "macOS Tahoe icon theme (MacOS-Like) is already installed."
+fi
+
+# Apply icon theme in GTK
+gsettings set org.gnome.desktop.interface icon-theme 'MacOS-Like-Dark' 2>/dev/null || true
+
+# ── 5. Locate / Download MacShell Source ──
 BOOTSTRAP_DIR="$HOME/.cache/macshell-bootstrap"
 REPO_URL="https://github.com/4sakenme/MacOsSHell-New.git"
 
@@ -268,7 +339,7 @@ fi
 
 REPO_ROOT="$BOOTSTRAP_DIR/repo"
 
-# ── 4. Execution (GUI vs CLI Mode) ──
+# ── 6. Execution (GUI vs CLI Mode) ──
 CONFIG_DEST="$HOME/.config/quickshell/MacShell"
 LOCK_DEST="$HOME/.config/quickshell/MacLock"
 mkdir -p "$HOME/.config/quickshell" "$HOME/.config/macshell" "$CONFIG_DEST" "$LOCK_DEST"
@@ -278,8 +349,8 @@ if [ -d "$REPO_ROOT/MacShell" ]; then
     cp -ru "$REPO_ROOT/MacShell"/* "$CONFIG_DEST/" 2>/dev/null || true
 fi
 
-# Flatten any nested MacShell directory
-if [ -f "$CONFIG_DEST/MacShell/shell.qml" ]; then
+# Flatten any nested MacShell directory if accidentally present
+if [ -d "$CONFIG_DEST/MacShell" ] && [ "$CONFIG_DEST/MacShell" != "$CONFIG_DEST" ] && [ -f "$CONFIG_DEST/MacShell/shell.qml" ]; then
     log_warn "Detected nested MacShell directory. Flattening structure..."
     cp -ru "$CONFIG_DEST/MacShell"/* "$CONFIG_DEST/"
     rm -rf "$CONFIG_DEST/MacShell"
