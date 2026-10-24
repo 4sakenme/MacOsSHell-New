@@ -85,6 +85,24 @@ Scope {
     property real cameraScale: 1.0
     property real cameraAngle: 0.0
 
+    // Camera Focus Follow / Pan & Zoom
+    readonly property real focusProgress: Math.min(strokeDrawProgress / 0.85, 1.0)
+    readonly property real cameraFocusScale: 1.12 - 0.12 * Math.sin(focusProgress * Math.PI / 2.0)
+    readonly property real targetPanX: {
+        var w = currentHelloWord;
+        if (!w || !w.start_point) return 0.0;
+        var halfW = (w.width || 540) / 2.0;
+        return -(w.start_point[0] - halfW) * 0.22;
+    }
+    readonly property real targetPanY: {
+        var w = currentHelloWord;
+        if (!w || !w.start_point) return 0.0;
+        var halfH = (w.height || 180) / 2.0;
+        return -(w.start_point[1] - halfH) * 0.22;
+    }
+    readonly property real cameraPanX: targetPanX * (1.0 - Math.sin(focusProgress * Math.PI / 2.0))
+    readonly property real cameraPanY: targetPanY * (1.0 - Math.sin(focusProgress * Math.PI / 2.0))
+
     // Region & Language
     property string selectedCountry: "United States"
     property var countriesList: [
@@ -477,7 +495,7 @@ Scope {
 
     // ═════════════════════════════════════════════════════════════════════════
     // Apple Single-Stroke Handwriting Animation Loop
-    // Draw: ~900ms · Hold: 1200ms · Dissolve: 400ms
+    // Draw: 2800ms · Hold: 1400ms · Dissolve: 500ms
     // ═════════════════════════════════════════════════════════════════════════
     SequentialAnimation {
         id: handwritingAnim
@@ -488,29 +506,29 @@ Scope {
         PropertyAction { target: root; property: "helloOpacity"; value: 1.0 }
         PropertyAction { target: root; property: "helloZoomScale"; value: 1.0 }
 
-        // 1. Draw strokes continuously from left to right (~900ms)
+        // 1. Draw strokes continuously from left to right (2800ms)
         NumberAnimation {
             target: root
             property: "strokeDrawProgress"
             from: 0.0
             to: 1.0
-            duration: 900
-            easing.type: Easing.InOutCubic
+            duration: 2800
+            easing.type: Easing.InOutSine
         }
 
-        // 2. Pause / Hold (1200ms)
-        PauseAnimation { duration: 1200 }
+        // 2. Pause / Hold (1400ms)
+        PauseAnimation { duration: 1400 }
 
-        // 3. Smooth Dissolve / Fade Out (400ms)
+        // 3. Smooth Dissolve / Fade Out (500ms)
         NumberAnimation {
             target: root
             property: "helloOpacity"
             to: 0.0
-            duration: 400
-            easing.type: Easing.OutCubic
+            duration: 500
+            easing.type: Easing.InOutCubic
         }
 
-        PauseAnimation { duration: 150 }
+        PauseAnimation { duration: 180 }
 
         ScriptAction {
             script: {
@@ -612,6 +630,11 @@ Scope {
         }
         function next(): void { root.goNext(); }
         function back(): void { root.goBack(); }
+        function word(n: int): void {
+            root.helloWordIndex = n;
+            root.strokeDrawProgress = 0.0;
+            root.helloOpacity = 1.0;
+        }
         function close(): void { root.active = false; }
     }
 
@@ -762,8 +785,12 @@ Scope {
                         width: (root.currentHelloWord && root.currentHelloWord.width) ? root.currentHelloWord.width : 540
                         height: (root.currentHelloWord && root.currentHelloWord.height) ? root.currentHelloWord.height : 180
                         opacity: root.helloOpacity
-                        scale: root.helloZoomScale * root.cameraScale
+                        scale: root.helloZoomScale * root.cameraFocusScale * root.cameraScale
                         rotation: root.cameraAngle
+                        transform: Translate {
+                            x: root.cameraPanX
+                            y: root.cameraPanY
+                        }
 
                         Repeater {
                             model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
@@ -787,8 +814,8 @@ Scope {
 
                                 // Soft ambient bloom behind stroke
                                 ShapePath {
-                                    strokeColor: Qt.rgba(1, 1, 1, 0.22)
-                                    strokeWidth: 8.5
+                                    strokeColor: Qt.rgba(1, 1, 1, 0.18)
+                                    strokeWidth: 7.5
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
@@ -797,10 +824,10 @@ Scope {
                                     PathSvg { path: modelData.d }
                                 }
 
-                                // Crisp solid white core handwriting stroke
+                                // Crisp cream white core handwriting stroke
                                 ShapePath {
-                                    strokeColor: "#ffffff"
-                                    strokeWidth: 4.2
+                                    strokeColor: "#f5f5f7"
+                                    strokeWidth: 3.5
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
@@ -808,6 +835,71 @@ Scope {
                                     trim.end: localProgress
                                     PathSvg { path: modelData.d }
                                 }
+                            }
+                        }
+
+                        // ── Glowing Pen Tip Point ──
+                        Item {
+                            id: penTip
+                            readonly property var tipInfo: {
+                                var w = root.currentHelloWord;
+                                var g = root.strokeDrawProgress;
+                                if (!w || !w.tip_samples || w.tip_samples.length === 0) return { x: 0, y: 0, visible: false };
+                                if (g <= 0.002 || g >= 0.998) return { x: 0, y: 0, visible: false };
+                                var samples = w.tip_samples;
+                                var idx = g * (samples.length - 1);
+                                var i0 = Math.floor(idx);
+                                var i1 = Math.min(i0 + 1, samples.length - 1);
+                                var f = idx - i0;
+                                return {
+                                    x: samples[i0][0] * (1.0 - f) + samples[i1][0] * f,
+                                    y: samples[i0][1] * (1.0 - f) + samples[i1][1] * f,
+                                    visible: true
+                                };
+                            }
+
+                            x: tipInfo.x - width / 2
+                            y: tipInfo.y - height / 2
+                            width: 24
+                            height: 24
+                            opacity: (tipInfo.visible && root.helloOpacity > 0.05 && root.currentStep === 0 && !root.isTransitioningToCard) ? 1.0 : 0.0
+                            visible: opacity > 0.001
+
+                            Behavior on opacity {
+                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                            }
+
+                            // Outer soft luminous bloom
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 18
+                                height: 18
+                                radius: 9
+                                color: Qt.rgba(1, 1, 1, 0.35)
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    blurEnabled: true
+                                    blurMax: 8
+                                    blur: 0.9
+                                }
+                            }
+
+                            // Secondary bright halo
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 10
+                                height: 10
+                                radius: 5
+                                color: Qt.rgba(1, 1, 1, 0.65)
+                            }
+
+                            // Core pen tip point: diameter 6px, solid white
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 6.0
+                                height: 6.0
+                                radius: 3.0
+                                color: "#ffffff"
                             }
                         }
                     }

@@ -3,3 +3,6 @@ __pycache__/
 venv/
 .venv/
 MacShell/siri_settings.json
+MacShell/settings.json
+.setup_completed
+MacShell/.setup_completed
