@@ -29,7 +29,7 @@ Scope {
     // Feature Modules Checklist choices
     property bool darkMode: hub && hub.bar ? hub.bar.darkMode : true
     property bool liquidGlassEnabled: hub && hub.dock ? hub.dock.dockStyle === "liquid" : true
-    property bool stageManagerEnabled: true
+    readonly property bool stageManagerEnabled: true
     property bool wifiManagerEnabled: true
     property bool soundPackEnabled: true
     property bool siriEnabled: false   // Default optional: user can toggle or skip
@@ -674,65 +674,65 @@ Scope {
                 // ─────────────────────────────────────────────────────────────
                 Rectangle {
                     anchors.fill: parent
-                    color: "#0a0b10"
+                    color: "#0a0b12"
 
                     Item {
                         id: meshContainer
                         anchors.fill: parent
 
-                        // Blob 1: Sky Blue
+                        // Blob 1: Vibrant Sky Blue
                         Rectangle {
                             id: blob1
-                            width: 650; height: 650; radius: 325
-                            color: "#7eb6ff"
-                            opacity: 0.55
+                            width: 720; height: 720; radius: 360
+                            color: "#4a80f0"
+                            opacity: 0.68
                             property real t: 0
-                            x: (parent.width * 0.15) + Math.sin(t * 0.7) * 120
-                            y: (parent.height * 0.12) + Math.cos(t * 0.5) * 90
+                            x: (parent.width * 0.15) + Math.sin(t * 0.7) * 130
+                            y: (parent.height * 0.12) + Math.cos(t * 0.5) * 100
                         }
 
-                        // Blob 2: Pastel Lavender Purple
+                        // Blob 2: Luminous Lavender Violet
                         Rectangle {
                             id: blob2
-                            width: 720; height: 720; radius: 360
-                            color: "#c8a4d4"
-                            opacity: 0.50
+                            width: 780; height: 780; radius: 390
+                            color: "#8a5cd0"
+                            opacity: 0.62
                             property real t: 1.5
-                            x: (parent.width * 0.55) + Math.cos(t * 0.6) * 140
-                            y: (parent.height * 0.22) + Math.sin(t * 0.8) * 110
+                            x: (parent.width * 0.55) + Math.cos(t * 0.6) * 150
+                            y: (parent.height * 0.22) + Math.sin(t * 0.8) * 120
                         }
 
-                        // Blob 3: Amber Gold
+                        // Blob 3: Warm Golden Amber
                         Rectangle {
                             id: blob3
-                            width: 580; height: 580; radius: 290
-                            color: "#fce38a"
-                            opacity: 0.40
+                            width: 640; height: 640; radius: 320
+                            color: "#ffd166"
+                            opacity: 0.52
                             property real t: 3.0
-                            x: (parent.width * 0.40) + Math.sin(t * 0.5) * 110
-                            y: (parent.height * 0.60) + Math.cos(t * 0.7) * 100
+                            x: (parent.width * 0.40) + Math.sin(t * 0.5) * 120
+                            y: (parent.height * 0.60) + Math.cos(t * 0.7) * 110
                         }
 
-                        // Blob 4: Rose Peach
+                        // Blob 4: Pastel Coral Rose
                         Rectangle {
                             id: blob4
-                            width: 620; height: 620; radius: 310
-                            color: "#ff9aa2"
-                            opacity: 0.42
+                            width: 680; height: 680; radius: 340
+                            color: "#ff6b8b"
+                            opacity: 0.56
                             property real t: 4.5
-                            x: (parent.width * 0.10) + Math.cos(t * 0.8) * 100
-                            y: (parent.height * 0.55) + Math.sin(t * 0.6) * 120
+                            x: (parent.width * 0.10) + Math.cos(t * 0.8) * 110
+                            y: (parent.height * 0.55) + Math.sin(t * 0.6) * 130
                         }
 
-                        // Blob 5: Deep Indigo Anchor
+                        // Blob 5: Deep Royal Indigo Anchor
                         Rectangle {
                             id: blob5
-                            width: 800; height: 800; radius: 400
-                            color: "#3a2566"
-                            opacity: 0.65
+                            width: 860; height: 860; radius: 430
+                            color: "#352068"
+                            opacity: 0.75
                             property real t: 2.2
-                            x: (parent.width * 0.65) + Math.sin(t * 0.4) * 80
-                            y: (parent.height * 0.50) + Math.cos(t * 0.5) * 80
+                            x: (parent.width * 0.65) + Math.sin(t * 0.4) * 90
+                            y: (parent.height * 0.50) + Math.cos(t * 0.5) * 90
                         }
 
                         FrameAnimation {
@@ -754,12 +754,12 @@ Scope {
                         }
                     }
 
-                    // Ambient dark gradient vignette
+                    // Ambient subtle vignette
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(0.04, 0.04, 0.07, 0.35) }
-                            GradientStop { position: 1.0; color: Qt.rgba(0.02, 0.02, 0.05, 0.65) }
+                            GradientStop { position: 0.0; color: Qt.rgba(0.04, 0.05, 0.08, 0.18) }
+                            GradientStop { position: 1.0; color: Qt.rgba(0.02, 0.03, 0.06, 0.45) }
                         }
                     }
                 }
@@ -924,33 +924,39 @@ Scope {
                 Rectangle {
                     id: setupCard
                     anchors.centerIn: parent
-                    width: 840
-                    height: 550
-                    radius: 24
+                    width: Math.min(Math.max(parent.width * 0.55, 920), 1060)
+                    height: 580
+                    radius: 28
 
-                    property real cardYOffset: (root.currentStep === 0) ? 360 : 0
+                    property real cardScale: (root.currentStep === 0) ? 0.92 : 1.0
+                    property real cardYOffset: (root.currentStep === 0) ? 120 : 0
+
+                    scale: cardScale
                     transform: Translate { y: setupCard.cardYOffset }
                     opacity: (root.currentStep === 0) ? 0.0 : 1.0
                     visible: opacity > 0.001
 
+                    Behavior on cardScale {
+                        NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                    }
                     Behavior on cardYOffset {
-                        NumberAnimation { duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.08 }
+                        NumberAnimation { duration: 400; easing.type: Easing.OutBack; easing.overshoot: 1.08 }
                     }
                     Behavior on opacity {
-                        NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                        NumberAnimation { duration: 350; easing.type: Easing.OutCubic }
                     }
 
                     // Authentic Liquid Glass Card Material
-                    color: Qt.rgba(0.10, 0.10, 0.14, 0.82)
-                    border.width: 1.2
+                    color: "#351a1a24"
+                    border.width: 1
                     border.color: Qt.rgba(1, 1, 1, 0.18)
 
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
-                        shadowColor: "#90000000"
-                        shadowBlur: 0.85
-                        shadowVerticalOffset: 16
+                        shadowColor: "#a0000000"
+                        shadowBlur: 0.90
+                        shadowVerticalOffset: 20
                     }
 
                     // Top specular highlight
@@ -958,22 +964,36 @@ Scope {
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        height: 120
+                        height: 140
                         radius: parent.radius
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.15) }
-                            GradientStop { position: 0.4; color: Qt.rgba(1, 1, 1, 0.03) }
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.22) }
+                            GradientStop { position: 0.35; color: Qt.rgba(1, 1, 1, 0.04) }
                             GradientStop { position: 1.0; color: "transparent" }
                         }
                     }
 
-                    // Inner hairline highlight
+                    // Diagonal specular highlight (top-left 0.28 down to bottom-right 0.08)
                     Rectangle {
                         anchors.fill: parent
                         radius: parent.radius
                         color: "transparent"
                         border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: Qt.rgba(1, 1, 1, 0.24)
+
+                        Rectangle {
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            width: parent.width * 0.70
+                            height: 120
+                            radius: parent.radius
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
+                                GradientStop { position: 0.6; color: Qt.rgba(1, 1, 1, 0.02) }
+                                GradientStop { position: 1.0; color: "transparent" }
+                            }
+                        }
                     }
 
                     // ═════════════════════════════════════════════════════════
@@ -993,7 +1013,7 @@ Scope {
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
                             anchors.left: parent.left
-                            width: 270
+                            width: 290
 
                             Column {
                                 anchors.fill: parent
@@ -1212,18 +1232,18 @@ Scope {
 
                                     Rectangle {
                                         width: parent.width
-                                        height: 120
-                                        radius: 12
-                                        color: Qt.rgba(0.14, 0.14, 0.18, 0.55)
+                                        height: 140
+                                        radius: 16
+                                        color: Qt.rgba(0.12, 0.12, 0.16, 0.55)
                                         border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+                                        border.color: Qt.rgba(1, 1, 1, 0.12)
                                         clip: true
 
                                         ListView {
                                             anchors.fill: parent
                                             anchors.margins: 4
                                             model: root.countriesList
-                                            spacing: 2
+                                            spacing: 3
                                             boundsBehavior: Flickable.StopAtBounds
 
                                             delegate: Rectangle {
@@ -1233,20 +1253,36 @@ Scope {
                                                 readonly property bool isSelected: root.selectedCountry === modelData.name
 
                                                 width: parent.width
-                                                height: 34
-                                                radius: 8
-                                                color: isSelected ? "#007aff" : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                                height: 38
+                                                radius: 12
+                                                color: isSelected ? Qt.rgba(0, 122, 255, 0.28) : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                                border.width: isSelected ? 1.5 : (cHover.hovered ? 1 : 0)
+                                                border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                                Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                                                // Top specular highlight on selected item
+                                                Rectangle {
+                                                    anchors.top: parent.top
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    height: 1
+                                                    radius: parent.radius
+                                                    visible: countryItem.isSelected
+                                                    color: Qt.rgba(1, 1, 1, 0.35)
+                                                }
 
                                                 Row {
                                                     anchors.fill: parent
-                                                    anchors.leftMargin: 10
-                                                    anchors.rightMargin: 10
-                                                    spacing: 8
+                                                    anchors.leftMargin: 12
+                                                    anchors.rightMargin: 12
+                                                    spacing: 10
 
                                                     Text {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: countryItem.modelData.flag
-                                                        font.pixelSize: 16
+                                                        font.pixelSize: 18
                                                     }
 
                                                     Text {
@@ -1254,25 +1290,25 @@ Scope {
                                                         text: countryItem.modelData.name
                                                         color: "#ffffff"
                                                         font.family: "Open Runde"
-                                                        font.pixelSize: 12
+                                                        font.pixelSize: 13
                                                         font.weight: countryItem.isSelected ? Font.DemiBold : Font.Normal
                                                     }
 
-                                                    Item { width: parent.width - 240; height: 1 }
+                                                    Item { width: Math.max(parent.width - 250, 10); height: 1 }
 
                                                     Text {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: countryItem.modelData.lang
-                                                        color: countryItem.isSelected ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(1, 1, 1, 0.45)
+                                                        color: countryItem.isSelected ? Qt.rgba(1, 1, 1, 0.90) : Qt.rgba(1, 1, 1, 0.45)
                                                         font.family: "Open Runde"
-                                                        font.pixelSize: 11
+                                                        font.pixelSize: 12
                                                     }
 
                                                     Text {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         text: "✓"
-                                                        color: "#ffffff"
-                                                        font.pixelSize: 12
+                                                        color: "#007aff"
+                                                        font.pixelSize: 13
                                                         font.weight: Font.Bold
                                                         visible: countryItem.isSelected
                                                     }
@@ -1396,46 +1432,7 @@ Scope {
                                         }
                                     }
 
-                                    // Module 2: Stage Manager 3D
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "🪟"; font.pixelSize: 18 }
-
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 80
-                                                Text { text: "Stage Manager 3D"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Window stacks and 3D skew at screen edge"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
-                                            }
-
-                                            // Apple Toggle Switch
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.stageManagerEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.stageManagerEnabled ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.stageManagerEnabled = !root.stageManagerEnabled }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-
-                                    // Module 3: macOS Wi-Fi Manager
+                                    // Module 2: macOS Wi-Fi Manager
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
                                         color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
@@ -2297,17 +2294,17 @@ Scope {
                                             }
                                         }
 
-                                        // 2. Stage Manager
+                                        // 2. Region & Language
                                         Rectangle {
                                             width: (parent.width - 12) / 2; height: 60; radius: 10
                                             color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
                                             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
                                             Row {
                                                 anchors.centerIn: parent; spacing: 10
-                                                Text { text: "🪟"; font.pixelSize: 18 }
+                                                Text { text: "🌐"; font.pixelSize: 18 }
                                                 Column {
-                                                    Text { text: "Stage Manager 3D"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.stageManagerEnabled ? "Enabled" : "Disabled"; color: root.stageManagerEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.6); font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    Text { text: "Region / Language"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
+                                                    Text { text: root.selectedCountry; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                                 }
                                             }
                                         }
@@ -2376,9 +2373,9 @@ Scope {
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        height: 64
-                        radius: 24
-                        color: Qt.rgba(0.10, 0.10, 0.14, 0.90)
+                        height: 66
+                        radius: 28
+                        color: Qt.rgba(0.08, 0.08, 0.12, 0.65)
 
                         // Hairline Separator
                         Rectangle {
