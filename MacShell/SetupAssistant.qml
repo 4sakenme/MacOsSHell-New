@@ -85,23 +85,28 @@ Scope {
     property real cameraScale: 1.0
     property real cameraAngle: 0.0
 
-    // Camera Focus Follow / Pan & Zoom
-    readonly property real focusProgress: Math.min(strokeDrawProgress / 0.85, 1.0)
-    readonly property real cameraFocusScale: 1.12 - 0.12 * Math.sin(focusProgress * Math.PI / 2.0)
+    // Macro Extreme Close-Up Zoom (Active ONLY for the first word: "hello")
+    readonly property bool isFirstHello: (root.helloWordIndex === 0)
+    readonly property real macroProgress: isFirstHello ? Math.min(root.strokeDrawProgress / 0.88, 1.0) : 1.0
+    // Starts at 2.45x macro close-up, smoothly glides out to 1.0x as 'hello' is written
+    readonly property real macroZoomScale: isFirstHello ? (1.0 + 1.45 * Math.pow(1.0 - macroProgress, 2.2)) : 1.0
+
+    // Focus center on the initial touch point of the pen
     readonly property real targetPanX: {
         var w = currentHelloWord;
         if (!w || !w.start_point) return 0.0;
         var halfW = (w.width || 540) / 2.0;
-        return -(w.start_point[0] - halfW) * 0.22;
+        return -(w.start_point[0] - halfW);
     }
     readonly property real targetPanY: {
         var w = currentHelloWord;
         if (!w || !w.start_point) return 0.0;
         var halfH = (w.height || 180) / 2.0;
-        return -(w.start_point[1] - halfH) * 0.22;
+        return -(w.start_point[1] - halfH);
     }
-    readonly property real cameraPanX: targetPanX * (1.0 - Math.sin(focusProgress * Math.PI / 2.0))
-    readonly property real cameraPanY: targetPanY * (1.0 - Math.sin(focusProgress * Math.PI / 2.0))
+
+    readonly property real cameraPanX: isFirstHello ? (targetPanX * Math.pow(1.0 - macroProgress, 1.8)) : 0.0
+    readonly property real cameraPanY: isFirstHello ? (targetPanY * Math.pow(1.0 - macroProgress, 1.8)) : 0.0
 
     // Region & Language
     property string selectedCountry: "United States"
@@ -506,29 +511,29 @@ Scope {
         PropertyAction { target: root; property: "helloOpacity"; value: 1.0 }
         PropertyAction { target: root; property: "helloZoomScale"; value: 1.0 }
 
-        // 1. Draw strokes continuously from left to right (2800ms)
+        // 1. Draw strokes continuously from left to right
         NumberAnimation {
             target: root
             property: "strokeDrawProgress"
             from: 0.0
             to: 1.0
-            duration: 2800
+            duration: root.isFirstHello ? 3000 : 2400
             easing.type: Easing.InOutSine
         }
 
-        // 2. Pause / Hold (1400ms)
-        PauseAnimation { duration: 1400 }
+        // 2. Pause / Hold for reading (1500ms)
+        PauseAnimation { duration: 1500 }
 
-        // 3. Smooth Dissolve / Fade Out (500ms)
+        // 3. Smooth Dissolve / Cross-fade Out (450ms)
         NumberAnimation {
             target: root
             property: "helloOpacity"
             to: 0.0
-            duration: 500
+            duration: 450
             easing.type: Easing.InOutCubic
         }
 
-        PauseAnimation { duration: 180 }
+        PauseAnimation { duration: 150 }
 
         ScriptAction {
             script: {
@@ -785,7 +790,7 @@ Scope {
                         width: (root.currentHelloWord && root.currentHelloWord.width) ? root.currentHelloWord.width : 540
                         height: (root.currentHelloWord && root.currentHelloWord.height) ? root.currentHelloWord.height : 180
                         opacity: root.helloOpacity
-                        scale: root.helloZoomScale * root.cameraFocusScale * root.cameraScale
+                        scale: root.helloZoomScale * root.macroZoomScale * root.cameraScale
                         rotation: root.cameraAngle
                         transform: Translate {
                             x: root.cameraPanX
@@ -804,6 +809,7 @@ Scope {
 
                                 readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
                                 readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
+                                readonly property bool isDot: (modelData && modelData.length !== undefined && modelData.length < 2.0)
 
                                 readonly property real localProgress: {
                                     var g = root.strokeDrawProgress;
@@ -812,27 +818,53 @@ Scope {
                                     return (g - startPct) / Math.max(endPct - startPct, 0.0001);
                                 }
 
-                                // Soft ambient bloom behind stroke
+                                readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
+
+                                // 1. Ambient Glass Refraction Glow
                                 ShapePath {
-                                    strokeColor: Qt.rgba(1, 1, 1, 0.18)
-                                    strokeWidth: 7.5
+                                    strokeColor: Qt.rgba(1, 1, 1, 0.16)
+                                    strokeWidth: 9.5
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
                                     trim.start: 0.0
-                                    trim.end: localProgress
+                                    trim.end: drawEnd
                                     PathSvg { path: modelData.d }
                                 }
 
-                                // Crisp cream white core handwriting stroke
+                                // 2. Liquid Glass Translucent Body (#50ffffff)
                                 ShapePath {
-                                    strokeColor: "#f5f5f7"
-                                    strokeWidth: 3.5
+                                    strokeColor: "#50ffffff"
+                                    strokeWidth: 5.4
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
                                     trim.start: 0.0
-                                    trim.end: localProgress
+                                    trim.end: drawEnd
+                                    PathSvg { path: modelData.d }
+                                }
+
+                                // 3. Prismatic Glass Edge Refraction (subtle sky tint)
+                                ShapePath {
+                                    strokeColor: Qt.rgba(0.85, 0.95, 1.0, 0.35)
+                                    strokeWidth: 3.2
+                                    fillColor: "transparent"
+                                    capStyle: ShapePath.RoundCap
+                                    joinStyle: ShapePath.RoundJoin
+                                    trim.start: 0.0
+                                    trim.end: drawEnd
+                                    PathSvg { path: modelData.d }
+                                }
+
+                                // 4. Glistening Specular Highlight Ridge
+                                ShapePath {
+                                    strokeColor: Qt.rgba(1, 1, 1, 0.95)
+                                    strokeWidth: 1.6
+                                    fillColor: "transparent"
+                                    capStyle: ShapePath.RoundCap
+                                    joinStyle: ShapePath.RoundJoin
+                                    trim.start: 0.0
+                                    trim.end: drawEnd
                                     PathSvg { path: modelData.d }
                                 }
                             }
@@ -845,12 +877,18 @@ Scope {
                                 var w = root.currentHelloWord;
                                 var g = root.strokeDrawProgress;
                                 if (!w || !w.tip_samples || w.tip_samples.length === 0) return { x: 0, y: 0, visible: false };
-                                if (g <= 0.002 || g >= 0.998) return { x: 0, y: 0, visible: false };
+                                if (g <= 0.001 || g >= 0.990) return { x: 0, y: 0, visible: false };
                                 var samples = w.tip_samples;
                                 var idx = g * (samples.length - 1);
                                 var i0 = Math.floor(idx);
                                 var i1 = Math.min(i0 + 1, samples.length - 1);
                                 var f = idx - i0;
+
+                                // If pen is lifted in the air between strokes, hide the tip immediately
+                                if (samples[i0].length >= 3 && samples[i0][2] === 0) {
+                                    return { x: 0, y: 0, visible: false };
+                                }
+
                                 return {
                                     x: samples[i0][0] * (1.0 - f) + samples[i1][0] * f,
                                     y: samples[i0][1] * (1.0 - f) + samples[i1][1] * f,
@@ -866,7 +904,7 @@ Scope {
                             visible: opacity > 0.001
 
                             Behavior on opacity {
-                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
                             }
 
                             // Outer soft luminous bloom
@@ -946,53 +984,39 @@ Scope {
                         NumberAnimation { duration: 350; easing.type: Easing.OutCubic }
                     }
 
-                    // Authentic Liquid Glass Card Material
-                    color: Qt.rgba(0.08, 0.08, 0.12, 0.72)
+                    // Pure Full Liquid Glass Material - Single Unified Sheet
+                    color: "#25181824"
                     border.width: 1
-                    border.color: Qt.rgba(1, 1, 1, 0.20)
+                    border.color: "#35ffffff"
 
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
-                        shadowColor: "#a0000000"
-                        shadowBlur: 0.90
-                        shadowVerticalOffset: 20
+                        shadowColor: "#70000000"
+                        shadowBlur: 0.95
+                        shadowVerticalOffset: 24
                     }
 
-                    // Top specular highlight
-                    Rectangle {
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        height: 140
-                        radius: parent.radius
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.22) }
-                            GradientStop { position: 0.35; color: Qt.rgba(1, 1, 1, 0.04) }
-                            GradientStop { position: 1.0; color: "transparent" }
-                        }
-                    }
-
-                    // Diagonal specular highlight (top-left 0.28 down to bottom-right 0.08)
+                    // All-around specular highlight rim
                     Rectangle {
                         anchors.fill: parent
                         radius: parent.radius
                         color: "transparent"
                         border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, 0.24)
+                        border.color: "#35ffffff"
+                    }
 
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            width: parent.width * 0.70
-                            height: 120
-                            radius: parent.radius
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
-                                GradientStop { position: 0.6; color: Qt.rgba(1, 1, 1, 0.02) }
-                                GradientStop { position: 1.0; color: "transparent" }
-                            }
+                    // Soft specular sheen across the whole top rim (100% width)
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 100
+                        radius: parent.radius
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
+                            GradientStop { position: 0.45; color: Qt.rgba(1, 1, 1, 0.02) }
+                            GradientStop { position: 1.0; color: "transparent" }
                         }
                     }
 
@@ -1041,34 +1065,74 @@ Scope {
                                 Item {
                                     width: 64; height: 64
 
-                                    // Step 1: Country or Region / Globe Icon
+                                    // Step 1: Apple Globe on Frosted Glass Disc
                                     Rectangle {
                                         anchors.fill: parent
-                                        radius: 16
+                                        radius: 32
                                         visible: root.currentStep === 1
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "#007aff" }
-                                            GradientStop { position: 1.0; color: "#0040aa" }
-                                        }
-                                        Text {
+                                        color: Qt.rgba(0, 122, 255, 0.22)
+                                        border.width: 1
+                                        border.color: "#35ffffff"
+
+                                        Canvas {
                                             anchors.centerIn: parent
-                                            text: "🌐"
-                                            font.pixelSize: 32
+                                            width: 36; height: 36
+                                            onPaint: {
+                                                var ctx = getContext("2d");
+                                                ctx.reset();
+                                                var cx = width / 2;
+                                                var cy = height / 2;
+                                                var r = 16;
+                                                ctx.strokeStyle = "#ffffff";
+                                                ctx.lineWidth = 2.0;
+
+                                                // Outer Sphere
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                                                ctx.stroke();
+
+                                                // Equator
+                                                ctx.beginPath();
+                                                ctx.moveTo(cx - r, cy);
+                                                ctx.lineTo(cx + r, cy);
+                                                ctx.stroke();
+
+                                                // Prime Meridian
+                                                ctx.beginPath();
+                                                ctx.moveTo(cx, cy - r);
+                                                ctx.lineTo(cx, cy + r);
+                                                ctx.stroke();
+
+                                                // Longitude Curvature
+                                                ctx.lineWidth = 1.6;
+                                                ctx.beginPath();
+                                                ctx.ellipse(cx - 8, cy - r, 16, r * 2);
+                                                ctx.stroke();
+
+                                                // Latitude Arcs
+                                                ctx.lineWidth = 1.3;
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy - 20, 22, Math.PI * 0.35, Math.PI * 0.65, false);
+                                                ctx.stroke();
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy + 20, 22, -Math.PI * 0.65, -Math.PI * 0.35, false);
+                                                ctx.stroke();
+                                            }
                                         }
                                     }
 
-                                    // Step 2: Apple Wi-Fi Fan Icon
+                                    // Step 2: Apple Wi-Fi Glyph on Frosted Glass Disc
                                     Rectangle {
                                         anchors.fill: parent
-                                        radius: 16
+                                        radius: 32
                                         visible: root.currentStep === 2
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "#007aff" }
-                                            GradientStop { position: 1.0; color: "#0051ba" }
-                                        }
+                                        color: Qt.rgba(0, 122, 255, 0.22)
+                                        border.width: 1
+                                        border.color: "#35ffffff"
+
                                         Canvas {
                                             anchors.centerIn: parent
-                                            width: 34; height: 34
+                                            width: 36; height: 36
                                             onPaint: {
                                                 var ctx = getContext("2d");
                                                 ctx.reset();
@@ -1104,7 +1168,7 @@ Scope {
                                         }
                                     }
 
-                                    // Step 3: Siri Glowing GLSL Plasma Orb
+                                    // Step 3: Apple Siri Glowing Wave Orb
                                     Item {
                                         anchors.fill: parent
                                         visible: root.currentStep === 3
@@ -1115,30 +1179,30 @@ Scope {
                                         }
                                     }
 
-                                    // Step 4: Package Check / Sync Icon
+                                    // Step 4: Package Check / Sync on Frosted Glass Disc
                                     Rectangle {
                                         anchors.fill: parent
-                                        radius: 16
+                                        radius: 32
                                         visible: root.currentStep === 4
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "#af52de" }
-                                            GradientStop { position: 1.0; color: "#5856d6" }
-                                        }
+                                        color: Qt.rgba(175, 82, 222, 0.25)
+                                        border.width: 1
+                                        border.color: "#35ffffff"
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: "⚡"
-                                            font.pixelSize: 32
+                                            font.pixelSize: 28
                                         }
                                     }
 
-                                    // Step 5: Pure Apple White Logo
+                                    // Step 5: Pure Apple White Logo on Frosted Glass Disc
                                     Rectangle {
                                         anchors.fill: parent
-                                        radius: 16
+                                        radius: 32
                                         visible: root.currentStep === 5
-                                        color: Qt.rgba(1, 1, 1, 0.12)
+                                        color: Qt.rgba(255, 255, 255, 0.16)
                                         border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.25)
+                                        border.color: "#35ffffff"
 
                                         Image {
                                             anchors.centerIn: parent
@@ -1219,17 +1283,7 @@ Scope {
                             }
                         }
 
-                        // Divider Line
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: leftCol.right
-                            anchors.leftMargin: 10
-                            width: 1
-                            color: Qt.rgba(1, 1, 1, 0.10)
-                        }
-
-                        // ── Right Column: Interactive Content ──
+                        // ── Right Column: Interactive Content (Seamless layout, no vertical split) ──
                         Item {
                             id: rightCol
                             anchors.top: parent.top
@@ -1266,7 +1320,7 @@ Scope {
                                         width: parent.width
                                         height: 140
                                         radius: 16
-                                        color: Qt.rgba(0.12, 0.12, 0.16, 0.55)
+                                        color: Qt.rgba(1, 1, 1, 0.05)
                                         border.width: 1
                                         border.color: Qt.rgba(1, 1, 1, 0.12)
                                         clip: true
@@ -1374,48 +1428,116 @@ Scope {
                                         spacing: 12
                                         width: parent.width
 
-                                        // Light Theme Card
+                                        // Light Theme Card with Apple Display Icon
                                         Rectangle {
                                             width: (parent.width - 12) / 2
                                             height: 64; radius: 12
-                                            color: !root.darkMode ? Qt.rgba(0.2, 0.5, 0.9, 0.25) : Qt.rgba(0.18, 0.18, 0.22, 0.50)
-                                            border.width: !root.darkMode ? 2 : 1
-                                            border.color: !root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
+                                            color: !root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: !root.darkMode ? 1.5 : 1
+                                            border.color: !root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.centerIn: parent
-                                                spacing: 10
-                                                Rectangle { width: 14; height: 14; radius: 7; color: "#ffffff"; border.width: 1; border.color: "#ccc" }
+                                                spacing: 12
+
+                                                // Apple Display Icon (Light)
+                                                Item {
+                                                    width: 28; height: 26
+                                                    anchors.verticalCenter: parent.verticalCenter
+
+                                                    Rectangle {
+                                                        width: 28; height: 18; radius: 3
+                                                        color: "#dbeafe"
+                                                        border.width: 1.2
+                                                        border.color: "#3b82f6"
+
+                                                        Rectangle {
+                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                                            height: 3; radius: 1
+                                                            color: Qt.rgba(0, 0, 0, 0.20)
+                                                        }
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 14; height: 8; radius: 1.5
+                                                            color: "#ffffff"
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 18
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 4; height: 5; color: "#9ca3af"
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 23
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 14; height: 2.5; radius: 1; color: "#9ca3af"
+                                                    }
+                                                }
+
                                                 Text {
                                                     text: "Light"
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
                                                     font.pixelSize: 13
-                                                    font.weight: Font.Medium
+                                                    font.weight: !root.darkMode ? Font.DemiBold : Font.Medium
                                                 }
                                             }
                                             TapHandler { onTapped: root.darkMode = false }
                                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         }
 
-                                        // Dark Theme Card
+                                        // Dark Theme Card with Apple Display Icon
                                         Rectangle {
                                             width: (parent.width - 12) / 2
                                             height: 64; radius: 12
-                                            color: root.darkMode ? Qt.rgba(0.2, 0.5, 0.9, 0.25) : Qt.rgba(0.18, 0.18, 0.22, 0.50)
-                                            border.width: root.darkMode ? 2 : 1
-                                            border.color: root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
+                                            color: root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: root.darkMode ? 1.5 : 1
+                                            border.color: root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.centerIn: parent
-                                                spacing: 10
-                                                Rectangle { width: 14; height: 14; radius: 7; color: "#1e1e24"; border.width: 1; border.color: "#444" }
+                                                spacing: 12
+
+                                                // Apple Display Icon (Dark)
+                                                Item {
+                                                    width: 28; height: 26
+                                                    anchors.verticalCenter: parent.verticalCenter
+
+                                                    Rectangle {
+                                                        width: 28; height: 18; radius: 3
+                                                        color: "#181a24"
+                                                        border.width: 1.2
+                                                        border.color: "#4b5563"
+
+                                                        Rectangle {
+                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                                            height: 3; radius: 1
+                                                            color: Qt.rgba(255, 255, 255, 0.25)
+                                                        }
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 14; height: 8; radius: 1.5
+                                                            color: "#2a2e3d"
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 18
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 4; height: 5; color: "#6b7280"
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 23
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 14; height: 2.5; radius: 1; color: "#6b7280"
+                                                    }
+                                                }
+
                                                 Text {
                                                     text: "Dark"
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
                                                     font.pixelSize: 13
-                                                    font.weight: Font.Medium
+                                                    font.weight: root.darkMode ? Font.DemiBold : Font.Medium
                                                 }
                                             }
                                             TapHandler { onTapped: root.darkMode = true }
@@ -1437,7 +1559,7 @@ Scope {
                                     // Module 1: Core MacShell UI (Required & Locked)
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -1467,7 +1589,7 @@ Scope {
                                     // Module 2: macOS Wi-Fi Manager
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -1542,10 +1664,10 @@ Scope {
                                         }
                                     }
 
-                                    // Module 4: Sound & Theme Pack
+                                    // Module 3: Sound & Theme Pack
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -1580,10 +1702,10 @@ Scope {
                                         }
                                     }
 
-                                    // Module 5: Apple Intelligence & Siri (Optional)
+                                    // Module 4: Apple Intelligence & Siri (Optional)
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -1591,7 +1713,15 @@ Scope {
                                             anchors.leftMargin: 14; anchors.rightMargin: 14
                                             spacing: 10
 
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "🔮"; font.pixelSize: 18 }
+                                            Item {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 22; height: 22
+                                                SiriOrb {
+                                                    anchors.fill: parent
+                                                    active: root.currentStep === 1
+                                                    isProcessing: root.siriEnabled
+                                                }
+                                            }
 
                                             Column {
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -1638,7 +1768,7 @@ Scope {
                                     // Wi-Fi Header Bar with Toggle & Refresh
                                     Rectangle {
                                         width: parent.width; height: 46; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.70)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -1698,8 +1828,8 @@ Scope {
                                         width: parent.width
                                         height: parent.height - 58
                                         radius: 12
-                                        color: Qt.rgba(0.14, 0.14, 0.18, 0.55)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
+                                        color: Qt.rgba(1, 1, 1, 0.04)
+                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
                                         clip: true
 
                                         // When Wi-Fi is disabled
@@ -1960,9 +2090,9 @@ Scope {
                                         width: parent.width
                                         height: 120
                                         radius: 12
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.15)
+                                        border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Column {
                                             anchors.fill: parent
@@ -1995,7 +2125,7 @@ Scope {
                                                 width: parent.width
                                                 height: 38
                                                 radius: 8
-                                                color: Qt.rgba(0.10, 0.10, 0.14, 0.85)
+                                                color: Qt.rgba(1, 1, 1, 0.08)
                                                 border.width: 1
                                                 border.color: root.keyValidationStatus === "valid" ? "#34c759" : (root.keyValidationStatus === "invalid" ? "#ff453a" : Qt.rgba(1, 1, 1, 0.20))
 
@@ -2055,7 +2185,7 @@ Scope {
                                     // Voice Streaming Switch
                                     Rectangle {
                                         width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                        color: Qt.rgba(1, 1, 1, 0.06)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
                                         Row {
@@ -2168,7 +2298,7 @@ Scope {
                                         width: parent.width
                                         height: 220
                                         radius: 12
-                                        color: Qt.rgba(0.14, 0.14, 0.18, 0.55)
+                                        color: Qt.rgba(1, 1, 1, 0.05)
                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
                                         clip: true
 
@@ -2351,11 +2481,11 @@ Scope {
                                         spacing: 12
                                         width: parent.width
 
-                                        // 1. Theme
+                                        // 1. Theme (Appearance) with Apple Display Icon
                                         Rectangle {
                                             width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+                                            color: Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.fill: parent
@@ -2363,13 +2493,37 @@ Scope {
                                                 spacing: 12
                                                 anchors.verticalCenter: parent.verticalCenter
 
+                                                // Apple Display Icon
                                                 Item {
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    width: 28; height: 28
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "🎨"
-                                                        font.pixelSize: 20
+                                                    width: 28; height: 26
+
+                                                    Rectangle {
+                                                        width: 26; height: 17; radius: 3
+                                                        color: root.darkMode ? "#181a24" : "#dbeafe"
+                                                        border.width: 1.2
+                                                        border.color: root.darkMode ? "#4b5563" : "#3b82f6"
+
+                                                        Rectangle {
+                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                                            height: 3; radius: 1
+                                                            color: root.darkMode ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.20)
+                                                        }
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 12; height: 7; radius: 1.5
+                                                            color: root.darkMode ? "#2a2e3d" : "#ffffff"
+                                                        }
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 17
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 4; height: 5; color: "#9ca3af"
+                                                    }
+                                                    Rectangle {
+                                                        anchors.top: parent.top; anchors.topMargin: 22
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        width: 14; height: 2.5; radius: 1; color: "#9ca3af"
                                                     }
                                                 }
 
@@ -2395,11 +2549,11 @@ Scope {
                                             }
                                         }
 
-                                        // 2. Region & Language
+                                        // 2. Region & Language with Apple Globe Icon
                                         Rectangle {
                                             width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+                                            color: Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.fill: parent
@@ -2407,13 +2561,46 @@ Scope {
                                                 spacing: 12
                                                 anchors.verticalCenter: parent.verticalCenter
 
+                                                // Apple Globe Icon
                                                 Item {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     width: 28; height: 28
-                                                    Text {
+
+                                                    Canvas {
                                                         anchors.centerIn: parent
-                                                        text: "🌐"
-                                                        font.pixelSize: 20
+                                                        width: 24; height: 24
+                                                        onPaint: {
+                                                            var ctx = getContext("2d");
+                                                            ctx.reset();
+                                                            var cx = width / 2;
+                                                            var cy = height / 2;
+                                                            var r = 10.5;
+                                                            ctx.strokeStyle = "#38bdf8";
+                                                            ctx.lineWidth = 1.6;
+
+                                                            // Outer Sphere
+                                                            ctx.beginPath();
+                                                            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                                                            ctx.stroke();
+
+                                                            // Equator
+                                                            ctx.beginPath();
+                                                            ctx.moveTo(cx - r, cy);
+                                                            ctx.lineTo(cx + r, cy);
+                                                            ctx.stroke();
+
+                                                            // Prime Meridian
+                                                            ctx.beginPath();
+                                                            ctx.moveTo(cx, cy - r);
+                                                            ctx.lineTo(cx, cy + r);
+                                                            ctx.stroke();
+
+                                                            // Longitude Curve
+                                                            ctx.lineWidth = 1.3;
+                                                            ctx.beginPath();
+                                                            ctx.ellipse(cx - 5.5, cy - r, 11, r * 2);
+                                                            ctx.stroke();
+                                                        }
                                                     }
                                                 }
 
@@ -2444,8 +2631,8 @@ Scope {
                                         // 3. Apple Wi-Fi Network
                                         Rectangle {
                                             width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+                                            color: Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.fill: parent
@@ -2519,11 +2706,11 @@ Scope {
                                             }
                                         }
 
-                                        // 4. Apple Intelligence & Siri
+                                        // 4. Apple Intelligence & Siri with Animated Orb
                                         Rectangle {
                                             width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+                                            color: Qt.rgba(1, 1, 1, 0.06)
+                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
 
                                             Row {
                                                 anchors.fill: parent
@@ -2534,10 +2721,10 @@ Scope {
                                                 Item {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     width: 28; height: 28
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "🔮"
-                                                        font.pixelSize: 20
+                                                    SiriOrb {
+                                                        anchors.fill: parent
+                                                        active: root.currentStep === 5
+                                                        isProcessing: root.siriEnabled
                                                     }
                                                 }
 
