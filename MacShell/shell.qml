@@ -46,6 +46,11 @@ ShellRoot {
         property var reminders: remindersApp
         property var about: aboutApp
         property var stagemanager: stageManager
+        property var siriEdgeGlow: siriEdgeGlow
+
+        // First-run Setup Assistant (OOBE) status
+        property bool setupChecked: false
+        property bool setupCompleted: false
         function openSettings(pane) { macDock.openPrefs(pane); }
 
         // ── macOS App Nap / Resource Throttling: detect when user is focused on an application ──
@@ -322,6 +327,21 @@ ShellRoot {
         }
     }
 
+    FileView {
+        id: setupFlagFile
+        path: Quickshell.env("HOME") + "/.config/macshell/.setup_completed"
+        printErrors: false
+        watchChanges: true
+        onLoaded: {
+            sharedHub.setupCompleted = true;
+            sharedHub.setupChecked = true;
+        }
+        onLoadFailed: {
+            sharedHub.setupCompleted = false;
+            sharedHub.setupChecked = true;
+        }
+    }
+
     MacBar { id: macBar; hub: sharedHub }
     MacDock { id: macDock; hub: sharedHub; bar: macBar }
     MacWidgets { id: macWidgets; hub: sharedHub }
@@ -333,9 +353,10 @@ ShellRoot {
     MinimizeFx { id: minFx; hub: sharedHub; effect: macDock.minimizeEffect !== undefined ? macDock.minimizeEffect : "genie"; speed: macDock.minimizeSecs !== undefined ? macDock.minimizeSecs : 0.42 }
     WindowBar { id: windowBar; hub: sharedHub }
     Installer { id: depsInstaller; hub: sharedHub }
-    StageManager { id: stageManager; hub: sharedHub; enabled: macBar.stageManager }
+    StageManager { id: stageManager; hub: sharedHub; enabled: macBar.stageManager && sharedHub.setupCompleted }
     SiriEdgeGlow { id: siriEdgeGlow; hub: sharedHub; typeToSiri: typeToSiri }
     TypeToSiri { id: typeToSiri; edgeGlow: siriEdgeGlow }
+    SetupAssistant { id: setupAssistant; hub: sharedHub; active: sharedHub.setupChecked && !sharedHub.setupCompleted }
 
     Component.onCompleted: {
         sharedHub.bar = macBar;
@@ -419,6 +440,27 @@ ShellRoot {
         function tab(name: string) { clockApp.open(name); }
         function stop() { clockApp.stopRing(); }
         function snooze() { clockApp.snooze(); }
+    }
+
+    // qs -c MacShell ipc call setup start | reset | step <n> | finish
+    IpcHandler {
+        target: "setup"
+        function start(): void {
+            sharedHub.setupCompleted = false;
+            setupAssistant.currentStep = 0;
+        }
+        function step(n: int): void {
+            sharedHub.setupCompleted = false;
+            setupAssistant.currentStep = n;
+        }
+        function finish(): void {
+            setupAssistant.finishSetup();
+        }
+        function reset(): void {
+            Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.config/macshell/.setup_completed"]);
+            sharedHub.setupCompleted = false;
+            setupAssistant.currentStep = 0;
+        }
     }
     IpcHandler {
         target: "airdrop"

@@ -55,21 +55,21 @@ Scope {
 
     // Dependency check state
     property var dependenciesList: [
-        { id: "core", name: "Core MacShell UI (Menu Bar, Dock)", category: "core", status: "installed", detail: "Đã có sẵn", size_mb: 0 },
-        { id: "network", name: "macOS Wi-Fi Manager (nmcli)", category: "network", status: "installed", detail: "Đã có sẵn", size_mb: 0 },
-        { id: "audio", name: "Hệ thống âm thanh PipeWire", category: "audio", status: "installed", detail: "Đã có sẵn", size_mb: 0 },
-        { id: "sounds", name: "Bộ âm thanh macOS UI & Chime", category: "sounds", status: "ready", detail: "Sẵn sàng tạo", size_mb: 2 },
-        { id: "fonts", name: "Phông chữ chuẩn Apple Typography", category: "fonts", status: "installed", detail: "Đã đồng bộ", size_mb: 0 },
-        { id: "python_ai", name: "Apple Intelligence & Siri Engine", category: "ai", status: "skipped", detail: "Đã bỏ qua", size_mb: 0 }
+        { id: "core", name: "Core MacShell UI (Menu Bar, Dock)", category: "core", status: "installed", detail: "Installed", size_mb: 0 },
+        { id: "network", name: "macOS Wi-Fi Manager (nmcli)", category: "network", status: "installed", detail: "Installed", size_mb: 0 },
+        { id: "audio", name: "Audio Engine & Device Routing", category: "audio", status: "installed", detail: "Installed", size_mb: 0 },
+        { id: "sounds", name: "macOS UI Sounds & Chime", category: "sounds", status: "ready", detail: "Ready", size_mb: 2 },
+        { id: "fonts", name: "Apple Typography (SF Pro & Open Runde)", category: "fonts", status: "installed", detail: "Synced", size_mb: 0 },
+        { id: "python_ai", name: "Apple Intelligence & Siri Engine", category: "ai", status: "skipped", detail: "Skipped", size_mb: 0 }
     ]
     property int totalDownloadMb: 0
     property bool depsChecking: false
 
     // Download / Setup progress
     property int downloadProgress: 0
-    property string downloadTaskName: "Khởi tạo"
+    property string downloadTaskName: "Initializing"
     property string downloadSpeed: "Local"
-    property string downloadStatusText: "Sẵn sàng chuẩn bị tài nguyên..."
+    property string downloadStatusText: "Ready to configure system resources..."
     property bool downloadCompleted: false
 
     // Apple Hello handwriting animation state
@@ -113,7 +113,7 @@ Scope {
                     var parts = line.split(":");
                     var model = parts.length > 2 ? parts[2] : "gemini-2.5-flash";
                     root.keyValidationStatus = "valid";
-                    root.keyValidationMsg = "✓ Key hợp lệ (" + model + ")";
+                    root.keyValidationMsg = "✓ Valid API Key (" + model + ")";
                     root.playSound("tink");
                 } else if (line.indexOf("RESULT:INVALID") !== -1) {
                     var msg = line.substring("RESULT:INVALID:".length);
@@ -122,7 +122,7 @@ Scope {
                     root.playSound("pop");
                 } else {
                     root.keyValidationStatus = "invalid";
-                    root.keyValidationMsg = "✕ Không thể xác thực key";
+                    root.keyValidationMsg = "✕ Unable to verify API Key";
                 }
             }
         }
@@ -131,11 +131,11 @@ Scope {
     function testKey() {
         if (!root.geminiApiKey || root.geminiApiKey.trim() === "") {
             root.keyValidationStatus = "invalid";
-            root.keyValidationMsg = "✕ Vui lòng nhập Gemini API Key";
+            root.keyValidationMsg = "✕ Please enter a Gemini API Key";
             return;
         }
         root.keyValidationStatus = "testing";
-        root.keyValidationMsg = "Đang kiểm tra kết nối API...";
+        root.keyValidationMsg = "Testing API connection...";
         keyTestProc.command = ["python3", root.workerScript, "test_gemini_key", root.geminiApiKey.trim()];
         keyTestProc.running = true;
     }
@@ -283,7 +283,7 @@ Scope {
                 } else if (line.indexOf("STATUS:SUCCESS") !== -1) {
                     root.downloadProgress = 100;
                     root.downloadCompleted = true;
-                    root.downloadStatusText = "Hoàn tất cài đặt tài nguyên hệ thống!";
+                    root.downloadStatusText = "System resources configured successfully!";
                     root.playSound("tink");
                 }
             }
@@ -292,7 +292,7 @@ Scope {
             if (!root.downloadCompleted) {
                 root.downloadProgress = 100;
                 root.downloadCompleted = true;
-                root.downloadStatusText = "Tài nguyên đã sẵn sàng!";
+                root.downloadStatusText = "Resources are ready!";
             }
         }
     }
@@ -300,7 +300,7 @@ Scope {
     function startResourceSetup() {
         if (!resourceSetupProc.running && !root.downloadCompleted) {
             root.downloadProgress = 5;
-            root.downloadStatusText = "Đang bắt đầu chuẩn bị tài nguyên...";
+            root.downloadStatusText = "Initializing resource installation...";
             var opts = {
                 siri: root.siriEnabled,
                 sound_pack: root.soundPackEnabled,
@@ -738,7 +738,7 @@ Scope {
                             spacing: 10
 
                             Text {
-                                text: "Bắt đầu thiết lập"
+                                text: "Get Started"
                                 color: "#ffffff"
                                 font.family: "Open Runde"
                                 font.pixelSize: 15
@@ -933,12 +933,12 @@ Scope {
                                     lineHeight: 1.15
                                     text: {
                                         switch (root.currentStep) {
-                                            case 1: return "Tùy biến MacShell";
-                                            case 2: return "Kết nối Wi-Fi";
+                                            case 1: return "Customize MacShell";
+                                            case 2: return "Connect to Wi-Fi";
                                             case 3: return "Apple Intelligence";
-                                            case 4: return "Kiểm tra hệ thống";
-                                            case 5: return "Chào mừng bạn!";
-                                            default: return "Cài đặt MacShell";
+                                            case 4: return "System Check";
+                                            case 5: return "Welcome to MacShell!";
+                                            default: return "MacShell Setup";
                                         }
                                     }
                                 }
@@ -953,11 +953,11 @@ Scope {
                                     lineHeight: 1.35
                                     text: {
                                         switch (root.currentStep) {
-                                            case 1: return "Chọn chủ đề hiển thị và bật tắt các mô-đun tính năng chuẩn macOS bạn mong muốn.";
-                                            case 2: return "Kết nối mạng không dây của bạn để duyệt web, đồng bộ tiện ích và tải tài nguyên.";
-                                            case 3: return "Trợ lý ảo thông minh tích hợp mô hình Gemini AI, hỗ trợ đàm thoại giọng nói tự nhiên và điều khiển hệ thống.";
-                                            case 4: return "Tự động phát hiện và bổ sung các gói phần mềm, phông chữ và âm thanh còn thiếu trên Arch Linux.";
-                                            case 5: return "Hệ thống của bạn đã sẵn sàng với giao diện macOS tinh xảo trên nền tảng Arch Linux.";
+                                            case 1: return "Choose your preferred system appearance and toggle optional macOS feature modules.";
+                                            case 2: return "Connect to your wireless network to browse the web, sync widgets, and download resources.";
+                                            case 3: return "Intelligent AI assistant powered by Gemini for conversational voice interaction and system commands.";
+                                            case 4: return "Automatically verify and retrieve required dependencies, typography fonts, and UI sounds on Arch Linux.";
+                                            case 5: return "Your system is ready with an authentic macOS desktop experience built on Arch Linux & Hyprland.";
                                             default: return "";
                                         }
                                     }
@@ -973,7 +973,7 @@ Scope {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "Bỏ qua bước này / Sau"
+                                        text: "Set Up Later / Skip"
                                         color: Qt.rgba(1, 1, 1, 0.85)
                                         font.family: "Open Runde"
                                         font.pixelSize: 11
@@ -1028,7 +1028,7 @@ Scope {
 
                                     // Theme Selector Cards (Light & Dark)
                                     Text {
-                                        text: "GIAO DIỆN HỆ THỐNG"
+                                        text: "SYSTEM APPEARANCE"
                                         color: Qt.rgba(1, 1, 1, 0.50)
                                         font.family: "Open Runde"
                                         font.pixelSize: 11
@@ -1052,7 +1052,7 @@ Scope {
                                                 spacing: 10
                                                 Rectangle { width: 14; height: 14; radius: 7; color: "#ffffff"; border.width: 1; border.color: "#ccc" }
                                                 Text {
-                                                    text: "Sáng (Light)"
+                                                    text: "Light"
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
                                                     font.pixelSize: 13
@@ -1076,7 +1076,7 @@ Scope {
                                                 spacing: 10
                                                 Rectangle { width: 14; height: 14; radius: 7; color: "#1e1e24"; border.width: 1; border.color: "#444" }
                                                 Text {
-                                                    text: "Tối (Dark)"
+                                                    text: "Dark"
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
                                                     font.pixelSize: 13
@@ -1092,7 +1092,7 @@ Scope {
 
                                     // Feature Modules Title
                                     Text {
-                                        text: "MÔ-ĐUN TÍNH NĂNG (FEATURE MODULES)"
+                                        text: "FEATURE MODULES"
                                         color: Qt.rgba(1, 1, 1, 0.50)
                                         font.family: "Open Runde"
                                         font.pixelSize: 11
@@ -1124,7 +1124,7 @@ Scope {
                                                 width: 72; height: 24; radius: 12
                                                 color: Qt.rgba(0, 122, 255, 0.20)
                                                 border.width: 1; border.color: "#007aff"
-                                                Text { anchors.centerIn: parent; text: "Bắt buộc"; color: "#38bdf8"; font.pixelSize: 10; font.weight: Font.DemiBold }
+                                                Text { anchors.centerIn: parent; text: "Required"; color: "#38bdf8"; font.pixelSize: 10; font.weight: Font.DemiBold }
                                             }
                                         }
                                     }
@@ -1146,7 +1146,7 @@ Scope {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 width: parent.width - 80
                                                 Text { text: "Stage Manager 3D"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Xếp lớp và xoay nghiêng cửa sổ mép trái"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                Text { text: "Window stacks and 3D skew at screen edge"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
                                             }
 
                                             // Apple Toggle Switch
@@ -1185,7 +1185,7 @@ Scope {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 width: parent.width - 80
                                                 Text { text: "macOS Wi-Fi Manager"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Quét và kết nối Wi-Fi dạng popup Apple"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                Text { text: "Wi-Fi scanner and Apple-style connection popup"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
                                             }
 
                                             Rectangle {
@@ -1223,7 +1223,7 @@ Scope {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 width: parent.width - 80
                                                 Text { text: "Sound & Theme Pack"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Âm thanh Chime, click, pop và phông chữ"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                Text { text: "Startup Chime, click, pop sounds & typography"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
                                             }
 
                                             Rectangle {
@@ -1263,9 +1263,9 @@ Scope {
                                                 Row {
                                                     spacing: 6
                                                     Text { text: "Apple Intelligence & Siri"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                    Text { text: "(Tùy chọn)"; color: "#38bdf8"; font.pixelSize: 11 }
+                                                    Text { text: "(Optional)"; color: "#38bdf8"; font.pixelSize: 11 }
                                                 }
-                                                Text { text: "Trợ lý AI đàm thoại giọng nói (Có thể bỏ qua)"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                Text { text: "Conversational voice assistant (Can be skipped)"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
                                             }
 
                                             Rectangle {
@@ -1373,8 +1373,8 @@ Scope {
                                             Column {
                                                 anchors.centerIn: parent
                                                 spacing: 8
-                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Wi-Fi đang tắt"; color: Qt.rgba(1, 1, 1, 0.60); font.pixelSize: 14; font.weight: Font.Medium }
-                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Bật công tắc ở trên để tìm và kết nối mạng"; color: Qt.rgba(1, 1, 1, 0.40); font.pixelSize: 12 }
+                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Wi-Fi is Turned Off"; color: Qt.rgba(1, 1, 1, 0.60); font.pixelSize: 14; font.weight: Font.Medium }
+                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Turn on the switch above to search for available networks"; color: Qt.rgba(1, 1, 1, 0.40); font.pixelSize: 12 }
                                             }
                                         }
 
@@ -1479,7 +1479,7 @@ Scope {
                                                         spacing: 4
                                                         visible: wifiItemCard.modelData.inUse
                                                         Text { text: "✓"; color: "#34c759"; font.pixelSize: 12; font.weight: Font.Bold }
-                                                        Text { text: "Đã kết nối"; color: "#34c759"; font.pixelSize: 11; font.weight: Font.DemiBold }
+                                                        Text { text: "Connected"; color: "#34c759"; font.pixelSize: 11; font.weight: Font.DemiBold }
                                                     }
                                                 }
 
@@ -1514,7 +1514,7 @@ Scope {
 
                                                 Text {
                                                     anchors.horizontalCenter: parent.horizontalCenter
-                                                    text: "Nhập mật khẩu cho mạng"
+                                                    text: "Enter password for network"
                                                     color: Qt.rgba(1, 1, 1, 0.60)
                                                     font.pixelSize: 12
                                                 }
@@ -1572,7 +1572,7 @@ Scope {
                                                         width: 100; height: 32; radius: 16
                                                         color: Qt.rgba(1, 1, 1, 0.12)
                                                         border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.20)
-                                                        Text { anchors.centerIn: parent; text: "Hủy"; color: "#ffffff"; font.pixelSize: 12 }
+                                                        Text { anchors.centerIn: parent; text: "Cancel"; color: "#ffffff"; font.pixelSize: 12 }
                                                         TapHandler { onTapped: root.wifiShowPasswordDialog = false }
                                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                                                     }
@@ -1583,7 +1583,7 @@ Scope {
                                                         color: "#007aff"
                                                         Text {
                                                             anchors.centerIn: parent
-                                                            text: root.wifiIsConnecting ? "Đang kết nối..." : "Kết nối"
+                                                            text: root.wifiIsConnecting ? "Connecting..." : "Connect"
                                                             color: "#ffffff"
                                                             font.pixelSize: 12
                                                             font.weight: Font.DemiBold
@@ -1644,7 +1644,7 @@ Scope {
                                                 }
                                                 Item { width: parent.width - 240; height: 1 }
                                                 Text {
-                                                    text: "Lấy Key miễn phí →"
+                                                    text: "Get Free API Key →"
                                                     color: "#007aff"
                                                     font.pixelSize: 11
                                                     TapHandler {
@@ -1694,7 +1694,7 @@ Scope {
 
                                                     Text {
                                                         anchors.centerIn: parent
-                                                        text: root.keyValidationStatus === "testing" ? "..." : "Kiểm tra"
+                                                        text: root.keyValidationStatus === "testing" ? "..." : "Verify"
                                                         color: "#ffffff"
                                                         font.family: "Open Runde"
                                                         font.pixelSize: 11
@@ -1733,7 +1733,7 @@ Scope {
                                                 anchors.verticalCenter: parent.verticalCenter
                                                 width: parent.width - 80
                                                 Text { text: "Live Voice Streaming"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Phát âm thanh trực tiếp khi AI phản hồi"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                Text { text: "Stream voice responses in real time from AI"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
                                             }
 
                                             Rectangle {
@@ -1756,7 +1756,7 @@ Scope {
 
                                     // TTS Voice Cards
                                     Text {
-                                        text: "GIỌNG NÓI TRỢ LÝ (TTS VOICE)"
+                                        text: "SIRI VOICE (TTS)"
                                         color: Qt.rgba(1, 1, 1, 0.50)
                                         font.family: "Open Runde"
                                         font.pixelSize: 11
@@ -1779,7 +1779,7 @@ Scope {
                                                 anchors.centerIn: parent
                                                 spacing: 8
                                                 Text { text: "🇻🇳"; font.pixelSize: 18 }
-                                                Text { text: "Tiếng Việt (Nam Minh)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.Medium }
+                                                Text { text: "Vietnamese (Nam Minh)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.Medium }
                                             }
                                             TapHandler {
                                                 onTapped: {
@@ -1879,7 +1879,7 @@ Scope {
                                                     Text {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         width: parent.width - 150
-                                                        text: depRow.modelData.name || "Gói phụ trợ"
+                                                        text: depRow.modelData.name || "Auxiliary Package"
                                                         color: "#ffffff"
                                                         font.family: "Open Runde"
                                                         font.pixelSize: 12
@@ -1894,7 +1894,7 @@ Scope {
                                                         color: {
                                                             if (depRow.modelData.status === "installed") return Qt.rgba(52, 199, 89, 0.15);
                                                             if (depRow.modelData.status === "ready") return Qt.rgba(56, 189, 248, 0.15);
-                                                            if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 1, 0.08);
+                                                            if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 0.08);
                                                             return Qt.rgba(255, 159, 10, 0.18);
                                                         }
                                                         border.width: 1
@@ -1917,10 +1917,10 @@ Scope {
                                                                 return "#ff9f0a";
                                                             }
                                                             text: {
-                                                                if (depRow.modelData.status === "installed") return "Đã có sẵn";
-                                                                if (depRow.modelData.status === "ready") return "Sẵn sàng tạo";
-                                                                if (depRow.modelData.status === "skipped") return "Bỏ qua";
-                                                                return "Cần tải " + (depRow.modelData.size_mb || "") + "MB";
+                                                                if (depRow.modelData.status === "installed") return "Installed";
+                                                                if (depRow.modelData.status === "ready") return "Ready";
+                                                                if (depRow.modelData.status === "skipped") return "Skipped";
+                                                                return "Download " + (depRow.modelData.size_mb || "") + " MB";
                                                             }
                                                         }
                                                     }
@@ -1946,7 +1946,7 @@ Scope {
                                             Row {
                                                 width: parent.width
                                                 Text {
-                                                    text: root.downloadTaskName || "Tiến trình chuẩn bị"
+                                                    text: root.downloadTaskName || "Setup Progress"
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
                                                     font.pixelSize: 13
@@ -2002,7 +2002,7 @@ Scope {
                                     spacing: 14
 
                                     Text {
-                                        text: "TÓM TẮT HỆ THỐNG ĐÃ THIẾT LẬP"
+                                        text: "SYSTEM CONFIGURATION SUMMARY"
                                         color: Qt.rgba(1, 1, 1, 0.50)
                                         font.family: "Open Runde"
                                         font.pixelSize: 11
@@ -2024,8 +2024,8 @@ Scope {
                                                 anchors.centerIn: parent; spacing: 10
                                                 Text { text: "🎨"; font.pixelSize: 18 }
                                                 Column {
-                                                    Text { text: "Giao diện"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.darkMode ? "Chủ đề Tối (Dark)" : "Chủ đề Sáng (Light)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    Text { text: "Appearance"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
+                                                    Text { text: root.darkMode ? "Dark Mode" : "Light Mode"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                                 }
                                             }
                                         }
@@ -2040,7 +2040,7 @@ Scope {
                                                 Text { text: "🪟"; font.pixelSize: 18 }
                                                 Column {
                                                     Text { text: "Stage Manager 3D"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.stageManagerEnabled ? "Đã kích hoạt" : "Đã tắt"; color: root.stageManagerEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.6); font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    Text { text: root.stageManagerEnabled ? "Enabled" : "Disabled"; color: root.stageManagerEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.6); font.pixelSize: 12; font.weight: Font.DemiBold }
                                                 }
                                             }
                                         }
@@ -2054,8 +2054,8 @@ Scope {
                                                 anchors.centerIn: parent; spacing: 10
                                                 Text { text: "📶"; font.pixelSize: 18 }
                                                 Column {
-                                                    Text { text: "Mạng Wi-Fi"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.wifiConnectedSsid ? root.wifiConnectedSsid : (root.wifiManagerEnabled ? "Sẵn sàng kết nối" : "Đã tắt"); color: root.wifiConnectedSsid ? "#34c759" : "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                                                    Text { text: "Wi-Fi Network"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
+                                                    Text { text: root.wifiConnectedSsid ? root.wifiConnectedSsid : (root.wifiManagerEnabled ? "Ready to connect" : "Disabled"); color: root.wifiConnectedSsid ? "#34c759" : "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
                                                 }
                                             }
                                         }
@@ -2070,7 +2070,7 @@ Scope {
                                                 Text { text: "🔮"; font.pixelSize: 18 }
                                                 Column {
                                                     Text { text: "Apple Intelligence"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.siriEnabled ? "Sẵn sàng sử dụng" : "Đã bỏ qua (Tắt)"; color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.5); font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    Text { text: root.siriEnabled ? "Active & Ready" : "Disabled"; color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.5); font.pixelSize: 12; font.weight: Font.DemiBold }
                                                 }
                                             }
                                         }
@@ -2086,7 +2086,7 @@ Scope {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Bắt đầu sử dụng MacShell"
+                                            text: "Start Using MacShell"
                                             color: "#ffffff"
                                             font.family: "Open Runde"
                                             font.pixelSize: 15
@@ -2135,7 +2135,7 @@ Scope {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "← Quay lại"
+                                text: "← Back"
                                 color: "#ffffff"
                                 font.family: "Open Runde"
                                 font.pixelSize: 13
@@ -2168,9 +2168,9 @@ Scope {
                                     font.weight: Font.DemiBold
                                     color: "#ffffff"
                                     text: {
-                                        if (root.currentStep === 4 && !root.downloadCompleted) return "Cài đặt & Tiếp tục";
-                                        if (root.currentStep === 5) return "Hoàn tất";
-                                        return "Tiếp tục";
+                                        if (root.currentStep === 4 && !root.downloadCompleted) return "Install & Continue";
+                                        if (root.currentStep === 5) return "Complete";
+                                        return "Continue";
                                     }
                                 }
 

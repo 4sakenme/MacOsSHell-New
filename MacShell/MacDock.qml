@@ -5205,7 +5205,7 @@ Scope {
 
     // ───────────── UI ─────────────
     Variants {
-        model: (root.settingsReady && root.dockEnabled) ? Quickshell.screens : []
+        model: (root.settingsReady && root.dockEnabled && (!root.hub || root.hub.setupCompleted)) ? Quickshell.screens : []
 
         PanelWindow {
             id: win

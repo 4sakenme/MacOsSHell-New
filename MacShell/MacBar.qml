@@ -4641,7 +4641,7 @@ Scope {
     }
 
     Variants {
-        model: (root.settingsReady && root.barLayerNeeded) ? Quickshell.screens : []
+        model: (root.settingsReady && root.barLayerNeeded && (!root.hub || root.hub.setupCompleted)) ? Quickshell.screens : []
 
         Scope {
             id: perScreen

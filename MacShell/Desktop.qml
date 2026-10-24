@@ -103,7 +103,7 @@ Scope {
     Timer { interval: 6000; repeat: true; running: root.enabled; triggeredOnStart: true; onTriggered: root.scan() }
 
     Variants {
-        model: root.enabled ? Quickshell.screens : []
+        model: (root.enabled && (!root.hub || root.hub.setupCompleted)) ? Quickshell.screens : []
         PanelWindow {
             id: w
             required property var modelData

@@ -60,7 +60,7 @@ Scope {
     function zoom() { Hyprland.dispatch('hl.dsp.window.fullscreen_state({ internal = 2, client = 0, window = "address:' + activeAddr + '" })'); }
 
     Variants {
-        model: root.enabled ? Quickshell.screens : []
+        model: (root.enabled && (!root.hub || root.hub.setupCompleted)) ? Quickshell.screens : []
         PanelWindow {
             id: w
             required property var modelData

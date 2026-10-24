@@ -7,19 +7,26 @@
 
 ---
 
-### ⚡ Cài đặt nhanh bằng 1 dòng lệnh (One-line Quick Install)
+### ⚡ One-line Quick Install
 
-Chạy lệnh duy nhất sau trên Arch Linux (bên trong phiên Hyprland) để tự động khởi chạy **macOS Setup Assistant (OOBE)** với đầy đủ giao diện đồ họa:
+Run the following command on Arch Linux (inside an active Hyprland session) to launch the graphical **macOS Setup Assistant (OOBE)**:
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/bootstrap.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/install.sh)"
 ```
 
-> **Trình cài đặt tự động:**
-> - Tự kiểm tra môi trường Wayland / Hyprland & cài đặt Quickshell nếu chưa có.
-> - Mở màn hình chào mừng **"hello"** viết tay chuẩn Apple với nền **Pastel Mesh Gradient**.
-> - Cho phép tùy chọn các mô-đun: Giao diện Sáng/Tối, Wi-Fi Manager, Stage Manager 3D, Apple Intelligence & Siri.
-> - Tự động đồng bộ phông chữ SF Pro / Open Runde, âm thanh F# Major Chime và cấu hình hệ thống.
+> **Automated Setup Features:**
+> - Verifies Wayland / Hyprland environment and automatically installs Quickshell if needed.
+> - Apple single-stroke handwritten **"hello"** welcome animation on a **Dynamic Pastel Mesh Gradient**.
+> - Modular feature checklist: Light/Dark Mode, macOS Wi-Fi Manager, 3D Stage Manager, Apple Intelligence & Siri.
+> - Automatic font cache synchronization (SF Pro / Open Runde) and authentic F# Major Startup Chime synthesis.
+
+---
+
+### 🌿 Branch Layout
+
+- **`main`**: Production-ready branch containing MacShell, Setup Assistant OOBE, Stage Manager 3D, and the universal installer (`install.sh`).
+- **`feature/custom-widgets`**: Active development branch containing advanced widget extensions (music lyrics, system monitors, dynamic gifs, and canvas integrations).
 
 ---
 

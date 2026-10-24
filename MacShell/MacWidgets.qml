@@ -736,7 +736,7 @@ Scope {
 
     // ───────────── the desktop layer ─────────────
     Variants {
-        model: (root.ready && Quickshell.screens.length > 0 && (root.widgetCount > 0 || root.editing)) ? [Quickshell.screens[0]] : []
+        model: (root.ready && Quickshell.screens.length > 0 && (root.widgetCount > 0 || root.editing) && (!root.hub || root.hub.setupCompleted)) ? [Quickshell.screens[0]] : []
 
         PanelWindow {
             id: win

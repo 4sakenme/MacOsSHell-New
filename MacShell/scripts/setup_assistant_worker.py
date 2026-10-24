@@ -33,7 +33,7 @@ MACSHELL_DIR = Path(__file__).resolve().parent.parent
 def test_gemini_key(api_key: str):
     """Validate a Google Gemini API key by listing models."""
     if not api_key or api_key.strip() == "":
-        print("RESULT:INVALID:API Key không được để trống", flush=True)
+        print("RESULT:INVALID:API Key cannot be empty", flush=True)
         return
 
     key = api_key.strip()
@@ -48,10 +48,10 @@ def test_gemini_key(api_key: str):
                 print(f"RESULT:VALID:{flash_model}", flush=True)
                 return
             else:
-                print(f"RESULT:INVALID:Mã lỗi HTTP {response.status}", flush=True)
+                print(f"RESULT:INVALID:HTTP error {response.status}", flush=True)
                 return
     except urllib.error.HTTPError as e:
-        err_msg = "Key không hợp lệ hoặc đã hết hạn"
+        err_msg = "Invalid or expired API Key"
         try:
             err_json = json.loads(e.read().decode("utf-8"))
             if "error" in err_json and "message" in err_json["error"]:
@@ -60,7 +60,7 @@ def test_gemini_key(api_key: str):
             pass
         print(f"RESULT:INVALID:{err_msg}", flush=True)
     except Exception as e:
-        print(f"RESULT:INVALID:Lỗi kết nối mạng ({str(e)})", flush=True)
+        print(f"RESULT:INVALID:Network error ({str(e)})", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -96,7 +96,7 @@ def check_dependencies(options_raw: str = ""):
         "name": "Core MacShell Environment",
         "category": "core",
         "status": "installed" if (has_hypr or has_qs) else "installed",
-        "detail": "Hyprland & Quickshell đã sẵn sàng",
+        "detail": "Hyprland & Quickshell are ready",
         "size_mb": 0,
         "required": True
     })
@@ -106,15 +106,15 @@ def check_dependencies(options_raw: str = ""):
     has_iwd = check_command("iwctl")
     if has_nmcli:
         net_status = "installed"
-        net_detail = "NetworkManager (nmcli) đã sẵn sàng"
+        net_detail = "NetworkManager (nmcli) is available"
         net_size = 0
     elif has_iwd:
         net_status = "installed"
-        net_detail = "iwd (iwctl) đã sẵn sàng"
+        net_detail = "iwd (iwctl) is available"
         net_size = 0
     else:
         net_status = "missing" if wifi_requested else "skipped"
-        net_detail = "Cần cài đặt networkmanager qua pacman"
+        net_detail = "Requires networkmanager package via pacman"
         net_size = 12
 
     deps.append({
@@ -136,16 +136,16 @@ def check_dependencies(options_raw: str = ""):
     if has_pw_play or has_mpv or has_sox:
         audio_status = "installed"
         engine_name = "PipeWire (pw-play)" if has_pw_play else ("mpv" if has_mpv else "sox")
-        audio_detail = f"Hệ thống âm thanh {engine_name} hoạt động tốt"
+        audio_detail = f"Audio engine {engine_name} working properly"
         audio_size = 0
     else:
         audio_status = "missing"
-        audio_detail = "Cần cài đặt pipewire hoặc mpv"
+        audio_detail = "Requires pipewire or mpv"
         audio_size = 15
 
     deps.append({
         "id": "audio",
-        "name": "Hệ thống âm thanh & Device Routing",
+        "name": "Audio Engine & Device Routing",
         "category": "audio",
         "status": audio_status,
         "detail": audio_detail,
@@ -158,20 +158,20 @@ def check_dependencies(options_raw: str = ""):
     has_chime = chime_file.exists() and chime_file.stat().st_size > 1000
     if not sound_requested:
         sound_status = "skipped"
-        sound_detail = "Người dùng bỏ qua bộ âm thanh"
+        sound_detail = "Sound pack skipped by user"
         sound_size = 0
     elif has_chime:
         sound_status = "installed"
-        sound_detail = "Bộ âm thanh macOS UI đã có sẵn"
+        sound_detail = "macOS UI Sound Pack already installed"
         sound_size = 0
     else:
         sound_status = "ready"
-        sound_detail = "Sẵn sàng tổng hợp âm thanh F# Major Chime"
+        sound_detail = "Ready to synthesize F# Major Chime & UI sounds"
         sound_size = 2
 
     deps.append({
         "id": "sounds",
-        "name": "Bộ âm thanh macOS UI & Startup Chime",
+        "name": "macOS UI Sounds & Startup Chime",
         "category": "sounds",
         "status": sound_status,
         "detail": sound_detail,
@@ -195,16 +195,16 @@ def check_dependencies(options_raw: str = ""):
 
     if sf_installed or has_bundled:
         font_status = "installed"
-        font_detail = "Phông chữ SF Pro & Open Runde đã sẵn sàng"
+        font_detail = "SF Pro & Open Runde typography ready"
         font_size = 0
     else:
         font_status = "ready"
-        font_detail = "Sẵn sàng đồng bộ phông chữ hệ thống"
+        font_detail = "Ready to sync system font cache"
         font_size = 18
 
     deps.append({
         "id": "fonts",
-        "name": "Phông chữ chuẩn Apple Typography",
+        "name": "Apple Typography Fonts (SF Pro & Open Runde)",
         "category": "fonts",
         "status": font_status,
         "detail": font_detail,
@@ -215,7 +215,7 @@ def check_dependencies(options_raw: str = ""):
     # 6. Python AI & Siri dependencies
     if not siri_requested:
         ai_status = "skipped"
-        ai_detail = "Người dùng đã bỏ qua Siri (Không tải thư viện nặng)"
+        ai_detail = "Siri skipped by user (Heavy libraries omitted)"
         ai_size = 0
     else:
         missing_py = []
@@ -227,11 +227,11 @@ def check_dependencies(options_raw: str = ""):
 
         if not missing_py:
             ai_status = "installed"
-            ai_detail = "Tất cả thư viện Apple Intelligence đã cài đặt"
+            ai_detail = "All Apple Intelligence libraries installed"
             ai_size = 0
         else:
             ai_status = "missing"
-            ai_detail = f"Cần tải: {', '.join(missing_py)}"
+            ai_detail = f"Missing packages: {', '.join(missing_py)}"
             ai_size = 24
 
     deps.append({
@@ -354,17 +354,17 @@ def wifi_toggle(state: str):
         except Exception as e:
             print(f"WIFI_TOGGLE:ERROR:{str(e)}", flush=True)
             return
-    print("WIFI_TOGGLE:ERROR:Không tìm thấy nmcli", flush=True)
+    print("WIFI_TOGGLE:ERROR:nmcli not found", flush=True)
 
 
 def wifi_connect(ssid: str, password: str = ""):
     """Connect to a Wi-Fi network using nmcli."""
     if not ssid:
-        print("WIFI_CONNECT:ERROR:Tên mạng (SSID) không hợp lệ", flush=True)
+        print("WIFI_CONNECT:ERROR:Invalid network name (SSID)", flush=True)
         return
 
     if not check_command("nmcli"):
-        print("WIFI_CONNECT:ERROR:Công cụ NetworkManager (nmcli) chưa được cài đặt", flush=True)
+        print("WIFI_CONNECT:ERROR:NetworkManager (nmcli) is not installed", flush=True)
         return
 
     cmd = ["nmcli", "--wait", "20", "dev", "wifi", "connect", ssid]
@@ -379,12 +379,12 @@ def wifi_connect(ssid: str, password: str = ""):
         if proc.returncode == 0:
             print(f"WIFI_CONNECT:SUCCESS:{ssid}", flush=True)
         else:
-            err_msg = err.strip() or out.strip() or "Không thể kết nối vào mạng"
+            err_msg = err.strip() or out.strip() or "Failed to connect to network"
             if "Secrets were required" in err_msg or "password" in err_msg.lower():
-                err_msg = "Mật khẩu Wi-Fi không chính xác"
+                err_msg = "Incorrect Wi-Fi password"
             print(f"WIFI_CONNECT:ERROR:{err_msg}", flush=True)
     except subprocess.TimeoutExpired:
-        print("WIFI_CONNECT:ERROR:Hết thời gian chờ kết nối (Timeout 25s)", flush=True)
+        print("WIFI_CONNECT:ERROR:Connection timed out (25s)", flush=True)
     except Exception as e:
         print(f"WIFI_CONNECT:ERROR:{str(e)}", flush=True)
 
@@ -528,17 +528,17 @@ def run_setup(options_raw: str = ""):
         print(f"PROGRESS:{pct}:{task}:{speed}:{msg}", flush=True)
         time.sleep(0.3)
 
-    emit(5, "Khởi tạo thư mục", "Local", "Tạo cấu trúc thư mục hệ thống...")
+    emit(5, "Directories", "Local", "Creating system directory layout...")
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
     FONTS_DIR.mkdir(parents=True, exist_ok=True)
     QUICKSHELL_CONFIG.mkdir(parents=True, exist_ok=True)
 
     # 1. Clone / Copy MacShell Repo into ~/.config/quickshell/MacShell
-    emit(15, "Đồng bộ mã nguồn", "GitHub", "Cài đặt MacShell vào ~/.config/quickshell/MacShell...")
+    emit(15, "Source Code", "GitHub", "Installing MacShell to ~/.config/quickshell/MacShell...")
     bootstrap_repo = BOOTSTRAP_CACHE / "repo"
     if bootstrap_repo.exists() and (bootstrap_repo / "MacShell").exists():
-        emit(20, "Sao chép mã nguồn", "Local", "Sao chép các thành phần từ bootstrap cache...")
+        emit(20, "Copying Code", "Local", "Synchronizing components from bootstrap cache...")
         if not MACSHELL_CONFIG.exists():
             shutil.copytree(bootstrap_repo / "MacShell", MACSHELL_CONFIG, symlinks=True, dirs_exist_ok=True)
         if (bootstrap_repo / "MacLock").exists() and not MACLOCK_CONFIG.exists():
@@ -546,7 +546,7 @@ def run_setup(options_raw: str = ""):
         if (bootstrap_repo / "hypr-macshell").exists() and not (HOME / ".config" / "hypr-macshell").exists():
             shutil.copytree(bootstrap_repo / "hypr-macshell", HOME / ".config" / "hypr-macshell", symlinks=True, dirs_exist_ok=True)
     elif not MACSHELL_CONFIG.exists():
-        emit(20, "Tải từ GitHub", "1.8 MB/s", "Clone mã nguồn mới nhất từ GitHub...")
+        emit(20, "Downloading", "1.8 MB/s", "Cloning latest source from GitHub...")
         try:
             subprocess.run([
                 "git", "clone", "--depth", "1",
@@ -557,11 +557,11 @@ def run_setup(options_raw: str = ""):
             if (BOOTSTRAP_CACHE / "repo" / "MacLock").exists():
                 shutil.copytree(BOOTSTRAP_CACHE / "repo" / "MacLock", MACLOCK_CONFIG, symlinks=True, dirs_exist_ok=True)
         except Exception as e:
-            emit(22, "Cảnh báo", "Local", f"Không thể clone ({str(e)}), tiếp tục với bản hiện tại...")
+            emit(22, "Warning", "Local", f"Could not clone ({str(e)}), using existing...")
 
     # 2. Soundpack
     if sound_requested:
-        emit(38, "Âm thanh macOS", "Synthesizing", "Tổng hợp F# Major Startup Chime & UI Effects...")
+        emit(38, "macOS Sounds", "Synthesizing", "Generating F# Major Startup Chime & UI Effects...")
         chime_path = SOUNDS_DIR / "chime.wav"
         if not chime_path.exists() or chime_path.stat().st_size < 1000:
             generate_macos_chime(chime_path)
@@ -571,10 +571,10 @@ def run_setup(options_raw: str = ""):
         generate_short_sound(SOUNDS_DIR / "charge.wav", "charge")
         generate_short_sound(SOUNDS_DIR / "shutter.wav", "shutter")
     else:
-        emit(38, "Âm thanh macOS", "Skipped", "Bỏ qua cài đặt soundpack theo tùy chọn...")
+        emit(38, "macOS Sounds", "Skipped", "Skipping sound pack per user selection...")
 
     # 3. Fonts
-    emit(55, "Phông chữ Apple", "Syncing", "Đồng bộ phông chữ SF Pro & Open Runde...")
+    emit(55, "Apple Fonts", "Syncing", "Synchronizing SF Pro & Open Runde typography...")
     bundled_fonts = MACSHELL_DIR / "assets" / "fonts"
     if not bundled_fonts.exists() and (MACSHELL_CONFIG / "assets" / "fonts").exists():
         bundled_fonts = MACSHELL_CONFIG / "assets" / "fonts"
@@ -594,23 +594,23 @@ def run_setup(options_raw: str = ""):
 
     # 4. Python AI packages if Siri was selected
     if siri_requested:
-        emit(72, "Apple Intelligence", "Verifying", "Kiểm tra gói Python google-genai, sounddevice, numpy...")
+        emit(72, "Apple Intelligence", "Verifying", "Checking Python packages: google-genai, sounddevice, numpy...")
         try:
             import google.genai
             import sounddevice
             import numpy
-            emit(85, "Apple Intelligence", "Ready", "Môi trường AI sẵn sàng hoạt động.")
+            emit(85, "Apple Intelligence", "Ready", "AI runtime environment ready.")
         except ImportError:
-            emit(78, "Tải thư viện AI", "1.2 MB/s", "Cài đặt các gói phụ trợ qua pip...")
+            emit(78, "AI Libraries", "1.2 MB/s", "Installing auxiliary dependencies via pip...")
             try:
                 subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "google-genai", "sounddevice", "numpy"], check=False)
             except Exception:
                 pass
     else:
-        emit(80, "Apple Intelligence", "Disabled", "Bỏ qua cài đặt thư viện AI (Siri tắt).")
+        emit(80, "Apple Intelligence", "Disabled", "Skipping AI libraries (Siri disabled).")
 
     # 5. Save Configuration Files
-    emit(92, "Ghi cấu hình", "Local", "Lưu ~/.config/macshell/config.json và settings.json...")
+    emit(92, "Configuration", "Local", "Writing ~/.config/macshell/config.json and settings.json...")
     config_data = {
         "theme": "dark" if dark_mode else "light",
         "modules": {
@@ -660,7 +660,7 @@ def run_setup(options_raw: str = ""):
     (CONFIG_DIR / ".setup_completed").touch()
     (MACSHELL_CONFIG / ".setup_completed").touch()
 
-    emit(100, "Hoàn tất", "Done", "Tất cả tài nguyên đã được thiết lập thành công!")
+    emit(100, "Completed", "Done", "All resources configured successfully!")
     print("STATUS:SUCCESS", flush=True)
 
 
