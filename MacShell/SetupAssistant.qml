@@ -78,6 +78,31 @@ Scope {
     readonly property var currentHelloWord: (helloWords && helloWords.length > 0) ? helloWords[helloWordIndex] : null
     property real strokeDrawProgress: 0.0
     property real helloOpacity: 1.0
+    property real helloZoomScale: 1.0
+    property bool isTransitioningToCard: false
+
+    // Camera Drift & Breathing
+    property real cameraScale: 1.0
+    property real cameraAngle: 0.0
+
+    // Region & Language
+    property string selectedCountry: "United States"
+    property var countriesList: [
+        { name: "United States", flag: "🇺🇸", lang: "English", code: "en-US", voice: "en-US-JennyNeural" },
+        { name: "Vietnam", flag: "🇻🇳", lang: "Tiếng Việt", code: "vi-VN", voice: "vi-VN-NamMinhNeural" },
+        { name: "United Kingdom", flag: "🇬🇧", lang: "English", code: "en-GB", voice: "en-US-JennyNeural" },
+        { name: "Japan", flag: "🇯🇵", lang: "日本語", code: "ja-JP", voice: "ja-JP-NanamiNeural" },
+        { name: "France", flag: "🇫🇷", lang: "Français", code: "fr-FR", voice: "fr-FR-DeniseNeural" },
+        { name: "Germany", flag: "🇩🇪", lang: "Deutsch", code: "de-DE", voice: "de-DE-KatjaNeural" },
+        { name: "Spain", flag: "🇪🇸", lang: "Español", code: "es-ES", voice: "es-ES-ElviraNeural" }
+    ]
+
+    function proceedFromHello() {
+        if (root.currentStep !== 0 || root.isTransitioningToCard) return;
+        root.isTransitioningToCard = true;
+        root.playSound("pop");
+        transitionToCardAnim.restart();
+    }
 
     // Python executable & worker script resolver (handles standalone bootstrap or normal shell)
     readonly property string workerScript: {
@@ -376,7 +401,10 @@ Scope {
     // Navigation logic with dynamic step skipping
     function goNext() {
         root.playSound("pop");
-        if (currentStep === 1) {
+        if (currentStep === 0) {
+            proceedFromHello();
+            return;
+        } else if (currentStep === 1) {
             if (root.wifiManagerEnabled) {
                 currentStep = 2;
                 scanWifiNetworks();
@@ -449,35 +477,40 @@ Scope {
 
     // ═════════════════════════════════════════════════════════════════════════
     // Apple Single-Stroke Handwriting Animation Loop
+    // Draw: ~900ms · Hold: 1200ms · Dissolve: 400ms
     // ═════════════════════════════════════════════════════════════════════════
     SequentialAnimation {
         id: handwritingAnim
-        running: root.active && root.currentStep === 0
+        running: root.active && root.currentStep === 0 && !root.isTransitioningToCard
         loops: Animation.Infinite
 
         PropertyAction { target: root; property: "strokeDrawProgress"; value: 0.0 }
         PropertyAction { target: root; property: "helloOpacity"; value: 1.0 }
+        PropertyAction { target: root; property: "helloZoomScale"; value: 1.0 }
 
+        // 1. Draw strokes continuously from left to right (~900ms)
         NumberAnimation {
             target: root
             property: "strokeDrawProgress"
             from: 0.0
             to: 1.0
-            duration: 1750
+            duration: 900
             easing.type: Easing.InOutCubic
         }
 
-        PauseAnimation { duration: 1100 }
+        // 2. Pause / Hold (1200ms)
+        PauseAnimation { duration: 1200 }
 
+        // 3. Smooth Dissolve / Fade Out (400ms)
         NumberAnimation {
             target: root
             property: "helloOpacity"
             to: 0.0
-            duration: 450
+            duration: 400
             easing.type: Easing.OutCubic
         }
 
-        PauseAnimation { duration: 250 }
+        PauseAnimation { duration: 150 }
 
         ScriptAction {
             script: {
@@ -485,6 +518,78 @@ Scope {
                     root.helloWordIndex = (root.helloWordIndex + 1) % root.helloWords.length;
                 }
             }
+        }
+    }
+
+    // ── Camera Drift & Breathing (Scale 1.0 -> 1.045, Rotation -0.8° -> 0.8°) ──
+    SequentialAnimation {
+        id: cameraBreathingAnim
+        running: root.active && root.currentStep === 0 && !root.isTransitioningToCard
+        loops: Animation.Infinite
+
+        ParallelAnimation {
+            NumberAnimation {
+                target: root
+                property: "cameraScale"
+                from: 1.0
+                to: 1.045
+                duration: 5500
+                easing.type: Easing.InOutSine
+            }
+            NumberAnimation {
+                target: root
+                property: "cameraAngle"
+                from: -0.7
+                to: 0.7
+                duration: 5500
+                easing.type: Easing.InOutSine
+            }
+        }
+
+        ParallelAnimation {
+            NumberAnimation {
+                target: root
+                property: "cameraScale"
+                from: 1.045
+                to: 1.0
+                duration: 5500
+                easing.type: Easing.InOutSine
+            }
+            NumberAnimation {
+                target: root
+                property: "cameraAngle"
+                from: 0.7
+                to: -0.7
+                duration: 5500
+                easing.type: Easing.InOutSine
+            }
+        }
+    }
+
+    // ── Transition: Zoom handwriting out & Glide Setup Card from bottom ──
+    ParallelAnimation {
+        id: transitionToCardAnim
+
+        NumberAnimation {
+            target: root
+            property: "helloZoomScale"
+            from: 1.0
+            to: 1.15
+            duration: 320
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: root
+            property: "helloOpacity"
+            to: 0.0
+            duration: 300
+            easing.type: Easing.OutCubic
+        }
+
+        onFinished: {
+            root.currentStep = 1;
+            root.isTransitioningToCard = false;
         }
     }
 
@@ -526,7 +631,7 @@ Scope {
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "macsetup"
             WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
             visible: root.active && root.exitOpacity > 0.0
 
@@ -535,6 +640,11 @@ Scope {
                 anchors.fill: parent
                 scale: root.exitScale
                 opacity: root.exitOpacity
+                focus: true
+
+                Keys.onSpacePressed: root.proceedFromHello()
+                Keys.onReturnPressed: root.proceedFromHello()
+                Keys.onEnterPressed: root.proceedFromHello()
 
                 // ─────────────────────────────────────────────────────────────
                 // Background: Dynamic Pastel Mesh Gradient
@@ -637,29 +747,34 @@ Scope {
                 Item {
                     id: screen0
                     anchors.fill: parent
-                    visible: root.currentStep === 0
+                    visible: root.currentStep === 0 || root.isTransitioningToCard
+
+                    // Click anywhere to proceed
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.proceedFromHello()
+                    }
 
                     Item {
                         id: helloContainer
                         anchors.centerIn: parent
-                        width: 580
-                        height: 280
+                        width: (root.currentHelloWord && root.currentHelloWord.width) ? root.currentHelloWord.width : 540
+                        height: (root.currentHelloWord && root.currentHelloWord.height) ? root.currentHelloWord.height : 180
                         opacity: root.helloOpacity
+                        scale: root.helloZoomScale * root.cameraScale
+                        rotation: root.cameraAngle
 
                         Repeater {
-                            model: (root.currentHelloWord && root.currentHelloWord.paths) ? root.currentHelloWord.paths : []
+                            model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
 
                             delegate: Shape {
                                 required property var modelData
                                 required property int index
 
-                                anchors.centerIn: parent
-                                width: parent.width
-                                height: parent.height
+                                anchors.fill: parent
                                 preferredRendererType: Shape.CurveRenderer
 
-                                readonly property real strokeLen: (modelData && modelData.len) ? modelData.len : 500
-                                readonly property real totalLen: (root.currentHelloWord && root.currentHelloWord.total_len) ? root.currentHelloWord.total_len : 2000
                                 readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
                                 readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
 
@@ -667,13 +782,13 @@ Scope {
                                     var g = root.strokeDrawProgress;
                                     if (g <= startPct) return 0.0;
                                     if (g >= endPct) return 1.0;
-                                    return (g - startPct) / (endPct - startPct);
+                                    return (g - startPct) / Math.max(endPct - startPct, 0.0001);
                                 }
 
-                                // Soft ambient glow behind stroke
+                                // Soft ambient bloom behind stroke
                                 ShapePath {
-                                    strokeColor: Qt.rgba(1, 1, 1, 0.18)
-                                    strokeWidth: 8.0
+                                    strokeColor: Qt.rgba(1, 1, 1, 0.22)
+                                    strokeWidth: 8.5
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
@@ -685,7 +800,7 @@ Scope {
                                 // Crisp solid white core handwriting stroke
                                 ShapePath {
                                     strokeColor: "#ffffff"
-                                    strokeWidth: 3.8
+                                    strokeWidth: 4.2
                                     fillColor: "transparent"
                                     capStyle: ShapePath.RoundCap
                                     joinStyle: ShapePath.RoundJoin
@@ -697,76 +812,17 @@ Scope {
                         }
                     }
 
-                    // Liquid Glass "Get Started" Pill Button
-                    Rectangle {
-                        id: getStartedBtn
+                    // Pulsating subtle hint at screen bottom
+                    Text {
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 80
+                        anchors.bottomMargin: 60
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 210
-                        height: 52
-                        radius: 26
-
-                        color: getStartedHover.hovered ? Qt.rgba(0.24, 0.24, 0.28, 0.65) : Qt.rgba(0.16, 0.16, 0.20, 0.50)
-                        border.width: 1.2
-                        border.color: getStartedHover.hovered ? Qt.rgba(1, 1, 1, 0.45) : Qt.rgba(1, 1, 1, 0.25)
-                        scale: getStartedHover.hovered ? 1.04 : 1.0
-                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        Behavior on color { ColorAnimation { duration: 180 } }
-
-                        layer.enabled: true
-                        layer.effect: MultiEffect {
-                            shadowEnabled: true
-                            shadowColor: "#60000000"
-                            shadowBlur: 0.6
-                            shadowVerticalOffset: 6
-                        }
-
-                        // Frosted top reflection
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            height: parent.height / 2
-                            radius: parent.radius
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.22) }
-                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
-                            }
-                        }
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 10
-
-                            Text {
-                                text: "Get Started"
-                                color: "#ffffff"
-                                font.family: "Open Runde"
-                                font.pixelSize: 15
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                text: "→"
-                                color: "#007aff"
-                                font.family: "Open Runde"
-                                font.pixelSize: 17
-                                font.weight: Font.Bold
-                            }
-                        }
-
-                        HoverHandler {
-                            id: getStartedHover
-                            cursorShape: Qt.PointingHandCursor
-                        }
-
-                        TapHandler {
-                            onTapped: {
-                                root.playSound("pop");
-                                root.currentStep = 1;
-                            }
-                        }
+                        text: "Click anywhere or press Space to set up"
+                        color: Qt.rgba(1, 1, 1, 0.55)
+                        font.family: "Open Runde"
+                        font.pixelSize: 13
+                        font.weight: Font.Medium
+                        opacity: 0.5 + 0.3 * Math.sin(root.cameraAngle * 5.0)
                     }
                 }
 
@@ -776,22 +832,47 @@ Scope {
                 Rectangle {
                     id: setupCard
                     anchors.centerIn: parent
-                    width: 820
-                    height: 540
+                    width: 840
+                    height: 550
                     radius: 24
-                    visible: root.currentStep >= 1
+
+                    property real cardYOffset: (root.currentStep === 0) ? 360 : 0
+                    transform: Translate { y: setupCard.cardYOffset }
+                    opacity: (root.currentStep === 0) ? 0.0 : 1.0
+                    visible: opacity > 0.001
+
+                    Behavior on cardYOffset {
+                        NumberAnimation { duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.08 }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                    }
 
                     // Authentic Liquid Glass Card Material
-                    color: Qt.rgba(0.12, 0.12, 0.15, 0.82)
+                    color: Qt.rgba(0.10, 0.10, 0.14, 0.82)
                     border.width: 1.2
                     border.color: Qt.rgba(1, 1, 1, 0.18)
 
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
-                        shadowColor: "#80000000"
+                        shadowColor: "#90000000"
                         shadowBlur: 0.85
                         shadowVerticalOffset: 16
+                    }
+
+                    // Top specular highlight
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 120
+                        radius: parent.radius
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.15) }
+                            GradientStop { position: 0.4; color: Qt.rgba(1, 1, 1, 0.03) }
+                            GradientStop { position: 1.0; color: "transparent" }
+                        }
                     }
 
                     // Inner hairline highlight
@@ -847,7 +928,7 @@ Scope {
                                 Item {
                                     width: 64; height: 64
 
-                                    // Step 1: Display / Mac Monitor Icon
+                                    // Step 1: Country or Region / Globe Icon
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 16
@@ -858,7 +939,7 @@ Scope {
                                         }
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "🖥️"
+                                            text: "🌐"
                                             font.pixelSize: 32
                                         }
                                     }
@@ -935,7 +1016,7 @@ Scope {
                                     lineHeight: 1.15
                                     text: {
                                         switch (root.currentStep) {
-                                            case 1: return "Customize MacShell";
+                                            case 1: return "Country & Appearance";
                                             case 2: return "Connect to Wi-Fi";
                                             case 3: return "Apple Intelligence";
                                             case 4: return "System Check";
@@ -955,7 +1036,7 @@ Scope {
                                     lineHeight: 1.35
                                     text: {
                                         switch (root.currentStep) {
-                                            case 1: return "Choose your preferred system appearance and toggle optional macOS feature modules.";
+                                            case 1: return "Select your country or region to configure language and regional formats, and personalize your system appearance.";
                                             case 2: return "Connect to your wireless network to browse the web, sync widgets, and download resources.";
                                             case 3: return "Intelligent AI assistant powered by Gemini for conversational voice interaction and system commands.";
                                             case 4: return "Automatically verify and retrieve required dependencies, typography fonts, and UI sounds on Arch Linux.";
@@ -1027,6 +1108,98 @@ Scope {
                                     id: step1Col
                                     width: parent.width
                                     spacing: 12
+
+                                    // Country / Region Selection (macOS OOBE style)
+                                    Text {
+                                        text: "SELECT YOUR COUNTRY OR REGION"
+                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                        font.family: "Open Runde"
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                    }
+
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 120
+                                        radius: 12
+                                        color: Qt.rgba(0.14, 0.14, 0.18, 0.55)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.10)
+                                        clip: true
+
+                                        ListView {
+                                            anchors.fill: parent
+                                            anchors.margins: 4
+                                            model: root.countriesList
+                                            spacing: 2
+                                            boundsBehavior: Flickable.StopAtBounds
+
+                                            delegate: Rectangle {
+                                                id: countryItem
+                                                required property var modelData
+                                                required property int index
+                                                readonly property bool isSelected: root.selectedCountry === modelData.name
+
+                                                width: parent.width
+                                                height: 34
+                                                radius: 8
+                                                color: isSelected ? "#007aff" : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+
+                                                Row {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 10
+                                                    anchors.rightMargin: 10
+                                                    spacing: 8
+
+                                                    Text {
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: countryItem.modelData.flag
+                                                        font.pixelSize: 16
+                                                    }
+
+                                                    Text {
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: countryItem.modelData.name
+                                                        color: "#ffffff"
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 12
+                                                        font.weight: countryItem.isSelected ? Font.DemiBold : Font.Normal
+                                                    }
+
+                                                    Item { width: parent.width - 240; height: 1 }
+
+                                                    Text {
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: countryItem.modelData.lang
+                                                        color: countryItem.isSelected ? Qt.rgba(1, 1, 1, 0.85) : Qt.rgba(1, 1, 1, 0.45)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 11
+                                                    }
+
+                                                    Text {
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        text: "✓"
+                                                        color: "#ffffff"
+                                                        font.pixelSize: 12
+                                                        font.weight: Font.Bold
+                                                        visible: countryItem.isSelected
+                                                    }
+                                                }
+
+                                                HoverHandler { id: cHover; cursorShape: Qt.PointingHandCursor }
+                                                TapHandler {
+                                                    onTapped: {
+                                                        root.selectedCountry = countryItem.modelData.name;
+                                                        root.selectedLanguage = countryItem.modelData.code;
+                                                        root.selectedVoice = countryItem.modelData.voice;
+                                                        root.playSound("tink");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Item { width: 1; height: 2 }
 
                                     // Theme Selector Cards (Light & Dark)
                                     Text {

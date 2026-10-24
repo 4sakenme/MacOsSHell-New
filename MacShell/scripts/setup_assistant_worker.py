@@ -534,30 +534,47 @@ def run_setup(options_raw: str = ""):
     FONTS_DIR.mkdir(parents=True, exist_ok=True)
     QUICKSHELL_CONFIG.mkdir(parents=True, exist_ok=True)
 
-    # 1. Clone / Copy MacShell Repo into ~/.config/quickshell/MacShell
-    emit(15, "Source Code", "GitHub", "Installing MacShell to ~/.config/quickshell/MacShell...")
+    # 1. Deploy MacShell directly into ~/.config/quickshell/MacShell
+    emit(15, "Source Code", "Deploying", "Deploying MacShell directly into ~/.config/quickshell/MacShell...")
+    MACSHELL_CONFIG.mkdir(parents=True, exist_ok=True)
+    MACLOCK_CONFIG.mkdir(parents=True, exist_ok=True)
+
     bootstrap_repo = BOOTSTRAP_CACHE / "repo"
+    src_macshell = None
     if bootstrap_repo.exists() and (bootstrap_repo / "MacShell").exists():
-        emit(20, "Copying Code", "Local", "Synchronizing components from bootstrap cache...")
-        if not MACSHELL_CONFIG.exists():
-            shutil.copytree(bootstrap_repo / "MacShell", MACSHELL_CONFIG, symlinks=True, dirs_exist_ok=True)
-        if (bootstrap_repo / "MacLock").exists() and not MACLOCK_CONFIG.exists():
-            shutil.copytree(bootstrap_repo / "MacLock", MACLOCK_CONFIG, symlinks=True, dirs_exist_ok=True)
-        if (bootstrap_repo / "hypr-macshell").exists() and not (HOME / ".config" / "hypr-macshell").exists():
-            shutil.copytree(bootstrap_repo / "hypr-macshell", HOME / ".config" / "hypr-macshell", symlinks=True, dirs_exist_ok=True)
-    elif not MACSHELL_CONFIG.exists():
-        emit(20, "Downloading", "1.8 MB/s", "Cloning latest source from GitHub...")
-        try:
-            subprocess.run([
-                "git", "clone", "--depth", "1",
-                "https://github.com/4sakenme/MacOsSHell-New.git",
-                str(BOOTSTRAP_CACHE / "repo")
-            ], check=True, timeout=60)
-            shutil.copytree(BOOTSTRAP_CACHE / "repo" / "MacShell", MACSHELL_CONFIG, symlinks=True, dirs_exist_ok=True)
-            if (BOOTSTRAP_CACHE / "repo" / "MacLock").exists():
-                shutil.copytree(BOOTSTRAP_CACHE / "repo" / "MacLock", MACLOCK_CONFIG, symlinks=True, dirs_exist_ok=True)
-        except Exception as e:
-            emit(22, "Warning", "Local", f"Could not clone ({str(e)}), using existing...")
+        src_macshell = bootstrap_repo / "MacShell"
+    elif MACSHELL_DIR.exists() and (MACSHELL_DIR / "shell.qml").exists():
+        src_macshell = MACSHELL_DIR
+
+    if src_macshell and src_macshell.resolve() != MACSHELL_CONFIG.resolve():
+        emit(20, "Copying Code", "Local", "Synchronizing files directly into ~/.config/quickshell/MacShell...")
+        for item in src_macshell.iterdir():
+            dest = MACSHELL_CONFIG / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dest)
+
+        # Deploy MacLock if available
+        src_maclock = bootstrap_repo / "MacLock" if (bootstrap_repo / "MacLock").exists() else (MACSHELL_DIR.parent / "MacLock")
+        if src_maclock.exists() and src_maclock.resolve() != MACLOCK_CONFIG.resolve():
+            for item in src_maclock.iterdir():
+                dest = MACLOCK_CONFIG / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
+
+    # Flatten nested MacShell directory if created accidentally
+    nested_macshell = MACSHELL_CONFIG / "MacShell"
+    if (nested_macshell / "shell.qml").exists():
+        for item in nested_macshell.iterdir():
+            dest = MACSHELL_CONFIG / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dest)
+        shutil.rmtree(nested_macshell, ignore_errors=True)
 
     # 2. Soundpack
     if sound_requested:

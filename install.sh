@@ -269,28 +269,60 @@ fi
 REPO_ROOT="$BOOTSTRAP_DIR/repo"
 
 # ── 4. Execution (GUI vs CLI Mode) ──
+CONFIG_DEST="$HOME/.config/quickshell/MacShell"
+LOCK_DEST="$HOME/.config/quickshell/MacLock"
+mkdir -p "$HOME/.config/quickshell" "$HOME/.config/macshell" "$CONFIG_DEST" "$LOCK_DEST"
+
+# Deploy MacShell components directly into $CONFIG_DEST (never nested)
+if [ -d "$REPO_ROOT/MacShell" ]; then
+    cp -ru "$REPO_ROOT/MacShell"/* "$CONFIG_DEST/" 2>/dev/null || true
+fi
+
+# Flatten any nested MacShell directory
+if [ -f "$CONFIG_DEST/MacShell/shell.qml" ]; then
+    log_warn "Detected nested MacShell directory. Flattening structure..."
+    cp -ru "$CONFIG_DEST/MacShell"/* "$CONFIG_DEST/"
+    rm -rf "$CONFIG_DEST/MacShell"
+fi
+
+# Deploy MacLock components directly into $LOCK_DEST
+if [ -d "$REPO_ROOT/MacLock" ]; then
+    cp -ru "$REPO_ROOT/MacLock"/* "$LOCK_DEST/" 2>/dev/null || true
+fi
+if [ -f "$LOCK_DEST/MacLock/MacLock.qml" ]; then
+    cp -ru "$LOCK_DEST/MacLock"/* "$LOCK_DEST/"
+    rm -rf "$LOCK_DEST/MacLock"
+fi
+
+# Integrity check: verify core files exist directly inside $CONFIG_DEST
+for f in shell.qml MacBar.qml MacDock.qml StageManager.qml; do
+    if [ ! -f "$CONFIG_DEST/$f" ]; then
+        log_err "Integrity check failed: $f missing in $CONFIG_DEST."
+        exit 1
+    fi
+done
+log_ok "Integrity verified: shell.qml, MacBar.qml, MacDock.qml, StageManager.qml are directly in $CONFIG_DEST"
+
 if [ "$MODE" = "cli" ]; then
     log_info "Running non-interactive CLI installation..."
-    CONFIG_DEST="$HOME/.config/quickshell/MacShell"
-    mkdir -p "$HOME/.config/quickshell" "$HOME/.config/macshell"
-    
-    if [ ! -d "$CONFIG_DEST" ]; then
-        cp -r "$REPO_ROOT/MacShell" "$CONFIG_DEST"
-    fi
     touch "$HOME/.config/macshell/.setup_completed"
     touch "$CONFIG_DEST/.setup_completed"
     
     # Run setup worker
-    if [ -f "$REPO_ROOT/MacShell/scripts/setup_assistant_worker.py" ]; then
-        python3 "$REPO_ROOT/MacShell/scripts/setup_assistant_worker.py" run_setup '{"siri":false,"sound_pack":true,"wifi_manager":true}'
+    if [ -f "$CONFIG_DEST/scripts/setup_assistant_worker.py" ]; then
+        python3 "$CONFIG_DEST/scripts/setup_assistant_worker.py" run_setup '{"siri":false,"sound_pack":true,"wifi_manager":true}'
     fi
     log_ok "Installation completed in CLI mode. Launch with: quickshell -c MacShell"
     exit 0
 fi
 
-SETUP_QML="$REPO_ROOT/MacShell/SetupAssistant.qml"
+SETUP_QML="$CONFIG_DEST/SetupAssistant.qml"
 if [ ! -f "$SETUP_QML" ]; then
-    log_err "Could not find $SETUP_QML."
+    SETUP_QML="$REPO_ROOT/MacShell/SetupAssistant.qml"
+fi
+
+if [ ! -f "$SETUP_QML" ]; then
+    log_err "Could not find SetupAssistant.qml."
     exit 1
 fi
 
