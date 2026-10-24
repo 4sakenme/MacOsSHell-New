@@ -947,9 +947,9 @@ Scope {
                     }
 
                     // Authentic Liquid Glass Card Material
-                    color: "#351a1a24"
+                    color: Qt.rgba(0.08, 0.08, 0.12, 0.72)
                     border.width: 1
-                    border.color: Qt.rgba(1, 1, 1, 0.18)
+                    border.color: Qt.rgba(1, 1, 1, 0.20)
 
                     layer.enabled: true
                     layer.effect: MultiEffect {
@@ -1004,7 +1004,8 @@ Scope {
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        anchors.bottom: cardBottomBar.top
+                        anchors.bottom: cardBottomNav.top
+                        anchors.bottomMargin: 8
                         anchors.margins: 28
 
                         // ── Left Column: Step Indicators & Hero Branding ──
@@ -1056,19 +1057,50 @@ Scope {
                                         }
                                     }
 
-                                    // Step 2: Wi-Fi Waves Icon
+                                    // Step 2: Apple Wi-Fi Fan Icon
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: 16
                                         visible: root.currentStep === 2
                                         gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "#34c759" }
-                                            GradientStop { position: 1.0; color: "#1d8338" }
+                                            GradientStop { position: 0.0; color: "#007aff" }
+                                            GradientStop { position: 1.0; color: "#0051ba" }
                                         }
-                                        Text {
+                                        Canvas {
                                             anchors.centerIn: parent
-                                            text: "📶"
-                                            font.pixelSize: 30
+                                            width: 34; height: 34
+                                            onPaint: {
+                                                var ctx = getContext("2d");
+                                                ctx.reset();
+                                                var cx = width / 2;
+                                                var cy = height * 0.88;
+                                                ctx.strokeStyle = "#ffffff";
+                                                ctx.lineCap = "round";
+
+                                                // Arc 3 (Outer)
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy, 22, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                ctx.lineWidth = 3.2;
+                                                ctx.stroke();
+
+                                                // Arc 2 (Middle)
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy, 14.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                ctx.lineWidth = 3.0;
+                                                ctx.stroke();
+
+                                                // Arc 1 (Inner)
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy, 7.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                ctx.lineWidth = 2.8;
+                                                ctx.stroke();
+
+                                                // Dot
+                                                ctx.beginPath();
+                                                ctx.arc(cx, cy - 0.5, 2.5, 0, Math.PI * 2);
+                                                ctx.fillStyle = "#ffffff";
+                                                ctx.fill();
+                                            }
                                         }
                                     }
 
@@ -1443,7 +1475,47 @@ Scope {
                                             anchors.leftMargin: 14; anchors.rightMargin: 14
                                             spacing: 10
 
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "📶"; font.pixelSize: 18 }
+                                            Item {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 22; height: 22
+
+                                                Canvas {
+                                                    anchors.centerIn: parent
+                                                    width: 20; height: 20
+                                                    onPaint: {
+                                                        var ctx = getContext("2d");
+                                                        ctx.reset();
+                                                        var cx = width / 2;
+                                                        var cy = height * 0.88;
+                                                        ctx.strokeStyle = "#ffffff";
+                                                        ctx.lineCap = "round";
+
+                                                        // Arc 3 (Outer)
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy, 14, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                        ctx.lineWidth = 2.0;
+                                                        ctx.stroke();
+
+                                                        // Arc 2 (Middle)
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy, 9, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                        ctx.lineWidth = 1.9;
+                                                        ctx.stroke();
+
+                                                        // Arc 1 (Inner)
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy, 4.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                        ctx.lineWidth = 1.8;
+                                                        ctx.stroke();
+
+                                                        // Dot
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy - 0.5, 1.6, 0, Math.PI * 2);
+                                                        ctx.fillStyle = "#ffffff";
+                                                        ctx.fill();
+                                                    }
+                                                }
+                                            }
 
                                             Column {
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -2281,84 +2353,263 @@ Scope {
 
                                         // 1. Theme
                                         Rectangle {
-                                            width: (parent.width - 12) / 2; height: 60; radius: 10
-                                            color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                            width: (parent.width - 12) / 2; height: 64; radius: 12
+                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
                                             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+
                                             Row {
-                                                anchors.centerIn: parent; spacing: 10
-                                                Text { text: "🎨"; font.pixelSize: 18 }
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                                spacing: 12
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Item {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 28; height: 28
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "🎨"
+                                                        font.pixelSize: 20
+                                                    }
+                                                }
+
                                                 Column {
-                                                    Text { text: "Appearance"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.darkMode ? "Dark Mode" : "Light Mode"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 44
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Appearance"
+                                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 11
+                                                    }
+                                                    Text {
+                                                        text: root.darkMode ? "Dark Mode" : "Light Mode"
+                                                        color: "#ffffff"
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 13
+                                                        font.weight: Font.DemiBold
+                                                    }
                                                 }
                                             }
                                         }
 
                                         // 2. Region & Language
                                         Rectangle {
-                                            width: (parent.width - 12) / 2; height: 60; radius: 10
-                                            color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                            width: (parent.width - 12) / 2; height: 64; radius: 12
+                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
                                             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+
                                             Row {
-                                                anchors.centerIn: parent; spacing: 10
-                                                Text { text: "🌐"; font.pixelSize: 18 }
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                                spacing: 12
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Item {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 28; height: 28
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "🌐"
+                                                        font.pixelSize: 20
+                                                    }
+                                                }
+
                                                 Column {
-                                                    Text { text: "Region / Language"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.selectedCountry; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 44
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Region & Language"
+                                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 11
+                                                    }
+                                                    Text {
+                                                        text: root.selectedCountry
+                                                        color: "#ffffff"
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 13
+                                                        font.weight: Font.DemiBold
+                                                        elide: Text.ElideRight
+                                                        width: parent.width
+                                                    }
                                                 }
                                             }
                                         }
 
-                                        // 3. Wi-Fi
+                                        // 3. Apple Wi-Fi Network
                                         Rectangle {
-                                            width: (parent.width - 12) / 2; height: 60; radius: 10
-                                            color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                            width: (parent.width - 12) / 2; height: 64; radius: 12
+                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
                                             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+
                                             Row {
-                                                anchors.centerIn: parent; spacing: 10
-                                                Text { text: "📶"; font.pixelSize: 18 }
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                                spacing: 12
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Item {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 28; height: 28
+
+                                                    Canvas {
+                                                        anchors.centerIn: parent
+                                                        width: 24; height: 24
+                                                        onPaint: {
+                                                            var ctx = getContext("2d");
+                                                            ctx.reset();
+                                                            var cx = width / 2;
+                                                            var cy = height * 0.88;
+                                                            ctx.strokeStyle = "#38bdf8";
+                                                            ctx.lineCap = "round";
+
+                                                            // Arc 3 (Outer)
+                                                            ctx.beginPath();
+                                                            ctx.arc(cx, cy, 16, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                            ctx.lineWidth = 2.2;
+                                                            ctx.stroke();
+
+                                                            // Arc 2 (Middle)
+                                                            ctx.beginPath();
+                                                            ctx.arc(cx, cy, 10.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                            ctx.lineWidth = 2.0;
+                                                            ctx.stroke();
+
+                                                            // Arc 1 (Inner)
+                                                            ctx.beginPath();
+                                                            ctx.arc(cx, cy, 5.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                            ctx.lineWidth = 1.9;
+                                                            ctx.stroke();
+
+                                                            // Dot
+                                                            ctx.beginPath();
+                                                            ctx.arc(cx, cy - 0.5, 1.8, 0, Math.PI * 2);
+                                                            ctx.fillStyle = "#38bdf8";
+                                                            ctx.fill();
+                                                        }
+                                                    }
+                                                }
+
                                                 Column {
-                                                    Text { text: "Wi-Fi Network"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.wifiConnectedSsid ? root.wifiConnectedSsid : (root.wifiManagerEnabled ? "Ready to connect" : "Disabled"); color: root.wifiConnectedSsid ? "#34c759" : "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 44
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Wi-Fi Network"
+                                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 11
+                                                    }
+                                                    Text {
+                                                        text: root.wifiConnectedSsid ? root.wifiConnectedSsid : (root.wifiManagerEnabled ? "Ready to connect" : "Disabled")
+                                                        color: root.wifiConnectedSsid ? "#34c759" : "#ffffff"
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 13
+                                                        font.weight: Font.DemiBold
+                                                        elide: Text.ElideRight
+                                                        width: parent.width
+                                                    }
                                                 }
                                             }
                                         }
 
                                         // 4. Apple Intelligence & Siri
                                         Rectangle {
-                                            width: (parent.width - 12) / 2; height: 60; radius: 10
-                                            color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
+                                            width: (parent.width - 12) / 2; height: 64; radius: 12
+                                            color: Qt.rgba(0.14, 0.14, 0.18, 0.65)
                                             border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+
                                             Row {
-                                                anchors.centerIn: parent; spacing: 10
-                                                Text { text: "🔮"; font.pixelSize: 18 }
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                                spacing: 12
+                                                anchors.verticalCenter: parent.verticalCenter
+
+                                                Item {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 28; height: 28
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "🔮"
+                                                        font.pixelSize: 20
+                                                    }
+                                                }
+
                                                 Column {
-                                                    Text { text: "Apple Intelligence"; color: Qt.rgba(1, 1, 1, 0.50); font.pixelSize: 10 }
-                                                    Text { text: root.siriEnabled ? "Active & Ready" : "Disabled"; color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.5); font.pixelSize: 12; font.weight: Font.DemiBold }
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 44
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: "Apple Intelligence"
+                                                        color: Qt.rgba(1, 1, 1, 0.50)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 11
+                                                    }
+                                                    Text {
+                                                        text: root.siriEnabled ? "Active & Ready" : "Disabled"
+                                                        color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.50)
+                                                        font.family: "Open Runde"
+                                                        font.pixelSize: 13
+                                                        font.weight: Font.DemiBold
+                                                    }
                                                 }
                                             }
                                         }
                                     }
 
-                                    Item { width: 1; height: 10 }
+                                    Item { width: 1; height: 8 }
 
-                                    // Finish CTA Pill Button
+                                    // Completion banner
                                     Rectangle {
-                                        width: parent.width; height: 48; radius: 12
-                                        color: finishBtnHover.hovered ? "#0062cc" : "#007aff"
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.25)
+                                        width: parent.width
+                                        height: 68
+                                        radius: 12
+                                        color: Qt.rgba(0, 122, 255, 0.10)
+                                        border.width: 1
+                                        border.color: Qt.rgba(0, 122, 255, 0.28)
 
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Start Using MacShell"
-                                            color: "#ffffff"
-                                            font.family: "Open Runde"
-                                            font.pixelSize: 15
-                                            font.weight: Font.DemiBold
+                                        Row {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 16; anchors.rightMargin: 16
+                                            spacing: 14
+
+                                            Item {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 28; height: 28
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "✨"
+                                                    font.pixelSize: 20
+                                                }
+                                            }
+
+                                            Column {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: parent.width - 46
+                                                spacing: 3
+
+                                                Text {
+                                                    text: "Setup Completed"
+                                                    color: "#ffffff"
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.DemiBold
+                                                }
+                                                Text {
+                                                    text: "Your macOS desktop environment is ready. Click \"Get Started\" below to launch."
+                                                    color: Qt.rgba(1, 1, 1, 0.65)
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 11
+                                                }
+                                            }
                                         }
-
-                                        HoverHandler { id: finishBtnHover; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: root.finishSetup() }
                                     }
                                 }
                             }
@@ -2366,30 +2617,21 @@ Scope {
                     }
 
                     // ═════════════════════════════════════════════════════════
-                    // Card Bottom Bar (Height 64px)
+                    // Seamless Floating Bottom Navigation Bar (No dark slabs)
                     // ═════════════════════════════════════════════════════════
-                    Rectangle {
-                        id: cardBottomBar
+                    Item {
+                        id: cardBottomNav
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        height: 66
-                        radius: 28
-                        color: Qt.rgba(0.08, 0.08, 0.12, 0.65)
-
-                        // Hairline Separator
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            height: 1
-                            color: Qt.rgba(1, 1, 1, 0.12)
-                        }
+                        height: 56
+                        anchors.leftMargin: 28
+                        anchors.rightMargin: 28
+                        anchors.bottomMargin: 14
 
                         // Left: Back button
                         Rectangle {
                             anchors.left: parent.left
-                            anchors.leftMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
                             visible: root.currentStep > 1
                             width: 100; height: 36; radius: 18
@@ -2410,12 +2652,11 @@ Scope {
                             TapHandler { onTapped: root.goBack() }
                         }
 
-                        // Right: Continue / Install / Complete Pill Button
+                        // Right: Continue / Install / Get Started Pill Button
                         Rectangle {
                             anchors.right: parent.right
-                            anchors.rightMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
-                            width: (root.currentStep === 4 && !root.downloadCompleted) ? 165 : 125
+                            width: (root.currentStep === 4 && !root.downloadCompleted) ? 165 : (root.currentStep === 5 ? 135 : 125)
                             height: 36
                             radius: 18
                             color: nextBtnHover.hovered ? "#0062cc" : "#007aff"
@@ -2433,7 +2674,7 @@ Scope {
                                     color: "#ffffff"
                                     text: {
                                         if (root.currentStep === 4 && !root.downloadCompleted) return "Install & Continue";
-                                        if (root.currentStep === 5) return "Complete";
+                                        if (root.currentStep === 5) return "Get Started";
                                         return "Continue";
                                     }
                                 }
@@ -2448,7 +2689,15 @@ Scope {
                             }
 
                             HoverHandler { id: nextBtnHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.goNext() }
+                            TapHandler {
+                                onTapped: {
+                                    if (root.currentStep === 5) {
+                                        root.finishSetup();
+                                    } else {
+                                        root.goNext();
+                                    }
+                                }
+                            }
                         }
                     }
                 }
