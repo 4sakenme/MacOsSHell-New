@@ -132,7 +132,7 @@ done
 
 banner
 
-# ── 1. Environment Verification ──
+# ── 1. Environment & Distribution Verification ──
 log_info "Verifying system environment..."
 
 if [ "$(uname -s)" != "Linux" ]; then
@@ -140,12 +140,51 @@ if [ "$(uname -s)" != "Linux" ]; then
     exit 1
 fi
 
-if ! command -v pacman >/dev/null 2>&1; then
-    log_warn "Pacman package manager was not found."
-    log_warn "MacShell is optimized specifically for Arch Linux, CachyOS, and EndeavourOS."
+DISTRO="linux"
+PKG_MGR="unknown"
+
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO="${ID:-linux}"
+    log_ok "Detected distribution: ${PRETTY_NAME:-$NAME} ($DISTRO)"
 fi
 
-if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+if command -v pacman >/dev/null 2>&1; then
+    PKG_MGR="pacman"
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MGR="dnf"
+elif command -v apt-get >/dev/null 2>&1; then
+    PKG_MGR="apt"
+elif command -v zypper >/dev/null 2>&1; then
+    PKG_MGR="zypper"
+fi
+
+install_pkg() {
+    local p="$1"
+    case "$PKG_MGR" in
+        pacman)
+            sudo pacman -S --needed --noconfirm "$p"
+            ;;
+        dnf)
+            sudo dnf install -y "$p"
+            ;;
+        apt)
+            sudo apt-get update -qq && sudo apt-get install -y "$p"
+            ;;
+        zypper)
+            sudo zypper --non-interactive in "$p"
+            ;;
+        *)
+            log_warn "Unknown package manager. Please install '$p' using your distribution tools."
+            ;;
+    esac
+}
+
+if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    log_ok "Hyprland is already running. Shell can launch directly."
+elif [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    log_ok "Running on active Wayland session ($WAYLAND_DISPLAY)."
+else
     log_warn "No active Wayland/Hyprland session detected."
     log_warn "Running inside an active Hyprland session is strongly recommended for Liquid Glass shaders."
     if [ "$MODE" = "gui" ]; then
@@ -156,8 +195,6 @@ if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; t
             exit 0
         fi
     fi
-else
-    log_ok "Running on active Wayland / Hyprland session."
 fi
 
 # ── 2. Check & Install Essential Dependencies (git, curl, python3, quickshell) ──
@@ -167,8 +204,8 @@ for pkg in git curl python3; do
     if need_cmd "$pkg"; then
         log_ok "$pkg is available."
     else
-        log_info "Installing package $pkg via pacman..."
-        sudo pacman -S --needed --noconfirm "$pkg"
+        log_info "Installing package $pkg via $PKG_MGR..."
+        install_pkg "$pkg"
     fi
 done
 
@@ -176,24 +213,33 @@ done
 if need_cmd quickshell || need_cmd qs; then
     log_ok "Quickshell is installed ($(quickshell --version 2>/dev/null | head -n1 || echo 'ready'))."
 else
-    log_info "Quickshell not found. Detecting AUR helper..."
-    AUR_HELPER=""
-    if need_cmd yay; then
-        AUR_HELPER="yay"
-    elif need_cmd paru; then
-        AUR_HELPER="paru"
-    fi
+    log_info "Quickshell not found. Detecting installation method for $DISTRO..."
+    if [ "$PKG_MGR" = "pacman" ]; then
+        AUR_HELPER=""
+        if need_cmd yay; then
+            AUR_HELPER="yay"
+        elif need_cmd paru; then
+            AUR_HELPER="paru"
+        fi
 
-    if [ -n "$AUR_HELPER" ]; then
-        log_info "Installing quickshell-git via $AUR_HELPER..."
-        $AUR_HELPER -S --needed --noconfirm quickshell-git
+        if [ -n "$AUR_HELPER" ]; then
+            log_info "Installing quickshell-git via $AUR_HELPER..."
+            $AUR_HELPER -S --needed --noconfirm quickshell-git
+        else
+            log_warn "Neither yay nor paru found. Building yay-bin from AUR..."
+            TMP_YAY=$(mktemp -d)
+            git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$TMP_YAY"
+            (cd "$TMP_YAY" && makepkg -si --noconfirm)
+            rm -rf "$TMP_YAY"
+            yay -S --needed --noconfirm quickshell-git
+        fi
+    elif [ "$PKG_MGR" = "dnf" ]; then
+        log_info "Enabling COPR repository for quickshell on Fedora..."
+        sudo dnf copr enable -y vsoultann/quickshell || true
+        sudo dnf install -y quickshell
     else
-        log_warn "Neither yay nor paru found. Building yay-bin from AUR..."
-        TMP_YAY=$(mktemp -d)
-        git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$TMP_YAY"
-        (cd "$TMP_YAY" && makepkg -si --noconfirm)
-        rm -rf "$TMP_YAY"
-        yay -S --needed --noconfirm quickshell-git
+        log_warn "Quickshell is required to run the shell interface."
+        log_warn "Please install Quickshell from: https://quickshell.org/download/"
     fi
 fi
 

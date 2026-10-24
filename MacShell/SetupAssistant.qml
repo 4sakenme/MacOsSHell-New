@@ -77,6 +77,7 @@ Scope {
     readonly property var helloWords: HelloData.words
     readonly property var currentHelloWord: (helloWords && helloWords.length > 0) ? helloWords[helloWordIndex] : null
     property real strokeDrawProgress: 0.0
+    property real helloOpacity: 1.0
 
     // Python executable & worker script resolver (handles standalone bootstrap or normal shell)
     readonly property string workerScript: {
@@ -455,7 +456,7 @@ Scope {
         loops: Animation.Infinite
 
         PropertyAction { target: root; property: "strokeDrawProgress"; value: 0.0 }
-        PropertyAction { target: helloContainer; property: "opacity"; value: 1.0 }
+        PropertyAction { target: root; property: "helloOpacity"; value: 1.0 }
 
         NumberAnimation {
             target: root
@@ -469,8 +470,8 @@ Scope {
         PauseAnimation { duration: 1100 }
 
         NumberAnimation {
-            target: helloContainer
-            property: "opacity"
+            target: root
+            property: "helloOpacity"
             to: 0.0
             duration: 450
             easing.type: Easing.OutCubic
@@ -643,6 +644,7 @@ Scope {
                         anchors.centerIn: parent
                         width: 580
                         height: 280
+                        opacity: root.helloOpacity
 
                         Repeater {
                             model: (root.currentHelloWord && root.currentHelloWord.paths) ? root.currentHelloWord.paths : []
@@ -884,7 +886,7 @@ Scope {
                                         SiriOrb {
                                             anchors.fill: parent
                                             active: root.currentStep === 3
-                                            isSpeaking: true
+                                            isProcessing: true
                                         }
                                     }
 
