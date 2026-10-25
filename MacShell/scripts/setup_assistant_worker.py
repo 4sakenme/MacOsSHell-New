@@ -637,17 +637,30 @@ def run_setup(options_raw: str = ""):
                         pass
     os.system("fc-cache -f ~/.local/share/fonts >/dev/null 2>&1")
 
-    # 3b. macOS Tahoe 26 Blue Ribbon Wallpaper
-    emit(60, "macOS Wallpaper", "Deploying", "Configuring macOS Tahoe 26 Blue Ribbon Wallpaper...")
+    # 3b. macOS Tahoe 26 Blue Ribbon Wallpapers (Light & Dark pairs)
+    emit(60, "macOS Wallpaper", "Deploying", "Configuring macOS Tahoe 26 Light & Dark Wallpapers...")
     wallpapers_dest = MACSHELL_CONFIG / "assets" / "wallpapers"
     wallpapers_dest.mkdir(parents=True, exist_ok=True)
-    tahoe_dest = wallpapers_dest / "tahoe.jpg"
-    bundled_tahoe = MACSHELL_DIR / "assets" / "wallpapers" / "tahoe.jpg"
-    if not tahoe_dest.exists() and bundled_tahoe.exists():
-        try:
-            shutil.copy2(bundled_tahoe, tahoe_dest)
-        except Exception:
-            pass
+    
+    bundled_wp_dir = MACSHELL_DIR / "assets" / "wallpapers"
+    for wp_name in ["tahoe.jpg", "tahoe_light.jpg", "tahoe_dark.jpg"]:
+        dest = wallpapers_dest / wp_name
+        src = bundled_wp_dir / wp_name
+        if src.exists():
+            try:
+                shutil.copy2(src, dest)
+            except Exception:
+                pass
+
+    chosen_wp = str(wallpapers_dest / ("tahoe_dark.jpg" if dark_mode else "tahoe_light.jpg"))
+    pair_light = str(wallpapers_dest / "tahoe_light.jpg")
+    pair_dark = str(wallpapers_dest / "tahoe_dark.jpg")
+
+    # Immediately set desktop wallpaper
+    if check_command("awww"):
+        subprocess.run(["awww", "img", chosen_wp, "--transition-type", "fade", "--transition-duration", "0.7"], check=False)
+    elif check_command("swww"):
+        subprocess.run(["swww", "img", chosen_wp, "--transition-type", "fade", "--transition-duration", "0.7"], check=False)
 
     # 4. Python AI packages if Siri was selected
     if siri_requested:
@@ -739,6 +752,42 @@ def run_setup(options_raw: str = ""):
     }
     with open(MACSHELL_CONFIG / "settings.json", "w", encoding="utf-8") as f:
         json.dump(macshell_settings, f, indent=2, ensure_ascii=False)
+
+    # Update macbar settings.json with default light/dark pair and wallpaper
+    macbar_settings_path = HOME / ".config" / "macbar" / "settings.json"
+    macbar_settings = {}
+    if macbar_settings_path.exists():
+        try:
+            with open(macbar_settings_path, "r", encoding="utf-8") as f:
+                macbar_settings = json.load(f)
+        except Exception:
+            pass
+    macbar_settings["darkMode"] = dark_mode
+    macbar_settings["appearanceMode"] = "dark" if dark_mode else "light"
+    macbar_settings["wallpaperPath"] = chosen_wp
+    macbar_settings["wpRestorePath"] = chosen_wp
+    macbar_settings["wpPairLight"] = pair_light
+    macbar_settings["wpPairDark"] = pair_dark
+    macbar_settings["wallpaperAppearance"] = "auto"
+    macbar_settings_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(macbar_settings_path, "w", encoding="utf-8") as f:
+        json.dump(macbar_settings, f, indent=2, ensure_ascii=False)
+
+    # Update macdock settings.json
+    macdock_settings_path = HOME / ".config" / "macdock" / "settings.json"
+    macdock_settings = {}
+    if macdock_settings_path.exists():
+        try:
+            with open(macdock_settings_path, "r", encoding="utf-8") as f:
+                macdock_settings = json.load(f)
+        except Exception:
+            pass
+    macdock_settings["darkMode"] = dark_mode
+    macdock_settings["wallpaperPath"] = chosen_wp
+    macdock_settings["dockStyle"] = "liquid" if liquid_glass else "blur"
+    macdock_settings_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(macdock_settings_path, "w", encoding="utf-8") as f:
+        json.dump(macdock_settings, f, indent=2, ensure_ascii=False)
 
     # Save gemini_config if provided
     if api_key:

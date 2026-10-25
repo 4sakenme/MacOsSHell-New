@@ -28,6 +28,7 @@ Scope {
 
     // Feature Modules Checklist choices
     property bool darkMode: hub && hub.bar ? hub.bar.darkMode : true
+    onDarkModeChanged: root.applyThemeToSystem()
     property bool liquidGlassEnabled: hub && hub.dock ? hub.dock.dockStyle === "liquid" : true
     readonly property bool stageManagerEnabled: true
     property bool wifiManagerEnabled: true
@@ -382,7 +383,48 @@ Scope {
         }
     }
 
+    function applyThemeToSystem() {
+        var wpPath = root.darkMode ? (Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg")
+                                   : (Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg");
+        var iconTheme = root.darkMode ? "MacOS-Like-Dark" : "MacOS-Like-Light";
+
+        // 1. Immediately apply to the desktop background via awww / swww
+        Quickshell.execDetached(["sh", "-c", "if command -v awww >/dev/null 2>&1; then awww img '" + wpPath + "' --transition-type fade --transition-duration 0.7; elif command -v swww >/dev/null 2>&1; then swww img '" + wpPath + "' --transition-type fade --transition-duration 0.7; fi"]);
+
+        // 2. Set GTK/GNOME appearance
+        Quickshell.execDetached(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", root.darkMode ? "prefer-dark" : "prefer-light"]);
+        Quickshell.execDetached(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", iconTheme]);
+
+        // 3. Update MacBar / MacDock if running live
+        if (root.hub && root.hub.bar) {
+            root.hub.bar.darkMode = root.darkMode;
+            root.hub.bar.wpPairLight = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg";
+            root.hub.bar.wpPairDark = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg";
+            root.hub.bar.wallpaperAppearance = "auto";
+            root.hub.bar.wpApplyAppearance();
+        }
+        if (root.hub && root.hub.dock) {
+            root.hub.dock.darkMode = root.darkMode;
+        }
+
+        // 4. Update settings.json files on disk
+        var pyCmd = "import json, os\n" +
+                    "p = os.path.expanduser('~/.config/macbar/settings.json')\n" +
+                    "if os.path.exists(p):\n" +
+                    "    with open(p) as f: d = json.load(f)\n" +
+                    "    d['darkMode'] = " + (root.darkMode ? "True" : "False") + "\n" +
+                    "    d['appearanceMode'] = '" + (root.darkMode ? "dark" : "light") + "'\n" +
+                    "    d['wallpaperPath'] = '" + wpPath + "'\n" +
+                    "    d['wpRestorePath'] = '" + wpPath + "'\n" +
+                    "    d['wpPairLight'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg')\n" +
+                    "    d['wpPairDark'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg')\n" +
+                    "    d['wallpaperAppearance'] = 'auto'\n" +
+                    "    with open(p, 'w') as f: json.dump(d, f, indent=2)\n";
+        Quickshell.execDetached(["python3", "-c", pyCmd]);
+    }
+
     function saveAppearance() {
+        applyThemeToSystem();
         if (root.hub && root.hub.bar) {
             root.hub.bar.darkMode = root.darkMode;
             root.hub.bar.stageManager = root.stageManagerEnabled;
@@ -646,6 +688,9 @@ Scope {
             root.strokeDrawProgress = 0.0;
             root.helloOpacity = 1.0;
         }
+        function dark(enable: bool): void {
+            root.darkMode = enable;
+        }
         function close(): void { root.active = false; }
     }
 
@@ -688,26 +733,50 @@ Scope {
                     anchors.fill: parent
                     clip: true
 
-                    Image {
-                        id: tahoeWallpaper
+                    Item {
+                        id: wallpaperDrifter
                         anchors.fill: parent
-                        source: Qt.resolvedUrl("assets/wallpapers/tahoe.jpg")
-                        fillMode: Image.PreserveAspectCrop
                         scale: 1.08 // Slightly enlarged for seamless subtle parallax drifting
-                        smooth: true
-                        mipmap: true
 
                         property real driftT: 0.0
 
                         transform: Translate {
-                            x: Math.sin(tahoeWallpaper.driftT * 0.35) * 22
-                            y: Math.cos(tahoeWallpaper.driftT * 0.28) * 14
+                            x: Math.sin(wallpaperDrifter.driftT * 0.35) * 22
+                            y: Math.cos(wallpaperDrifter.driftT * 0.28) * 14
                         }
 
                         FrameAnimation {
                             running: root.active
                             onTriggered: {
-                                tahoeWallpaper.driftT += 0.005;
+                                wallpaperDrifter.driftT += 0.005;
+                            }
+                        }
+
+                        // Light mode wallpaper
+                        Image {
+                            id: tahoeLightImg
+                            anchors.fill: parent
+                            source: Qt.resolvedUrl("assets/wallpapers/tahoe_light.jpg")
+                            fillMode: Image.PreserveAspectCrop
+                            smooth: true
+                            mipmap: true
+                            opacity: root.darkMode ? 0.0 : 1.0
+                            Behavior on opacity {
+                                NumberAnimation { duration: 500; easing.type: Easing.InOutCubic }
+                            }
+                        }
+
+                        // Dark mode wallpaper
+                        Image {
+                            id: tahoeDarkImg
+                            anchors.fill: parent
+                            source: Qt.resolvedUrl("assets/wallpapers/tahoe_dark.jpg")
+                            fillMode: Image.PreserveAspectCrop
+                            smooth: true
+                            mipmap: true
+                            opacity: root.darkMode ? 1.0 : 0.0
+                            Behavior on opacity {
+                                NumberAnimation { duration: 500; easing.type: Easing.InOutCubic }
                             }
                         }
                     }
@@ -765,12 +834,12 @@ Scope {
                         Item {
                             id: strokeMaskBox
                             anchors.fill: parent
-                            anchors.margins: -24
+                            anchors.margins: -32
                             visible: false
 
                             Item {
                                 anchors.fill: parent
-                                anchors.margins: 24
+                                anchors.margins: 32
 
                                 Repeater {
                                     model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
@@ -798,7 +867,7 @@ Scope {
 
                                         ShapePath {
                                             strokeColor: "#ffffff"
-                                            strokeWidth: 17.0
+                                            strokeWidth: 26.0
                                             fillColor: "transparent"
                                             capStyle: ShapePath.RoundCap
                                             joinStyle: ShapePath.RoundJoin
@@ -820,14 +889,14 @@ Scope {
                             smooth: true
                         }
 
-                        // Lightly blurred heightmap for finding the thin glass rim along the edges
+                        // Smooth tubular heightmap for normal calculation and optical lens curvature
                         MultiEffect {
                             id: strokeHeightFx
                             anchors.fill: strokeMaskBox
                             source: strokeMask
                             blurEnabled: true
-                            blurMax: 16
-                            blur: 0.28
+                            blurMax: 32
+                            blur: 0.32
                             autoPaddingEnabled: false
                             visible: false
                         }
@@ -839,28 +908,28 @@ Scope {
                             smooth: true
                         }
 
-                        // ──  MacShell / MacLock Official Liquid Glass ShaderEffect ──
+                        // ──  MacShell Liquid Glass Tube Physical Refraction Shader ──
                         ShaderEffect {
                             id: liquidGlassTube
                             anchors.fill: strokeMaskBox
-                            fragmentShader: Qt.resolvedUrl("glasstext.frag.qsb")
+                            fragmentShader: Qt.resolvedUrl("glasstube.frag.qsb")
 
-                            readonly property point fp: liquidGlassTube.mapToItem(mainContainer, 0, 0)
+                            readonly property point p00: liquidGlassTube.mapToItem(mainContainer, 0, 0)
+                            readonly property point p10: liquidGlassTube.mapToItem(mainContainer, width, 0)
+                            readonly property point p01: liquidGlassTube.mapToItem(mainContainer, 0, height)
+                            readonly property point p11: liquidGlassTube.mapToItem(mainContainer, width, height)
 
                             property variant src: wallpaperTex
                             property variant mask: strokeMask
                             property variant hmap: strokeHeightMap
 
-                            property vector2d itemSize: Qt.vector2d(width, height)
+                            property real refractScale: 0.05
+                            property real specularBoost: 0.95
+                            property real fresnelBoost: 0.40
+                            property vector4d p00_p10: Qt.vector4d(p00.x, p00.y, p10.x, p10.y)
+                            property vector4d p01_p11: Qt.vector4d(p01.x, p01.y, p11.x, p11.y)
                             property vector2d srcSize: Qt.vector2d(mainContainer.width, mainContainer.height)
-                            property vector2d srcOffset: Qt.vector2d(fp.x, fp.y)
-
-                            property real mode: 1.0           // 1.0 = Liquid Glass mode
-                            property real intensity: 0.02    // 0.02 = crystal clear glass (translucent, shows wallpaper)
-                            property real refract: 12.0      // edge refraction shift in px
-                            property real bevel: 1.15        // rim slope scale
-                            property vector4d tint: Qt.vector4d(1.0, 1.0, 1.0, 1.0)
-                            property vector2d lightDir: Qt.vector2d(-0.6, -0.8)
+                            property vector2d itemSize: Qt.vector2d(width, height)
                         }
 
                         // ── Glowing Pen Tip Point ──
@@ -1406,7 +1475,12 @@ Scope {
                                             }
                                         }
                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: root.darkMode = false }
+                                        TapHandler {
+                                            onTapped: {
+                                                root.darkMode = false;
+                                                root.playSound("tink");
+                                            }
+                                        }
                                     }
 
                                     // Dark Mode
@@ -1429,7 +1503,12 @@ Scope {
                                             }
                                         }
                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: root.darkMode = true }
+                                        TapHandler {
+                                            onTapped: {
+                                                root.darkMode = true;
+                                                root.playSound("tink");
+                                            }
+                                        }
                                     }
                                 }
                             }
