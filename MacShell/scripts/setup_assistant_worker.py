@@ -637,6 +637,18 @@ def run_setup(options_raw: str = ""):
                         pass
     os.system("fc-cache -f ~/.local/share/fonts >/dev/null 2>&1")
 
+    # 3b. macOS Tahoe 26 Blue Ribbon Wallpaper
+    emit(60, "macOS Wallpaper", "Deploying", "Configuring macOS Tahoe 26 Blue Ribbon Wallpaper...")
+    wallpapers_dest = MACSHELL_CONFIG / "assets" / "wallpapers"
+    wallpapers_dest.mkdir(parents=True, exist_ok=True)
+    tahoe_dest = wallpapers_dest / "tahoe.jpg"
+    bundled_tahoe = MACSHELL_DIR / "assets" / "wallpapers" / "tahoe.jpg"
+    if not tahoe_dest.exists() and bundled_tahoe.exists():
+        try:
+            shutil.copy2(bundled_tahoe, tahoe_dest)
+        except Exception:
+            pass
+
     # 4. Python AI packages if Siri was selected
     if siri_requested:
         emit(72, "Apple Intelligence", "Verifying", "Checking Python packages: google-genai, sounddevice, numpy...")

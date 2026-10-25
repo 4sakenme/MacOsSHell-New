@@ -85,11 +85,17 @@ Scope {
     property real cameraScale: 1.0
     property real cameraAngle: 0.0
 
-    // Macro Extreme Close-Up Zoom (Active ONLY for the first word: "hello")
+    // Macro Tracking Shot (Active ONLY for the first word: "hello")
     readonly property bool isFirstHello: (root.helloWordIndex === 0)
-    readonly property real macroProgress: isFirstHello ? Math.min(root.strokeDrawProgress / 0.88, 1.0) : 1.0
-    // Starts at 2.45x macro close-up, smoothly glides out to 1.0x as 'hello' is written
-    readonly property real macroZoomScale: isFirstHello ? (1.0 + 1.45 * Math.pow(1.0 - macroProgress, 2.2)) : 1.0
+    // Macro progress advances along the stroke drawing up to 90%
+    readonly property real macroProgress: isFirstHello ? Math.min(root.strokeDrawProgress / 0.90, 1.0) : 1.0
+    // Starts at scale 2.50x close-up, smoothly glides out to 1.0x using InOutCubic curve
+    readonly property real macroZoomScale: {
+        if (!isFirstHello) return 1.0;
+        var t = 1.0 - macroProgress;
+        var ease = t < 0.5 ? 4.0 * t * t * t : 1.0 - Math.pow(-2.0 * t + 2.0, 3) / 2.0;
+        return 1.0 + 1.50 * ease; // 2.5x at start -> 1.0x at end
+    }
 
     // Focus center on the initial touch point of the pen
     readonly property real targetPanX: {
@@ -105,8 +111,8 @@ Scope {
         return -(w.start_point[1] - halfH);
     }
 
-    readonly property real cameraPanX: isFirstHello ? (targetPanX * Math.pow(1.0 - macroProgress, 1.8)) : 0.0
-    readonly property real cameraPanY: isFirstHello ? (targetPanY * Math.pow(1.0 - macroProgress, 1.8)) : 0.0
+    readonly property real cameraPanX: isFirstHello ? (targetPanX * Math.pow(1.0 - macroProgress, 2.0)) : 0.0
+    readonly property real cameraPanY: isFirstHello ? (targetPanY * Math.pow(1.0 - macroProgress, 2.0)) : 0.0
 
     // Region & Language
     property string selectedCountry: "United States"
@@ -511,29 +517,29 @@ Scope {
         PropertyAction { target: root; property: "helloOpacity"; value: 1.0 }
         PropertyAction { target: root; property: "helloZoomScale"; value: 1.0 }
 
-        // 1. Draw strokes continuously from left to right
+        // 1. Draw strokes continuously from left to right (2800ms)
         NumberAnimation {
             target: root
             property: "strokeDrawProgress"
             from: 0.0
             to: 1.0
-            duration: root.isFirstHello ? 3000 : 2400
+            duration: root.isFirstHello ? 2800 : 2200
             easing.type: Easing.InOutSine
         }
 
-        // 2. Pause / Hold for reading (1500ms)
-        PauseAnimation { duration: 1500 }
+        // 2. Pause / Hold for reading (1400ms)
+        PauseAnimation { duration: 1400 }
 
-        // 3. Smooth Dissolve / Cross-fade Out (450ms)
+        // 3. Smooth Dissolve / Cross-fade Out (500ms)
         NumberAnimation {
             target: root
             property: "helloOpacity"
             to: 0.0
-            duration: 450
+            duration: 500
             easing.type: Easing.InOutCubic
         }
 
-        PauseAnimation { duration: 150 }
+        PauseAnimation { duration: 120 }
 
         ScriptAction {
             script: {
@@ -598,7 +604,7 @@ Scope {
             property: "helloZoomScale"
             from: 1.0
             to: 1.15
-            duration: 320
+            duration: 500
             easing.type: Easing.OutCubic
         }
 
@@ -606,7 +612,7 @@ Scope {
             target: root
             property: "helloOpacity"
             to: 0.0
-            duration: 300
+            duration: 500
             easing.type: Easing.OutCubic
         }
 
@@ -675,96 +681,44 @@ Scope {
                 Keys.onEnterPressed: root.proceedFromHello()
 
                 // ─────────────────────────────────────────────────────────────
-                // Background: Dynamic Pastel Mesh Gradient
+                // Background: Official macOS Tahoe 26 Blue Ribbon Wallpaper
                 // ─────────────────────────────────────────────────────────────
-                Rectangle {
+                Item {
+                    id: wallpaperContainer
                     anchors.fill: parent
-                    color: "#0a0b12"
+                    clip: true
 
-                    Item {
-                        id: meshContainer
+                    Image {
+                        id: tahoeWallpaper
                         anchors.fill: parent
+                        source: Qt.resolvedUrl("assets/wallpapers/tahoe.jpg")
+                        fillMode: Image.PreserveAspectCrop
+                        scale: 1.08 // Slightly enlarged for seamless subtle parallax drifting
+                        smooth: true
+                        mipmap: true
 
-                        // Blob 1: Vibrant Sky Blue
-                        Rectangle {
-                            id: blob1
-                            width: 720; height: 720; radius: 360
-                            color: "#4a80f0"
-                            opacity: 0.68
-                            property real t: 0
-                            x: (parent.width * 0.15) + Math.sin(t * 0.7) * 130
-                            y: (parent.height * 0.12) + Math.cos(t * 0.5) * 100
-                        }
+                        property real driftT: 0.0
 
-                        // Blob 2: Luminous Lavender Violet
-                        Rectangle {
-                            id: blob2
-                            width: 780; height: 780; radius: 390
-                            color: "#8a5cd0"
-                            opacity: 0.62
-                            property real t: 1.5
-                            x: (parent.width * 0.55) + Math.cos(t * 0.6) * 150
-                            y: (parent.height * 0.22) + Math.sin(t * 0.8) * 120
-                        }
-
-                        // Blob 3: Warm Golden Amber
-                        Rectangle {
-                            id: blob3
-                            width: 640; height: 640; radius: 320
-                            color: "#ffd166"
-                            opacity: 0.52
-                            property real t: 3.0
-                            x: (parent.width * 0.40) + Math.sin(t * 0.5) * 120
-                            y: (parent.height * 0.60) + Math.cos(t * 0.7) * 110
-                        }
-
-                        // Blob 4: Pastel Coral Rose
-                        Rectangle {
-                            id: blob4
-                            width: 680; height: 680; radius: 340
-                            color: "#ff6b8b"
-                            opacity: 0.56
-                            property real t: 4.5
-                            x: (parent.width * 0.10) + Math.cos(t * 0.8) * 110
-                            y: (parent.height * 0.55) + Math.sin(t * 0.6) * 130
-                        }
-
-                        // Blob 5: Deep Royal Indigo Anchor
-                        Rectangle {
-                            id: blob5
-                            width: 860; height: 860; radius: 430
-                            color: "#352068"
-                            opacity: 0.75
-                            property real t: 2.2
-                            x: (parent.width * 0.65) + Math.sin(t * 0.4) * 90
-                            y: (parent.height * 0.50) + Math.cos(t * 0.5) * 90
+                        transform: Translate {
+                            x: Math.sin(tahoeWallpaper.driftT * 0.35) * 22
+                            y: Math.cos(tahoeWallpaper.driftT * 0.28) * 14
                         }
 
                         FrameAnimation {
                             running: root.active
                             onTriggered: {
-                                blob1.t += 0.012;
-                                blob2.t += 0.010;
-                                blob3.t += 0.011;
-                                blob4.t += 0.009;
-                                blob5.t += 0.008;
+                                tahoeWallpaper.driftT += 0.005;
                             }
-                        }
-
-                        layer.enabled: true
-                        layer.effect: MultiEffect {
-                            blurEnabled: true
-                            blurMax: 96
-                            blur: 1.0
                         }
                     }
 
-                    // Ambient subtle vignette
+                    // Delicate ambient lighting vignette for authentic depth
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(0.04, 0.05, 0.08, 0.18) }
-                            GradientStop { position: 1.0; color: Qt.rgba(0.02, 0.03, 0.06, 0.45) }
+                            GradientStop { position: 0.0; color: Qt.rgba(0.0, 0.04, 0.12, 0.08) }
+                            GradientStop { position: 0.5; color: Qt.rgba(0.0, 0.0, 0.0, 0.0) }
+                            GradientStop { position: 1.0; color: Qt.rgba(0.0, 0.03, 0.10, 0.22) }
                         }
                     }
                 }
@@ -800,12 +754,12 @@ Scope {
                         Repeater {
                             model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
 
-                            delegate: Shape {
+                            delegate: Item {
+                                id: strokeItem
                                 required property var modelData
                                 required property int index
 
                                 anchors.fill: parent
-                                preferredRendererType: Shape.CurveRenderer
 
                                 readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
                                 readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
@@ -820,52 +774,106 @@ Scope {
 
                                 readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
 
-                                // 1. Ambient Glass Refraction Glow
-                                ShapePath {
-                                    strokeColor: Qt.rgba(1, 1, 1, 0.16)
-                                    strokeWidth: 9.5
-                                    fillColor: "transparent"
-                                    capStyle: ShapePath.RoundCap
-                                    joinStyle: ShapePath.RoundJoin
-                                    trim.start: 0.0
-                                    trim.end: drawEnd
-                                    PathSvg { path: modelData.d }
+                                // ── Layer 1: Bottom Refraction & Deep Sapphire Drop Shadow (y +4.5px) ──
+                                Shape {
+                                    anchors.fill: parent
+                                    y: 4.5
+                                    preferredRendererType: Shape.CurveRenderer
+
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(0.01, 0.04, 0.22, 0.45)
+                                        strokeWidth: 22.0
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
+
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(0.06, 0.26, 0.68, 0.32)
+                                        strokeWidth: 18.0
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
                                 }
 
-                                // 2. Liquid Glass Translucent Body (#50ffffff)
-                                ShapePath {
-                                    strokeColor: "#50ffffff"
-                                    strokeWidth: 5.4
-                                    fillColor: "transparent"
-                                    capStyle: ShapePath.RoundCap
-                                    joinStyle: ShapePath.RoundJoin
-                                    trim.start: 0.0
-                                    trim.end: drawEnd
-                                    PathSvg { path: modelData.d }
+                                // ── Layer 2: Main Cylindrical Liquid Glass Body & Refractive Core (y 0px) ──
+                                Shape {
+                                    anchors.fill: parent
+                                    preferredRendererType: Shape.CurveRenderer
+
+                                    // Outer cylindrical tube refraction wall
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(0.40, 0.72, 1.0, 0.25)
+                                        strokeWidth: 17.0
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
+
+                                    // Translucent glass core (reveals background blue ribbon)
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(0.72, 0.88, 1.0, 0.32)
+                                        strokeWidth: 14.0
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
+
+                                    // Luminous core reflection
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(0.90, 0.96, 1.0, 0.52)
+                                        strokeWidth: 8.5
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
                                 }
 
-                                // 3. Prismatic Glass Edge Refraction (subtle sky tint)
-                                ShapePath {
-                                    strokeColor: Qt.rgba(0.85, 0.95, 1.0, 0.35)
-                                    strokeWidth: 3.2
-                                    fillColor: "transparent"
-                                    capStyle: ShapePath.RoundCap
-                                    joinStyle: ShapePath.RoundJoin
-                                    trim.start: 0.0
-                                    trim.end: drawEnd
-                                    PathSvg { path: modelData.d }
-                                }
+                                // ── Layer 3: Top Specular Crest & Reflection Ridge (y -1.8px) ──
+                                Shape {
+                                    anchors.fill: parent
+                                    y: -1.8
+                                    preferredRendererType: Shape.CurveRenderer
 
-                                // 4. Glistening Specular Highlight Ridge
-                                ShapePath {
-                                    strokeColor: Qt.rgba(1, 1, 1, 0.95)
-                                    strokeWidth: 1.6
-                                    fillColor: "transparent"
-                                    capStyle: ShapePath.RoundCap
-                                    joinStyle: ShapePath.RoundJoin
-                                    trim.start: 0.0
-                                    trim.end: drawEnd
-                                    PathSvg { path: modelData.d }
+                                    // Upper curvature specular reflection ridge
+                                    ShapePath {
+                                        strokeColor: Qt.rgba(1.0, 1.0, 1.0, 0.92)
+                                        strokeWidth: 3.5
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
+
+                                    // Top razor white crest specular highlight
+                                    ShapePath {
+                                        strokeColor: "#ffffff"
+                                        strokeWidth: 1.6
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeItem.drawEnd
+                                        PathSvg { path: strokeItem.modelData.d }
+                                    }
                                 }
                             }
                         }
@@ -898,8 +906,8 @@ Scope {
 
                             x: tipInfo.x - width / 2
                             y: tipInfo.y - height / 2
-                            width: 24
-                            height: 24
+                            width: 32
+                            height: 32
                             opacity: (tipInfo.visible && root.helloOpacity > 0.05 && root.currentStep === 0 && !root.isTransitioningToCard) ? 1.0 : 0.0
                             visible: opacity > 0.001
 
@@ -910,33 +918,37 @@ Scope {
                             // Outer soft luminous bloom
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 18
-                                height: 18
-                                radius: 9
-                                color: Qt.rgba(1, 1, 1, 0.35)
+                                width: 26
+                                height: 26
+                                radius: 13
+                                color: Qt.rgba(0.55, 0.85, 1.0, 0.45)
                                 layer.enabled: true
                                 layer.effect: MultiEffect {
                                     blurEnabled: true
-                                    blurMax: 8
-                                    blur: 0.9
+                                    blurMax: 10
+                                    blur: 0.95
                                 }
                             }
 
-                            // Secondary bright halo
+                            // Liquid glass spherical bead body
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 10
-                                height: 10
-                                radius: 5
-                                color: Qt.rgba(1, 1, 1, 0.65)
+                                width: 16
+                                height: 16
+                                radius: 8
+                                color: Qt.rgba(0.85, 0.95, 1.0, 0.70)
+                                border.width: 1
+                                border.color: "#ffffff"
                             }
 
-                            // Core pen tip point: diameter 6px, solid white
+                            // Core specular gloss bead point
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 6.0
-                                height: 6.0
-                                radius: 3.0
+                                anchors.horizontalCenterOffset: -1.5
+                                anchors.verticalCenterOffset: -1.5
+                                width: 7.0
+                                height: 7.0
+                                radius: 3.5
                                 color: "#ffffff"
                             }
                         }
@@ -1021,1781 +1033,1036 @@ Scope {
                     }
 
                     // ═════════════════════════════════════════════════════════
-                    // Card Content Layout: Left Column (35%) + Right Column (65%)
+                                        // ═════════════════════════════════════════════════════════
+                    // Authentic Apple Single-Column Setup Layout
                     // ═════════════════════════════════════════════════════════
-                    Item {
-                        id: cardBody
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: cardBottomNav.top
-                        anchors.bottomMargin: 8
-                        anchors.margins: 28
 
-                        // ── Left Column: Step Indicators & Hero Branding ──
+                    // ── 1. Top Center Hero Section ──
+                    Item {
+                        id: heroSection
+                        anchors.top: parent.top
+                        anchors.topMargin: 36
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 72
+                        height: 72
+
+                        // Step 1: Apple Globe on Solid Blue Circle (Image 1 & 2)
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 36
+                            visible: root.currentStep === 1
+                            color: "#007aff"
+
+                            Canvas {
+                                anchors.centerIn: parent
+                                width: 44; height: 44
+                                onPaint: {
+                                    var ctx = getContext("2d");
+                                    ctx.reset();
+                                    var cx = width / 2;
+                                    var cy = height / 2;
+                                    var r = 19;
+                                    ctx.strokeStyle = "#ffffff";
+                                    ctx.lineWidth = 2.2;
+
+                                    // Outer Sphere
+                                    ctx.beginPath();
+                                    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                                    ctx.stroke();
+
+                                    // Equator
+                                    ctx.beginPath();
+                                    ctx.moveTo(cx - r, cy);
+                                    ctx.lineTo(cx + r, cy);
+                                    ctx.stroke();
+
+                                    // Prime Meridian
+                                    ctx.beginPath();
+                                    ctx.moveTo(cx, cy - r);
+                                    ctx.lineTo(cx, cy + r);
+                                    ctx.stroke();
+
+                                    // Longitude Curvatures
+                                    ctx.lineWidth = 1.8;
+                                    ctx.beginPath();
+                                    ctx.ellipse(cx - 9.5, cy - r, 19, r * 2);
+                                    ctx.stroke();
+
+                                    // Latitude Arcs
+                                    ctx.lineWidth = 1.4;
+                                    ctx.beginPath();
+                                    ctx.arc(cx, cy - 24, 26, Math.PI * 0.35, Math.PI * 0.65, false);
+                                    ctx.stroke();
+                                    ctx.beginPath();
+                                    ctx.arc(cx, cy + 24, 26, -Math.PI * 0.65, -Math.PI * 0.35, false);
+                                    ctx.stroke();
+                                }
+                            }
+                        }
+
+                        // Step 2: Apple Wi-Fi Glyph with Animated Radar Waves (User Request!)
                         Item {
-                            id: leftCol
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            width: 290
+                            anchors.fill: parent
+                            visible: root.currentStep === 2
+
+                            // Concentric Radar Wave 1 (Expanding & Fading)
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 68; height: 68; radius: 34
+                                color: "transparent"
+                                border.width: 1.8
+                                border.color: "#38bdf8"
+                                opacity: 0.0
+                                scale: 1.0
+
+                                SequentialAnimation on scale {
+                                    loops: Animation.Infinite
+                                    running: root.currentStep === 2
+                                    NumberAnimation { from: 1.0; to: 2.4; duration: 2000; easing.type: Easing.OutCubic }
+                                    PauseAnimation { duration: 150 }
+                                }
+                                SequentialAnimation on opacity {
+                                    loops: Animation.Infinite
+                                    running: root.currentStep === 2
+                                    NumberAnimation { from: 0.75; to: 0.0; duration: 2000; easing.type: Easing.OutCubic }
+                                    PauseAnimation { duration: 150 }
+                                }
+                            }
+
+                            // Concentric Radar Wave 2 (Delayed by 900ms)
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 68; height: 68; radius: 34
+                                color: "transparent"
+                                border.width: 1.8
+                                border.color: "#60a5fa"
+                                opacity: 0.0
+                                scale: 1.0
+
+                                SequentialAnimation on scale {
+                                    loops: Animation.Infinite
+                                    running: root.currentStep === 2
+                                    PauseAnimation { duration: 900 }
+                                    NumberAnimation { from: 1.0; to: 2.4; duration: 2000; easing.type: Easing.OutCubic }
+                                }
+                                SequentialAnimation on opacity {
+                                    loops: Animation.Infinite
+                                    running: root.currentStep === 2
+                                    PauseAnimation { duration: 900 }
+                                    NumberAnimation { from: 0.75; to: 0.0; duration: 2000; easing.type: Easing.OutCubic }
+                                }
+                            }
+
+                            // Main Wi-Fi Frosted Disc
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 36
+                                color: "#007aff"
+                                border.width: 1
+                                border.color: "#40ffffff"
+
+                                Canvas {
+                                    anchors.centerIn: parent
+                                    width: 42; height: 42
+                                    onPaint: {
+                                        var ctx = getContext("2d");
+                                        ctx.reset();
+                                        var cx = width / 2;
+                                        var cy = height * 0.88;
+                                        ctx.strokeStyle = "#ffffff";
+                                        ctx.lineCap = "round";
+
+                                        // Arc 3 (Outer)
+                                        ctx.beginPath();
+                                        ctx.arc(cx, cy, 25, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                        ctx.lineWidth = 3.6;
+                                        ctx.stroke();
+
+                                        // Arc 2 (Middle)
+                                        ctx.beginPath();
+                                        ctx.arc(cx, cy, 16.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                        ctx.lineWidth = 3.2;
+                                        ctx.stroke();
+
+                                        // Arc 1 (Inner)
+                                        ctx.beginPath();
+                                        ctx.arc(cx, cy, 8.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                        ctx.lineWidth = 2.8;
+                                        ctx.stroke();
+
+                                        // Dot
+                                        ctx.beginPath();
+                                        ctx.arc(cx, cy - 0.5, 2.8, 0, Math.PI * 2);
+                                        ctx.fillStyle = "#ffffff";
+                                        ctx.fill();
+                                    }
+                                }
+                            }
+                        }
+
+                        // Step 3: Apple Siri Glowing Orb (Image 4 & 5)
+                        Item {
+                            anchors.fill: parent
+                            visible: root.currentStep === 3
+                            SiriOrb {
+                                anchors.fill: parent
+                                active: root.currentStep === 3
+                                isProcessing: true
+                            }
+                        }
+
+                        // Step 4: System Setup / Display Disc
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 36
+                            visible: root.currentStep === 4
+                            color: Qt.rgba(0, 122, 255, 0.20)
+                            border.width: 1
+                            border.color: "#35ffffff"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "⚙️"
+                                font.pixelSize: 32
+                            }
+                        }
+
+                        // Step 5: Pure Apple White Logo on Frosted Disc
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 36
+                            visible: root.currentStep === 5
+                            color: Qt.rgba(255, 255, 255, 0.16)
+                            border.width: 1
+                            border.color: "#35ffffff"
+
+                            Image {
+                                anchors.centerIn: parent
+                                width: 40; height: 40
+                                sourceSize: Qt.size(64, 64)
+                                source: "apple-logo-white.svg"
+                            }
+                        }
+                    }
+
+                    // ── 2. Centered Bold Title ──
+                    Text {
+                        id: stepTitle
+                        anchors.top: heroSection.bottom
+                        anchors.topMargin: 16
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        font.family: "Open Runde"
+                        font.pixelSize: 24
+                        font.weight: Font.DemiBold
+                        color: "#ffffff"
+                        text: {
+                            switch (root.currentStep) {
+                                case 1: return "Select Your Country or Region";
+                                case 2: return "Select a Wi-Fi Network";
+                                case 3: return "Siri";
+                                case 4: return "Setting Up Your Mac";
+                                case 5: return "Welcome to MacShell";
+                                default: return "MacShell Setup";
+                            }
+                        }
+                    }
+
+                    // ── 3. Centered Subtitle / Description ──
+                    Text {
+                        id: stepSubtitle
+                        anchors.top: stepTitle.bottom
+                        anchors.topMargin: 8
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: Math.min(parent.width - 80, 520)
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        font.family: "Open Runde"
+                        font.pixelSize: 13
+                        lineHeight: 1.35
+                        color: Qt.rgba(1, 1, 1, 0.70)
+                        text: {
+                            switch (root.currentStep) {
+                                case 1: return "Select your country or region to configure language and regional formats.";
+                                case 2: return "Choose a wireless network to connect to the internet, sync widgets, and download resources.";
+                                case 3: return "Siri helps you get things done just by asking. Siri can also make suggestions before you ask in apps, search, and keyboards.";
+                                case 4: return "Configuring system resources, typography fonts, audio engine, and macOS Tahoe theme...";
+                                case 5: return "Your macOS desktop environment is ready.";
+                                default: return "";
+                            }
+                        }
+                    }
+
+                    // ── 4. Main Centered Interactive Content Area ──
+                    Item {
+                        id: stepContentArea
+                        anchors.top: stepSubtitle.bottom
+                        anchors.topMargin: 18
+                        anchors.bottom: cardBottomNav.top
+                        anchors.bottomMargin: 14
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 440
+
+                        // ─────────────────────────────────────────────────────
+                        // STEP 1: Country & Region (Image 1 & 2)
+                        // ─────────────────────────────────────────────────────
+                        Item {
+                            anchors.fill: parent
+                            visible: root.currentStep === 1
 
                             Column {
                                 anchors.fill: parent
-                                spacing: 18
+                                spacing: 14
 
-                                // Breadcrumb Dots: 5 steps
-                                Row {
-                                    spacing: 8
-                                    Repeater {
-                                        model: 5
-                                        delegate: Rectangle {
-                                            required property int index
-                                            readonly property int stepNum: index + 1
-                                            width: 8; height: 8; radius: 4
-                                            color: root.currentStep === stepNum ? "#007aff" : Qt.rgba(1, 1, 1, 0.25)
-                                            Behavior on color { ColorAnimation { duration: 200 } }
-                                        }
-                                    }
-                                }
-
-                                Item { width: 1; height: 10 }
-
-                                // Hero Icon (64x64) per step
-                                Item {
-                                    width: 64; height: 64
-
-                                    // Step 1: Apple Globe on Frosted Glass Disc
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 32
-                                        visible: root.currentStep === 1
-                                        color: Qt.rgba(0, 122, 255, 0.22)
-                                        border.width: 1
-                                        border.color: "#35ffffff"
-
-                                        Canvas {
-                                            anchors.centerIn: parent
-                                            width: 36; height: 36
-                                            onPaint: {
-                                                var ctx = getContext("2d");
-                                                ctx.reset();
-                                                var cx = width / 2;
-                                                var cy = height / 2;
-                                                var r = 16;
-                                                ctx.strokeStyle = "#ffffff";
-                                                ctx.lineWidth = 2.0;
-
-                                                // Outer Sphere
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy, r, 0, Math.PI * 2);
-                                                ctx.stroke();
-
-                                                // Equator
-                                                ctx.beginPath();
-                                                ctx.moveTo(cx - r, cy);
-                                                ctx.lineTo(cx + r, cy);
-                                                ctx.stroke();
-
-                                                // Prime Meridian
-                                                ctx.beginPath();
-                                                ctx.moveTo(cx, cy - r);
-                                                ctx.lineTo(cx, cy + r);
-                                                ctx.stroke();
-
-                                                // Longitude Curvature
-                                                ctx.lineWidth = 1.6;
-                                                ctx.beginPath();
-                                                ctx.ellipse(cx - 8, cy - r, 16, r * 2);
-                                                ctx.stroke();
-
-                                                // Latitude Arcs
-                                                ctx.lineWidth = 1.3;
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy - 20, 22, Math.PI * 0.35, Math.PI * 0.65, false);
-                                                ctx.stroke();
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy + 20, 22, -Math.PI * 0.65, -Math.PI * 0.35, false);
-                                                ctx.stroke();
-                                            }
-                                        }
-                                    }
-
-                                    // Step 2: Apple Wi-Fi Glyph on Frosted Glass Disc
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 32
-                                        visible: root.currentStep === 2
-                                        color: Qt.rgba(0, 122, 255, 0.22)
-                                        border.width: 1
-                                        border.color: "#35ffffff"
-
-                                        Canvas {
-                                            anchors.centerIn: parent
-                                            width: 36; height: 36
-                                            onPaint: {
-                                                var ctx = getContext("2d");
-                                                ctx.reset();
-                                                var cx = width / 2;
-                                                var cy = height * 0.88;
-                                                ctx.strokeStyle = "#ffffff";
-                                                ctx.lineCap = "round";
-
-                                                // Arc 3 (Outer)
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy, 22, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                ctx.lineWidth = 3.2;
-                                                ctx.stroke();
-
-                                                // Arc 2 (Middle)
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy, 14.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                ctx.lineWidth = 3.0;
-                                                ctx.stroke();
-
-                                                // Arc 1 (Inner)
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy, 7.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                ctx.lineWidth = 2.8;
-                                                ctx.stroke();
-
-                                                // Dot
-                                                ctx.beginPath();
-                                                ctx.arc(cx, cy - 0.5, 2.5, 0, Math.PI * 2);
-                                                ctx.fillStyle = "#ffffff";
-                                                ctx.fill();
-                                            }
-                                        }
-                                    }
-
-                                    // Step 3: Apple Siri Glowing Wave Orb
-                                    Item {
-                                        anchors.fill: parent
-                                        visible: root.currentStep === 3
-                                        SiriOrb {
-                                            anchors.fill: parent
-                                            active: root.currentStep === 3
-                                            isProcessing: true
-                                        }
-                                    }
-
-                                    // Step 4: Package Check / Sync on Frosted Glass Disc
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 32
-                                        visible: root.currentStep === 4
-                                        color: Qt.rgba(175, 82, 222, 0.25)
-                                        border.width: 1
-                                        border.color: "#35ffffff"
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "⚡"
-                                            font.pixelSize: 28
-                                        }
-                                    }
-
-                                    // Step 5: Pure Apple White Logo on Frosted Glass Disc
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 32
-                                        visible: root.currentStep === 5
-                                        color: Qt.rgba(255, 255, 255, 0.16)
-                                        border.width: 1
-                                        border.color: "#35ffffff"
-
-                                        Image {
-                                            anchors.centerIn: parent
-                                            width: 38; height: 38
-                                            sourceSize: Qt.size(64, 64)
-                                            source: "apple-logo-white.svg"
-                                        }
-                                    }
-                                }
-
-                                // Large Bold Step Title
-                                Text {
-                                    width: parent.width - 10
-                                    wrapMode: Text.WordWrap
-                                    color: "#ffffff"
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 22
-                                    font.weight: Font.Bold
-                                    lineHeight: 1.15
-                                    text: {
-                                        switch (root.currentStep) {
-                                            case 1: return "Country & Appearance";
-                                            case 2: return "Connect to Wi-Fi";
-                                            case 3: return "Apple Intelligence";
-                                            case 4: return "System Check";
-                                            case 5: return "Welcome to MacShell!";
-                                            default: return "MacShell Setup";
-                                        }
-                                    }
-                                }
-
-                                // Concise Step Description
-                                Text {
-                                    width: parent.width - 10
-                                    wrapMode: Text.WordWrap
-                                    color: Qt.rgba(1, 1, 1, 0.65)
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 13
-                                    lineHeight: 1.35
-                                    text: {
-                                        switch (root.currentStep) {
-                                            case 1: return "Select your country or region to configure language and regional formats, and personalize your system appearance.";
-                                            case 2: return "Connect to your wireless network to browse the web, sync widgets, and download resources.";
-                                            case 3: return "Intelligent AI assistant powered by Gemini for conversational voice interaction and system commands.";
-                                            case 4: return "Automatically verify and retrieve required dependencies, typography fonts, and UI sounds on Arch Linux.";
-                                            case 5: return "Your system is ready with an authentic macOS desktop experience built on Arch Linux & Hyprland.";
-                                            default: return "";
-                                        }
-                                    }
-                                }
-
-                                // Set Up Later button for Siri step
+                                // Centered Rounded List Box (Image 1 & 2)
                                 Rectangle {
-                                    visible: root.currentStep === 3
-                                    width: 175; height: 32; radius: 16
-                                    color: laterHover.hovered ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(1, 1, 1, 0.08)
+                                    width: parent.width
+                                    height: 180
+                                    radius: 10
+                                    color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.20)
+                                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                                    clip: true
+
+                                    ListView {
+                                        id: countryListView
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        model: root.countriesList
+                                        spacing: 2
+                                        boundsBehavior: Flickable.StopAtBounds
+
+                                        delegate: Rectangle {
+                                            id: countryRow
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isSelected: root.selectedCountry === modelData.name
+
+                                            width: parent.width
+                                            height: 32
+                                            radius: 6
+                                            color: isSelected ? "#007aff" : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+
+                                            Row {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 12
+                                                anchors.rightMargin: 12
+                                                spacing: 10
+
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: countryRow.modelData.flag
+                                                    font.pixelSize: 15
+                                                }
+
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 120
+                                                    text: countryRow.modelData.name
+                                                    color: "#ffffff"
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 13
+                                                    font.weight: countryRow.isSelected ? Font.DemiBold : Font.Normal
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: countryRow.modelData.lang
+                                                    color: countryRow.isSelected ? Qt.rgba(1, 1, 1, 0.90) : Qt.rgba(1, 1, 1, 0.45)
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 12
+                                                }
+
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: countryRow.isSelected
+                                                    text: "✓"
+                                                    color: "#ffffff"
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.Bold
+                                                }
+                                            }
+
+                                            HoverHandler { id: cHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler {
+                                                onTapped: {
+                                                    root.selectedCountry = countryRow.modelData.name;
+                                                    root.selectedLanguage = countryRow.modelData.code;
+                                                    root.selectedVoice = countryRow.modelData.voice;
+                                                    root.playSound("tink");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Compact System Appearance Segment (Light / Dark)
+                                Row {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    spacing: 14
+
+                                    // Light Mode
+                                    Rectangle {
+                                        width: 140; height: 38; radius: 8
+                                        color: !root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: !root.darkMode ? 1.5 : 1
+                                        border.color: !root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                        Row {
+                                            anchors.centerIn: parent
+                                            spacing: 8
+                                            Text { text: "☀️"; font.pixelSize: 14 }
+                                            Text {
+                                                text: "Light"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 12
+                                                font.weight: !root.darkMode ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.darkMode = false }
+                                    }
+
+                                    // Dark Mode
+                                    Rectangle {
+                                        width: 140; height: 38; radius: 8
+                                        color: root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: root.darkMode ? 1.5 : 1
+                                        border.color: root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                        Row {
+                                            anchors.centerIn: parent
+                                            spacing: 8
+                                            Text { text: "🌙"; font.pixelSize: 14 }
+                                            Text {
+                                                text: "Dark"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 12
+                                                font.weight: root.darkMode ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.darkMode = true }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ─────────────────────────────────────────────────────
+                        // STEP 2: Wi-Fi Networks with Rich Animation (User Request!)
+                        // ─────────────────────────────────────────────────────
+                        Item {
+                            anchors.fill: parent
+                            visible: root.currentStep === 2
+
+                            Column {
+                                anchors.fill: parent
+                                spacing: 10
+
+                                // Top Header Controls: Status + Toggle + Animated Refresh
+                                Row {
+                                    width: parent.width
+                                    height: 28
 
                                     Text {
-                                        anchors.centerIn: parent
-                                        text: "Set Up Later / Skip"
-                                        color: Qt.rgba(1, 1, 1, 0.85)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: root.wifiRadioOn ? (root.wifiScanning ? "Scanning nearby networks..." : "Wi-Fi Networks") : "Wi-Fi is turned off"
+                                        color: Qt.rgba(1, 1, 1, 0.65)
                                         font.family: "Open Runde"
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.weight: Font.Medium
                                     }
 
-                                    HoverHandler { id: laterHover; cursorShape: Qt.PointingHandCursor }
-                                    TapHandler {
-                                        onTapped: {
-                                            root.siriEnabled = false;
-                                            root.currentStep = 4;
-                                            root.runDepsCheck();
+                                    Item { width: parent.width - 240; height: 1 }
+
+                                    // Refresh Button with Continuous Rotation when Scanning
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 26; height: 26; radius: 13
+                                        color: scanHover.hovered ? Qt.rgba(1, 1, 1, 0.15) : "transparent"
+
+                                        Text {
+                                            id: refreshIcon
+                                            anchors.centerIn: parent
+                                            text: "↻"
+                                            color: "#ffffff"
+                                            font.pixelSize: 16
+                                            font.weight: Font.Bold
+                                            transformOrigin: Item.Center
+
+                                            RotationAnimation on rotation {
+                                                loops: Animation.Infinite
+                                                running: root.wifiScanning
+                                                from: 0; to: 360
+                                                duration: 900
+                                            }
+                                        }
+
+                                        HoverHandler { id: scanHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.scanWifiNetworks() }
+                                    }
+
+                                    Item { width: 8; height: 1 }
+
+                                    // Apple Wi-Fi Power Switch
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 40; height: 22; radius: 11
+                                        color: root.wifiRadioOn ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+
+                                        Rectangle {
+                                            x: root.wifiRadioOn ? 20 : 2
+                                            y: 2
+                                            width: 18; height: 18; radius: 9
+                                            color: "#ffffff"
+                                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.toggleWifiRadio() }
+                                    }
+                                }
+
+                                // Centered Wi-Fi Network List Box
+                                Rectangle {
+                                    width: parent.width
+                                    height: root.wifiShowPasswordDialog ? 130 : 190
+                                    radius: 10
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                                    clip: true
+                                    Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
+                                    // Empty / Scanning Placeholder
+                                    Item {
+                                        anchors.fill: parent
+                                        visible: root.wifiNetworks.length === 0
+
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 10
+
+                                            // Animated scanning wave dot
+                                            Rectangle {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                width: 14; height: 14; radius: 7
+                                                color: "#007aff"
+                                                SequentialAnimation on scale {
+                                                    loops: Animation.Infinite
+                                                    NumberAnimation { from: 0.8; to: 1.4; duration: 800; easing.type: Easing.InOutQuad }
+                                                    NumberAnimation { from: 1.4; to: 0.8; duration: 800; easing.type: Easing.InOutQuad }
+                                                }
+                                                SequentialAnimation on opacity {
+                                                    loops: Animation.Infinite
+                                                    NumberAnimation { from: 0.5; to: 1.0; duration: 800 }
+                                                    NumberAnimation { from: 1.0; to: 0.5; duration: 800 }
+                                                }
+                                            }
+
+                                            Text {
+                                                text: root.wifiScanning ? "Scanning for nearby Wi-Fi networks..." : "No Wi-Fi networks found."
+                                                color: Qt.rgba(1, 1, 1, 0.60)
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                    }
+
+                                    ListView {
+                                        id: wifiListView
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        model: root.wifiNetworks
+                                        spacing: 2
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        visible: root.wifiNetworks.length > 0
+
+                                        delegate: Rectangle {
+                                            id: wifiRow
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isConnected: root.wifiConnectedSsid === modelData.ssid
+                                            readonly property bool isConnecting: root.wifiIsConnecting && root.wifiConnectingSsid === modelData.ssid
+
+                                            width: parent.width
+                                            height: 34
+                                            radius: 6
+                                            color: isConnected ? Qt.rgba(0, 122, 255, 0.22) : (wifiRowHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+
+                                            Row {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 12
+                                                anchors.rightMargin: 12
+                                                spacing: 10
+
+                                                // Animated 3-Arc Fan Wi-Fi Signal Glyph
+                                                Canvas {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 18; height: 18
+                                                    onPaint: {
+                                                        var ctx = getContext("2d");
+                                                        ctx.reset();
+                                                        var cx = width / 2;
+                                                        var cy = height * 0.85;
+                                                        var sig = wifiRow.modelData.signal || 50;
+                                                        ctx.strokeStyle = wifiRow.isConnected ? "#38bdf8" : "#ffffff";
+                                                        ctx.lineCap = "round";
+
+                                                        // Arc 3
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy, 11, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                        ctx.lineWidth = 1.8;
+                                                        ctx.globalAlpha = sig >= 70 ? 1.0 : 0.25;
+                                                        ctx.stroke();
+
+                                                        // Arc 2
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy, 7, -Math.PI * 0.75, -Math.PI * 0.25, false);
+                                                        ctx.lineWidth = 1.8;
+                                                        ctx.globalAlpha = sig >= 40 ? 1.0 : 0.25;
+                                                        ctx.stroke();
+
+                                                        // Dot
+                                                        ctx.beginPath();
+                                                        ctx.arc(cx, cy - 0.5, 1.8, 0, Math.PI * 2);
+                                                        ctx.fillStyle = wifiRow.isConnected ? "#38bdf8" : "#ffffff";
+                                                        ctx.globalAlpha = 1.0;
+                                                        ctx.fill();
+                                                    }
+                                                }
+
+                                                // SSID
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: parent.width - 150
+                                                    text: wifiRow.modelData.ssid
+                                                    color: "#ffffff"
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 13
+                                                    font.weight: wifiRow.isConnected ? Font.DemiBold : Font.Normal
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                // Lock icon
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: wifiRow.modelData.secure
+                                                    text: "🔒"
+                                                    font.pixelSize: 10
+                                                    opacity: 0.65
+                                                }
+
+                                                // Connecting Spinner
+                                                Rectangle {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: wifiRow.isConnecting
+                                                    width: 14; height: 14; radius: 7
+                                                    color: "transparent"
+                                                    border.width: 2
+                                                    border.color: "#007aff"
+                                                    RotationAnimation on rotation {
+                                                        loops: Animation.Infinite
+                                                        running: wifiRow.isConnecting
+                                                        from: 0; to: 360; duration: 750
+                                                    }
+                                                }
+
+                                                // Connected Badge
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: wifiRow.isConnected && !wifiRow.isConnecting
+                                                    text: "✓ Connected"
+                                                    color: "#34c759"
+                                                    font.family: "Open Runde"
+                                                    font.pixelSize: 11
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+
+                                            HoverHandler { id: wifiRowHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler {
+                                                onTapped: {
+                                                    if (wifiRow.modelData.secure && !wifiRow.isConnected) {
+                                                        root.wifiConnectingSsid = wifiRow.modelData.ssid;
+                                                        root.wifiShowPasswordDialog = true;
+                                                        root.wifiPasswordInput = "";
+                                                        root.wifiErrorMsg = "";
+                                                    } else {
+                                                        root.connectWifi(wifiRow.modelData.ssid);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Inline Password Drawer
+                                Rectangle {
+                                    width: parent.width
+                                    height: root.wifiShowPasswordDialog ? 60 : 0
+                                    radius: 10
+                                    color: Qt.rgba(0, 0, 0, 0.40)
+                                    border.width: root.wifiShowPasswordDialog ? 1 : 0
+                                    border.color: "#007aff"
+                                    clip: true
+                                    visible: height > 0
+                                    Behavior on height { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 10
+
+                                        Rectangle {
+                                            width: 240; height: 32; radius: 6
+                                            color: Qt.rgba(1, 1, 1, 0.08)
+                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.20)
+
+                                            TextInput {
+                                                id: passInput
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                color: "#ffffff"
+                                                font.pixelSize: 12
+                                                echoMode: TextInput.Password
+                                                text: root.wifiPasswordInput
+                                                onTextChanged: root.wifiPasswordInput = text
+                                                onAccepted: root.connectWifi(root.wifiConnectingSsid, text)
+
+                                                Text {
+                                                    text: "Enter Wi-Fi password"
+                                                    color: Qt.rgba(1, 1, 1, 0.35)
+                                                    visible: !passInput.text
+                                                    font.pixelSize: 12
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 75; height: 32; radius: 6
+                                            color: "#007aff"
+                                            Text { anchors.centerIn: parent; text: "Join"; color: "#ffffff"; font.weight: Font.DemiBold; font.pixelSize: 12 }
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: root.connectWifi(root.wifiConnectingSsid, root.wifiPasswordInput) }
+                                        }
+
+                                        Rectangle {
+                                            width: 65; height: 32; radius: 6
+                                            color: Qt.rgba(1, 1, 1, 0.10)
+                                            Text { anchors.centerIn: parent; text: "Cancel"; color: "#ffffff"; font.pixelSize: 12 }
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: root.wifiShowPasswordDialog = false }
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // ── Right Column: Interactive Content (Seamless layout, no vertical split) ──
+                        // ─────────────────────────────────────────────────────
+                        // STEP 3: Siri (Image 4 & 5)
+                        // ─────────────────────────────────────────────────────
                         Item {
-                            id: rightCol
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: leftCol.right
-                            anchors.leftMargin: 24
-                            anchors.right: parent.right
+                            anchors.fill: parent
+                            visible: root.currentStep === 3
 
-                            // ─────────────────────────────────────────────────
-                            // STEP 1: Appearance & Feature Modules Checklist
-                            // ─────────────────────────────────────────────────
-                            Flickable {
+                            Column {
                                 anchors.fill: parent
-                                visible: root.currentStep === 1
-                                contentHeight: step1Col.implicitHeight
-                                clip: true
-                                boundsBehavior: Flickable.StopAtBounds
+                                spacing: 14
 
-                                Column {
-                                    id: step1Col
-                                    width: parent.width
-                                    spacing: 12
-
-                                    // Country / Region Selection (macOS OOBE style)
-                                    Text {
-                                        text: "SELECT YOUR COUNTRY OR REGION"
-                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                    }
+                                // Centered Apple Checkbox (Image 4)
+                                Row {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    spacing: 10
 
                                     Rectangle {
-                                        width: parent.width
-                                        height: 140
-                                        radius: 16
-                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 20; height: 20; radius: 5
+                                        color: root.siriEnabled ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
                                         border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.12)
-                                        clip: true
+                                        border.color: root.siriEnabled ? "#007aff" : Qt.rgba(1, 1, 1, 0.30)
 
-                                        ListView {
-                                            anchors.fill: parent
-                                            anchors.margins: 4
-                                            model: root.countriesList
-                                            spacing: 3
-                                            boundsBehavior: Flickable.StopAtBounds
-
-                                            delegate: Rectangle {
-                                                id: countryItem
-                                                required property var modelData
-                                                required property int index
-                                                readonly property bool isSelected: root.selectedCountry === modelData.name
-
-                                                width: parent.width
-                                                height: 38
-                                                radius: 12
-                                                color: isSelected ? Qt.rgba(0, 122, 255, 0.28) : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
-                                                border.width: isSelected ? 1.5 : (cHover.hovered ? 1 : 0)
-                                                border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
-
-                                                Behavior on color { ColorAnimation { duration: 150 } }
-                                                Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                                                // Top specular highlight on selected item
-                                                Rectangle {
-                                                    anchors.top: parent.top
-                                                    anchors.left: parent.left
-                                                    anchors.right: parent.right
-                                                    height: 1
-                                                    radius: parent.radius
-                                                    visible: countryItem.isSelected
-                                                    color: Qt.rgba(1, 1, 1, 0.35)
-                                                }
-
-                                                Row {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12
-                                                    anchors.rightMargin: 12
-                                                    spacing: 10
-
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: countryItem.modelData.flag
-                                                        font.pixelSize: 18
-                                                    }
-
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: countryItem.modelData.name
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: countryItem.isSelected ? Font.DemiBold : Font.Normal
-                                                    }
-
-                                                    Item { width: Math.max(parent.width - 250, 10); height: 1 }
-
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: countryItem.modelData.lang
-                                                        color: countryItem.isSelected ? Qt.rgba(1, 1, 1, 0.90) : Qt.rgba(1, 1, 1, 0.45)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 12
-                                                    }
-
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: "✓"
-                                                        color: "#007aff"
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.Bold
-                                                        visible: countryItem.isSelected
-                                                    }
-                                                }
-
-                                                HoverHandler { id: cHover; cursorShape: Qt.PointingHandCursor }
-                                                TapHandler {
-                                                    onTapped: {
-                                                        root.selectedCountry = countryItem.modelData.name;
-                                                        root.selectedLanguage = countryItem.modelData.code;
-                                                        root.selectedVoice = countryItem.modelData.voice;
-                                                        root.playSound("tink");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Item { width: 1; height: 2 }
-
-                                    // Theme Selector Cards (Light & Dark)
-                                    Text {
-                                        text: "SYSTEM APPEARANCE"
-                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                    }
-
-                                    Row {
-                                        spacing: 12
-                                        width: parent.width
-
-                                        // Light Theme Card with Apple Display Icon
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2
-                                            height: 64; radius: 12
-                                            color: !root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: !root.darkMode ? 1.5 : 1
-                                            border.color: !root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.centerIn: parent
-                                                spacing: 12
-
-                                                // Apple Display Icon (Light)
-                                                Item {
-                                                    width: 28; height: 26
-                                                    anchors.verticalCenter: parent.verticalCenter
-
-                                                    Rectangle {
-                                                        width: 28; height: 18; radius: 3
-                                                        color: "#dbeafe"
-                                                        border.width: 1.2
-                                                        border.color: "#3b82f6"
-
-                                                        Rectangle {
-                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                            height: 3; radius: 1
-                                                            color: Qt.rgba(0, 0, 0, 0.20)
-                                                        }
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 14; height: 8; radius: 1.5
-                                                            color: "#ffffff"
-                                                        }
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 18
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 4; height: 5; color: "#9ca3af"
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 23
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 14; height: 2.5; radius: 1; color: "#9ca3af"
-                                                    }
-                                                }
-
-                                                Text {
-                                                    text: "Light"
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 13
-                                                    font.weight: !root.darkMode ? Font.DemiBold : Font.Medium
-                                                }
-                                            }
-                                            TapHandler { onTapped: root.darkMode = false }
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        }
-
-                                        // Dark Theme Card with Apple Display Icon
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2
-                                            height: 64; radius: 12
-                                            color: root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: root.darkMode ? 1.5 : 1
-                                            border.color: root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.centerIn: parent
-                                                spacing: 12
-
-                                                // Apple Display Icon (Dark)
-                                                Item {
-                                                    width: 28; height: 26
-                                                    anchors.verticalCenter: parent.verticalCenter
-
-                                                    Rectangle {
-                                                        width: 28; height: 18; radius: 3
-                                                        color: "#181a24"
-                                                        border.width: 1.2
-                                                        border.color: "#4b5563"
-
-                                                        Rectangle {
-                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                            height: 3; radius: 1
-                                                            color: Qt.rgba(255, 255, 255, 0.25)
-                                                        }
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 14; height: 8; radius: 1.5
-                                                            color: "#2a2e3d"
-                                                        }
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 18
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 4; height: 5; color: "#6b7280"
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 23
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 14; height: 2.5; radius: 1; color: "#6b7280"
-                                                    }
-                                                }
-
-                                                Text {
-                                                    text: "Dark"
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 13
-                                                    font.weight: root.darkMode ? Font.DemiBold : Font.Medium
-                                                }
-                                            }
-                                            TapHandler { onTapped: root.darkMode = true }
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        }
-                                    }
-
-                                    Item { width: 1; height: 4 }
-
-                                    // Feature Modules Title
-                                    Text {
-                                        text: "FEATURE MODULES"
-                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                    }
-
-                                    // Module 1: Core MacShell UI (Required & Locked)
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: ""; font.pixelSize: 18; color: "#ffffff" }
-
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 120
-                                                Text { text: "Core MacShell UI"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Menu Bar, Dock, Control Center"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
-                                            }
-
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 72; height: 24; radius: 12
-                                                color: Qt.rgba(0, 122, 255, 0.20)
-                                                border.width: 1; border.color: "#007aff"
-                                                Text { anchors.centerIn: parent; text: "Required"; color: "#38bdf8"; font.pixelSize: 10; font.weight: Font.DemiBold }
-                                            }
-                                        }
-                                    }
-
-                                    // Module 2: macOS Wi-Fi Manager
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Item {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 22; height: 22
-
-                                                Canvas {
-                                                    anchors.centerIn: parent
-                                                    width: 20; height: 20
-                                                    onPaint: {
-                                                        var ctx = getContext("2d");
-                                                        ctx.reset();
-                                                        var cx = width / 2;
-                                                        var cy = height * 0.88;
-                                                        ctx.strokeStyle = "#ffffff";
-                                                        ctx.lineCap = "round";
-
-                                                        // Arc 3 (Outer)
-                                                        ctx.beginPath();
-                                                        ctx.arc(cx, cy, 14, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                        ctx.lineWidth = 2.0;
-                                                        ctx.stroke();
-
-                                                        // Arc 2 (Middle)
-                                                        ctx.beginPath();
-                                                        ctx.arc(cx, cy, 9, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                        ctx.lineWidth = 1.9;
-                                                        ctx.stroke();
-
-                                                        // Arc 1 (Inner)
-                                                        ctx.beginPath();
-                                                        ctx.arc(cx, cy, 4.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                        ctx.lineWidth = 1.8;
-                                                        ctx.stroke();
-
-                                                        // Dot
-                                                        ctx.beginPath();
-                                                        ctx.arc(cx, cy - 0.5, 1.6, 0, Math.PI * 2);
-                                                        ctx.fillStyle = "#ffffff";
-                                                        ctx.fill();
-                                                    }
-                                                }
-                                            }
-
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 80
-                                                Text { text: "macOS Wi-Fi Manager"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Wi-Fi scanner and Apple-style connection popup"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
-                                            }
-
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.wifiManagerEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.wifiManagerEnabled ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.wifiManagerEnabled = !root.wifiManagerEnabled }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-
-                                    // Module 3: Sound & Theme Pack
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "🔔"; font.pixelSize: 18 }
-
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 80
-                                                Text { text: "Sound & Theme Pack"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Startup Chime, click, pop sounds & typography"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
-                                            }
-
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.soundPackEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.soundPackEnabled ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.soundPackEnabled = !root.soundPackEnabled }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-
-                                    // Module 4: Apple Intelligence & Siri (Optional)
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Item {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 22; height: 22
-                                                SiriOrb {
-                                                    anchors.fill: parent
-                                                    active: root.currentStep === 1
-                                                    isProcessing: root.siriEnabled
-                                                }
-                                            }
-
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 80
-                                                Row {
-                                                    spacing: 6
-                                                    Text { text: "Apple Intelligence & Siri"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                    Text { text: "(Optional)"; color: "#38bdf8"; font.pixelSize: 11 }
-                                                }
-                                                Text { text: "Conversational voice assistant (Can be skipped)"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
-                                            }
-
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.siriEnabled ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.siriEnabled = !root.siriEnabled }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // STEP 2: macOS Wi-Fi Connection
-                            // ─────────────────────────────────────────────────
-                            Item {
-                                anchors.fill: parent
-                                visible: root.currentStep === 2
-
-                                Column {
-                                    anchors.fill: parent
-                                    spacing: 12
-
-                                    // Wi-Fi Header Bar with Toggle & Refresh
-                                    Rectangle {
-                                        width: parent.width; height: 46; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Text {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                text: "Wi-Fi"
-                                                color: "#ffffff"
-                                                font.family: "Open Runde"
-                                                font.pixelSize: 14
-                                                font.weight: Font.DemiBold
-                                            }
-
-                                            Item { width: parent.width - 150; height: 1 }
-
-                                            // Scan / Refresh Button
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 28; height: 28; radius: 14
-                                                color: scanHover.hovered ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.08)
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "↻"
-                                                    font.pixelSize: 15
-                                                    color: root.wifiScanning ? "#007aff" : "#ffffff"
-                                                    rotation: root.wifiScanning ? 360 : 0
-                                                    Behavior on rotation { NumberAnimation { duration: 800; loops: Animation.Infinite } }
-                                                }
-                                                HoverHandler { id: scanHover; cursorShape: Qt.PointingHandCursor }
-                                                TapHandler { onTapped: root.scanWifiNetworks() }
-                                            }
-
-                                            // Wi-Fi Radio Toggle Switch
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.wifiRadioOn ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.wifiRadioOn ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.toggleWifiRadio(!root.wifiRadioOn) }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-
-                                    // Wi-Fi Networks List Container
-                                    Rectangle {
-                                        width: parent.width
-                                        height: parent.height - 58
-                                        radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.04)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-                                        clip: true
-
-                                        // When Wi-Fi is disabled
-                                        Item {
+                                        Text {
                                             anchors.centerIn: parent
-                                            visible: !root.wifiRadioOn
-                                            Column {
-                                                anchors.centerIn: parent
+                                            visible: root.siriEnabled
+                                            text: "✓"
+                                            color: "#ffffff"
+                                            font.pixelSize: 13
+                                            font.weight: Font.Bold
+                                        }
+
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.siriEnabled = !root.siriEnabled }
+                                    }
+
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Enable Ask Siri"
+                                        color: "#ffffff"
+                                        font.family: "Open Runde"
+                                        font.pixelSize: 14
+                                        font.weight: Font.Medium
+                                    }
+                                }
+
+                                // Centered Siri Voice List Box (Image 5)
+                                Rectangle {
+                                    width: 380
+                                    height: 120
+                                    radius: 10
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                                    clip: true
+                                    opacity: root.siriEnabled ? 1.0 : 0.4
+                                    enabled: root.siriEnabled
+
+                                    ListView {
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        spacing: 2
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        model: [
+                                            { id: "en-US-JennyNeural", name: "Voice 1 (English US)" },
+                                            { id: "vi-VN-NamMinhNeural", name: "Voice 2 (Tiếng Việt)" },
+                                            { id: "ja-JP-NanamiNeural", name: "Voice 3 (Japanese)" },
+                                            { id: "fr-FR-DeniseNeural", name: "Voice 4 (French)" },
+                                            { id: "de-DE-KatjaNeural", name: "Voice 5 (German)" }
+                                        ]
+
+                                        delegate: Rectangle {
+                                            id: voiceItem
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isSelected: root.selectedVoice === modelData.id
+
+                                            width: parent.width
+                                            height: 28
+                                            radius: 6
+                                            color: isSelected ? "#007aff" : (vHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+
+                                            Row {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 12
+                                                anchors.rightMargin: 12
                                                 spacing: 8
-                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Wi-Fi is Turned Off"; color: Qt.rgba(1, 1, 1, 0.60); font.pixelSize: 14; font.weight: Font.Medium }
-                                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Turn on the switch above to search for available networks"; color: Qt.rgba(1, 1, 1, 0.40); font.pixelSize: 12 }
-                                            }
-                                        }
-
-                                        // Network items list
-                                        ListView {
-                                            anchors.fill: parent
-                                            anchors.margins: 6
-                                            visible: root.wifiRadioOn
-                                            model: root.wifiNetworks
-                                            spacing: 4
-                                            boundsBehavior: Flickable.StopAtBounds
-
-                                            delegate: Rectangle {
-                                                id: wifiItemCard
-                                                required property var modelData
-                                                required property int index
-
-                                                width: parent.width
-                                                height: 42
-                                                radius: 8
-                                                color: wifiItemHover.hovered ? Qt.rgba(1, 1, 1, 0.12) : (modelData.inUse ? Qt.rgba(0, 122, 255, 0.15) : Qt.rgba(1, 1, 1, 0.04))
-
-                                                Row {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12; anchors.rightMargin: 12
-                                                    spacing: 12
-
-                                                    // Apple 3-Tier Curved Wi-Fi Signal Arc Icon
-                                                    Item {
-                                                        id: signalIcon
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        width: 22; height: 18
-
-                                                        Canvas {
-                                                            anchors.fill: parent
-                                                            onPaint: {
-                                                                var ctx = getContext("2d");
-                                                                ctx.reset();
-                                                                var cx = width / 2;
-                                                                var cy = height - 1;
-                                                                var sig = wifiItemCard.modelData.signal || 50;
-                                                                var activeCol = wifiItemCard.modelData.inUse ? "#007aff" : "#ffffff";
-                                                                var dimCol = Qt.rgba(1, 1, 1, 0.22);
-
-                                                                // Outer Arc 3 (>= 70%)
-                                                                ctx.beginPath();
-                                                                ctx.arc(cx, cy, 14, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                                ctx.lineWidth = 2.0;
-                                                                ctx.strokeStyle = sig >= 70 ? activeCol : dimCol;
-                                                                ctx.lineCap = "round";
-                                                                ctx.stroke();
-
-                                                                // Middle Arc 2 (>= 40%)
-                                                                ctx.beginPath();
-                                                                ctx.arc(cx, cy, 9.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                                ctx.lineWidth = 2.0;
-                                                                ctx.strokeStyle = sig >= 40 ? activeCol : dimCol;
-                                                                ctx.lineCap = "round";
-                                                                ctx.stroke();
-
-                                                                // Inner Arc 1 (>= 15%)
-                                                                ctx.beginPath();
-                                                                ctx.arc(cx, cy, 5.0, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                                ctx.lineWidth = 2.0;
-                                                                ctx.strokeStyle = sig >= 15 ? activeCol : dimCol;
-                                                                ctx.lineCap = "round";
-                                                                ctx.stroke();
-
-                                                                // Base dot
-                                                                ctx.beginPath();
-                                                                ctx.arc(cx, cy - 1, 1.6, 0, Math.PI * 2);
-                                                                ctx.fillStyle = sig > 0 ? activeCol : dimCol;
-                                                                ctx.fill();
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // SSID Name
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        width: parent.width - 150
-                                                        text: wifiItemCard.modelData.ssid || "Wi-Fi"
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: wifiItemCard.modelData.inUse ? Font.DemiBold : Font.Normal
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    // Padlock icon if encrypted
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: "🔒"
-                                                        font.pixelSize: 11
-                                                        color: Qt.rgba(1, 1, 1, 0.60)
-                                                        visible: wifiItemCard.modelData.secure
-                                                    }
-
-                                                    // Connected badge
-                                                    Row {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        spacing: 4
-                                                        visible: wifiItemCard.modelData.inUse
-                                                        Text { text: "✓"; color: "#34c759"; font.pixelSize: 12; font.weight: Font.Bold }
-                                                        Text { text: "Connected"; color: "#34c759"; font.pixelSize: 11; font.weight: Font.DemiBold }
-                                                    }
-                                                }
-
-                                                HoverHandler { id: wifiItemHover; cursorShape: Qt.PointingHandCursor }
-                                                TapHandler {
-                                                    onTapped: {
-                                                        if (wifiItemCard.modelData.inUse) return;
-                                                        root.wifiConnectingSsid = wifiItemCard.modelData.ssid;
-                                                        if (wifiItemCard.modelData.secure) {
-                                                            root.wifiPasswordInput = "";
-                                                            root.wifiErrorMsg = "";
-                                                            root.wifiShowPasswordDialog = true;
-                                                        } else {
-                                                            root.connectWifi(wifiItemCard.modelData.ssid, "");
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Wi-Fi Password Sheet Modal
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            visible: root.wifiShowPasswordDialog
-                                            color: Qt.rgba(0.08, 0.08, 0.12, 0.88)
-                                            radius: 12
-
-                                            Column {
-                                                anchors.centerIn: parent
-                                                width: parent.width - 60
-                                                spacing: 12
 
                                                 Text {
-                                                    anchors.horizontalCenter: parent.horizontalCenter
-                                                    text: "Enter password for network"
-                                                    color: Qt.rgba(1, 1, 1, 0.60)
-                                                    font.pixelSize: 12
-                                                }
-
-                                                Text {
-                                                    anchors.horizontalCenter: parent.horizontalCenter
-                                                    text: "\"" + root.wifiConnectingSsid + "\""
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: voiceItem.modelData.name
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
-                                                    font.pixelSize: 16
-                                                    font.weight: Font.Bold
-                                                    elide: Text.ElideRight
-                                                    width: parent.width - 20
-                                                    horizontalAlignment: Text.AlignHCenter
+                                                    font.pixelSize: 12
+                                                    font.weight: voiceItem.isSelected ? Font.DemiBold : Font.Normal
                                                 }
 
-                                                // Password Field
-                                                Rectangle {
-                                                    width: parent.width; height: 38; radius: 8
-                                                    color: Qt.rgba(0.18, 0.18, 0.22, 0.85)
-                                                    border.width: 1.5; border.color: "#007aff"
+                                                Item { width: 1; height: 1 }
 
-                                                    TextInput {
-                                                        id: wifiPwdInput
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 12; anchors.rightMargin: 12
-                                                        verticalAlignment: TextInput.AlignVCenter
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        echoMode: TextInput.Password
-                                                        text: root.wifiPasswordInput
-                                                        onTextChanged: root.wifiPasswordInput = text
-                                                        onAccepted: {
-                                                            if (text.length > 0) root.connectWifi(root.wifiConnectingSsid, text);
-                                                        }
-                                                    }
-                                                }
-
-                                                // Error message if any
                                                 Text {
-                                                    anchors.horizontalCenter: parent.horizontalCenter
-                                                    visible: root.wifiErrorMsg !== ""
-                                                    text: root.wifiErrorMsg
-                                                    color: "#ff453a"
-                                                    font.pixelSize: 11
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    visible: voiceItem.isSelected
+                                                    text: "✓"
+                                                    color: "#ffffff"
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Bold
                                                 }
+                                            }
 
-                                                Row {
-                                                    anchors.horizontalCenter: parent.horizontalCenter
-                                                    spacing: 12
-
-                                                    // Cancel button
-                                                    Rectangle {
-                                                        width: 100; height: 32; radius: 16
-                                                        color: Qt.rgba(1, 1, 1, 0.12)
-                                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.20)
-                                                        Text { anchors.centerIn: parent; text: "Cancel"; color: "#ffffff"; font.pixelSize: 12 }
-                                                        TapHandler { onTapped: root.wifiShowPasswordDialog = false }
-                                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                                    }
-
-                                                    // Connect button
-                                                    Rectangle {
-                                                        width: 120; height: 32; radius: 16
-                                                        color: "#007aff"
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: root.wifiIsConnecting ? "Connecting..." : "Connect"
-                                                            color: "#ffffff"
-                                                            font.pixelSize: 12
-                                                            font.weight: Font.DemiBold
-                                                        }
-                                                        TapHandler {
-                                                            onTapped: {
-                                                                if (!root.wifiIsConnecting) {
-                                                                    root.connectWifi(root.wifiConnectingSsid, root.wifiPasswordInput);
-                                                                }
-                                                            }
-                                                        }
-                                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                                    }
+                                            HoverHandler { id: vHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler {
+                                                onTapped: {
+                                                    root.selectedVoice = voiceItem.modelData.id;
+                                                    root.playSound("tink");
                                                 }
                                             }
                                         }
                                     }
                                 }
+
+                                // Optional Gemini Key input
+                                Rectangle {
+                                    width: 380; height: 32; radius: 6
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.12)
+                                    opacity: root.siriEnabled ? 1.0 : 0.4
+                                    enabled: root.siriEnabled
+
+                                    TextInput {
+                                        id: keyInput
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        color: "#ffffff"
+                                        font.pixelSize: 11
+                                        echoMode: TextInput.Password
+                                        text: root.geminiApiKey
+                                        onTextChanged: root.geminiApiKey = text
+
+                                        Text {
+                                            text: "Gemini API Key (Optional for Apple Intelligence)"
+                                            color: Qt.rgba(1, 1, 1, 0.35)
+                                            visible: !keyInput.text
+                                            font.pixelSize: 11
+                                        }
+                                    }
+                                }
                             }
+                        }
 
-                            // ─────────────────────────────────────────────────
-                            // STEP 3: Apple Intelligence & Siri (Optional)
-                            // ─────────────────────────────────────────────────
-                            Flickable {
-                                anchors.fill: parent
-                                visible: root.currentStep === 3
-                                contentHeight: step3Col.implicitHeight
-                                clip: true
-                                boundsBehavior: Flickable.StopAtBounds
+                        // ─────────────────────────────────────────────────────
+                        // STEP 4: Setting Up Your Mac (Installation Progress)
+                        // ─────────────────────────────────────────────────────
+                        Item {
+                            anchors.fill: parent
+                            visible: root.currentStep === 4
 
-                                Column {
-                                    id: step3Col
-                                    width: parent.width
-                                    spacing: 14
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 14
 
-                                    // Gemini API Key Card
+                                // Centered macOS Progress Bar
+                                Rectangle {
+                                    width: 380
+                                    height: 6
+                                    radius: 3
+                                    color: Qt.rgba(1, 1, 1, 0.15)
+                                    anchors.horizontalCenter: parent.horizontalCenter
+
                                     Rectangle {
-                                        width: parent.width
-                                        height: 120
-                                        radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.12)
+                                        width: (root.downloadProgress / 100.0) * parent.width
+                                        height: parent.height
+                                        radius: 3
+                                        color: "#007aff"
+                                        Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    }
+                                }
 
-                                        Column {
-                                            anchors.fill: parent
-                                            anchors.margins: 14
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: root.downloadStatusText || "Configuring system resources..."
+                                    color: Qt.rgba(1, 1, 1, 0.65)
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 12
+                                }
+
+                                Item { width: 1; height: 10 }
+
+                                // Checklist Cards
+                                Rectangle {
+                                    width: 380; height: 120; radius: 10
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.12)
+                                    clip: true
+
+                                    ListView {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 4
+                                        boundsBehavior: Flickable.StopAtBounds
+                                        model: root.dependenciesList
+
+                                        delegate: Row {
+                                            required property var modelData
+                                            width: parent.width; height: 22
                                             spacing: 8
 
-                                            Row {
-                                                width: parent.width
-                                                Text {
-                                                    text: "Google Gemini API Key"
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 13
-                                                    font.weight: Font.DemiBold
-                                                }
-                                                Item { width: parent.width - 240; height: 1 }
-                                                Text {
-                                                    text: "Get Free API Key →"
-                                                    color: "#007aff"
-                                                    font.pixelSize: 11
-                                                    TapHandler {
-                                                        onTapped: Quickshell.execDetached(["xdg-open", "https://aistudio.google.com/app/apikey"])
-                                                    }
-                                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                                }
-                                            }
-
-                                            // Embedded Input & Test Button
-                                            Rectangle {
-                                                width: parent.width
-                                                height: 38
-                                                radius: 8
-                                                color: Qt.rgba(1, 1, 1, 0.08)
-                                                border.width: 1
-                                                border.color: root.keyValidationStatus === "valid" ? "#34c759" : (root.keyValidationStatus === "invalid" ? "#ff453a" : Qt.rgba(1, 1, 1, 0.20))
-
-                                                TextInput {
-                                                    id: apiKeyInput
-                                                    anchors.left: parent.left
-                                                    anchors.right: testKeyBtn.left
-                                                    anchors.top: parent.top
-                                                    anchors.bottom: parent.bottom
-                                                    anchors.leftMargin: 12
-                                                    anchors.rightMargin: 8
-                                                    verticalAlignment: TextInput.AlignVCenter
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 12
-                                                    echoMode: TextInput.PasswordEchoOnEdit
-                                                    text: root.geminiApiKey
-                                                    onTextChanged: {
-                                                        root.geminiApiKey = text;
-                                                        root.keyValidationStatus = "idle";
-                                                        root.keyValidationMsg = "";
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    id: testKeyBtn
-                                                    anchors.right: parent.right
-                                                    anchors.rightMargin: 4
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: 82; height: 30; radius: 6
-                                                    color: testKeyHover.hovered ? "#0062cc" : "#007aff"
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: root.keyValidationStatus === "testing" ? "..." : "Verify"
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 11
-                                                        font.weight: Font.DemiBold
-                                                    }
-
-                                                    HoverHandler { id: testKeyHover; cursorShape: Qt.PointingHandCursor }
-                                                    TapHandler { onTapped: root.testKey() }
-                                                }
-                                            }
-
-                                            // Validation status message
                                             Text {
-                                                visible: root.keyValidationMsg !== ""
-                                                text: root.keyValidationMsg
-                                                color: root.keyValidationStatus === "valid" ? "#34c759" : (root.keyValidationStatus === "invalid" ? "#ff453a" : "#38bdf8")
-                                                font.pixelSize: 11
-                                            }
-                                        }
-                                    }
-
-                                    // Voice Streaming Switch
-                                    Rectangle {
-                                        width: parent.width; height: 50; radius: 10
-                                        color: Qt.rgba(1, 1, 1, 0.06)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14; anchors.rightMargin: 14
-                                            spacing: 10
-
-                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "🎙️"; font.pixelSize: 18 }
-
-                                            Column {
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 80
-                                                Text { text: "Live Voice Streaming"; color: "#ffffff"; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                                Text { text: "Stream voice responses in real time from AI"; color: Qt.rgba(1, 1, 1, 0.55); font.pixelSize: 11 }
+                                                text: "✓"
+                                                color: "#34c759"
+                                                font.pixelSize: 12
+                                                font.weight: Font.Bold
                                             }
 
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 44; height: 26; radius: 13
-                                                color: root.liveVoiceStreaming ? "#34c759" : Qt.rgba(1, 1, 1, 0.20)
-                                                Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                Rectangle {
-                                                    x: root.liveVoiceStreaming ? 20 : 2
-                                                    y: 2; width: 22; height: 22; radius: 11
-                                                    color: "#ffffff"
-                                                    Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                TapHandler { onTapped: root.liveVoiceStreaming = !root.liveVoiceStreaming }
-                                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                            }
-                                        }
-                                    }
-
-                                    // TTS Voice Cards
-                                    Text {
-                                        text: "SIRI VOICE (TTS)"
-                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                    }
-
-                                    Row {
-                                        spacing: 12
-                                        width: parent.width
-
-                                        // Vietnamese Voice
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2
-                                            height: 52; radius: 10
-                                            color: root.selectedVoice === "vi-VN-NamMinhNeural" ? Qt.rgba(0.2, 0.5, 0.9, 0.25) : Qt.rgba(0.18, 0.18, 0.22, 0.50)
-                                            border.width: root.selectedVoice === "vi-VN-NamMinhNeural" ? 2 : 1
-                                            border.color: root.selectedVoice === "vi-VN-NamMinhNeural" ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
-
-                                            Row {
-                                                anchors.centerIn: parent
-                                                spacing: 8
-                                                Text { text: "🇻🇳"; font.pixelSize: 18 }
-                                                Text { text: "Vietnamese (Nam Minh)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.Medium }
-                                            }
-                                            TapHandler {
-                                                onTapped: {
-                                                    root.selectedVoice = "vi-VN-NamMinhNeural";
-                                                    root.selectedLanguage = "vi-VN";
-                                                }
-                                            }
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        }
-
-                                        // English Voice
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2
-                                            height: 52; radius: 10
-                                            color: root.selectedVoice === "en-US-JennyNeural" ? Qt.rgba(0.2, 0.5, 0.9, 0.25) : Qt.rgba(0.18, 0.18, 0.22, 0.50)
-                                            border.width: root.selectedVoice === "en-US-JennyNeural" ? 2 : 1
-                                            border.color: root.selectedVoice === "en-US-JennyNeural" ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
-
-                                            Row {
-                                                anchors.centerIn: parent
-                                                spacing: 8
-                                                Text { text: "🇺🇸"; font.pixelSize: 18 }
-                                                Text { text: "English (US Jenny)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.Medium }
-                                            }
-                                            TapHandler {
-                                                onTapped: {
-                                                    root.selectedVoice = "en-US-JennyNeural";
-                                                    root.selectedLanguage = "en-US";
-                                                }
-                                            }
-                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // STEP 4: Dependency Check & Asset Installation
-                            // ─────────────────────────────────────────────────
-                            Item {
-                                anchors.fill: parent
-                                visible: root.currentStep === 4
-
-                                Column {
-                                    anchors.fill: parent
-                                    spacing: 12
-
-                                    // Dependency Checklist Cards (Scrollable)
-                                    Rectangle {
-                                        width: parent.width
-                                        height: 220
-                                        radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.05)
-                                        border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
-                                        clip: true
-
-                                        ListView {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            model: root.dependenciesList
-                                            spacing: 6
-                                            boundsBehavior: Flickable.StopAtBounds
-
-                                            delegate: Rectangle {
-                                                id: depRow
-                                                required property var modelData
-                                                required property int index
-
-                                                width: parent.width; height: 38; radius: 8
-                                                color: Qt.rgba(1, 1, 1, 0.04)
-
-                                                Row {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12; anchors.rightMargin: 12
-                                                    spacing: 10
-
-                                                    // Status indicator icon
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        text: {
-                                                            if (depRow.modelData.status === "installed") return "✓";
-                                                            if (depRow.modelData.status === "ready") return "⚡";
-                                                            if (depRow.modelData.status === "skipped") return "—";
-                                                            return "!";
-                                                        }
-                                                        color: {
-                                                            if (depRow.modelData.status === "installed") return "#34c759";
-                                                            if (depRow.modelData.status === "ready") return "#38bdf8";
-                                                            if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 1, 0.35);
-                                                            return "#ff9f0a";
-                                                        }
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.Bold
-                                                    }
-
-                                                    // Dependency Name
-                                                    Text {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        width: parent.width - 150
-                                                        text: depRow.modelData.name || "Auxiliary Package"
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 12
-                                                        font.weight: Font.Medium
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    // Status Badge
-                                                    Rectangle {
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                        width: 90; height: 22; radius: 11
-                                                        color: {
-                                                            if (depRow.modelData.status === "installed") return Qt.rgba(52, 199, 89, 0.15);
-                                                            if (depRow.modelData.status === "ready") return Qt.rgba(56, 189, 248, 0.15);
-                                                            if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 0.08);
-                                                            return Qt.rgba(255, 159, 10, 0.18);
-                                                        }
-                                                        border.width: 1
-                                                        border.color: {
-                                                            if (depRow.modelData.status === "installed") return "#34c759";
-                                                            if (depRow.modelData.status === "ready") return "#38bdf8";
-                                                            if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 1, 0.20);
-                                                            return "#ff9f0a";
-                                                        }
-
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            font.family: "Open Runde"
-                                                            font.pixelSize: 10
-                                                            font.weight: Font.DemiBold
-                                                            color: {
-                                                                if (depRow.modelData.status === "installed") return "#34c759";
-                                                                if (depRow.modelData.status === "ready") return "#38bdf8";
-                                                                if (depRow.modelData.status === "skipped") return Qt.rgba(1, 1, 1, 0.40);
-                                                                return "#ff9f0a";
-                                                            }
-                                                            text: {
-                                                                if (depRow.modelData.status === "installed") return "Installed";
-                                                                if (depRow.modelData.status === "ready") return "Ready";
-                                                                if (depRow.modelData.status === "skipped") return "Skipped";
-                                                                return "Download " + (depRow.modelData.size_mb || "") + " MB";
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Real-Time Progress Bar Card
-                                    Rectangle {
-                                        width: parent.width
-                                        height: 105
-                                        radius: 12
-                                        color: Qt.rgba(0.16, 0.16, 0.20, 0.60)
-                                        border.width: 1
-                                        border.color: Qt.rgba(1, 1, 1, 0.15)
-
-                                        Column {
-                                            anchors.fill: parent
-                                            anchors.margins: 14
-                                            spacing: 10
-
-                                            Row {
-                                                width: parent.width
-                                                Text {
-                                                    text: root.downloadTaskName || "Setup Progress"
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 13
-                                                    font.weight: Font.DemiBold
-                                                }
-                                                Item { width: parent.width - 220; height: 1 }
-                                                Text {
-                                                    text: root.downloadProgress + "% (" + root.downloadSpeed + ")"
-                                                    color: "#38bdf8"
-                                                    font.pixelSize: 11
-                                                    font.weight: Font.DemiBold
-                                                }
-                                            }
-
-                                            // Progress Bar Track
-                                            Rectangle {
-                                                width: parent.width; height: 8; radius: 4
-                                                color: Qt.rgba(0.10, 0.10, 0.14, 0.85)
-
-                                                Rectangle {
-                                                    height: parent.height; radius: parent.radius
-                                                    width: parent.width * (root.downloadProgress / 100.0)
-                                                    gradient: Gradient {
-                                                        GradientStop { position: 0.0; color: "#007aff" }
-                                                        GradientStop { position: 1.0; color: "#38bdf8" }
-                                                    }
-                                                    Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                                }
-                                            }
-
-                                            // Status text line
                                             Text {
-                                                text: root.downloadStatusText
-                                                color: Qt.rgba(1, 1, 1, 0.60)
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: parent.width - 30
+                                                text: modelData.name || ""
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
                                                 font.pixelSize: 11
                                                 elide: Text.ElideRight
-                                                width: parent.width
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            // ─────────────────────────────────────────────────
-                            // STEP 5: Welcome Finish & Summary
-                            // ─────────────────────────────────────────────────
-                            Item {
-                                anchors.fill: parent
-                                visible: root.currentStep === 5
+                        // ─────────────────────────────────────────────────────
+                        // STEP 5: Welcome to MacShell (Image 3 style)
+                        // ─────────────────────────────────────────────────────
+                        Item {
+                            anchors.fill: parent
+                            visible: root.currentStep === 5
 
-                                Column {
-                                    anchors.fill: parent
-                                    spacing: 14
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 10
 
-                                    Text {
-                                        text: "SYSTEM CONFIGURATION SUMMARY"
-                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                    }
+                                // 3 Summary Rows (Like Image 3!)
+                                Rectangle {
+                                    width: 400; height: 50; radius: 10
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
-                                    // Summary Cards (2x2 Grid)
-                                    Grid {
-                                        columns: 2
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 16; anchors.rightMargin: 16
                                         spacing: 12
-                                        width: parent.width
 
-                                        // 1. Theme (Appearance) with Apple Display Icon
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 16; anchors.rightMargin: 16
-                                                spacing: 12
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                // Apple Display Icon
-                                                Item {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: 28; height: 26
-
-                                                    Rectangle {
-                                                        width: 26; height: 17; radius: 3
-                                                        color: root.darkMode ? "#181a24" : "#dbeafe"
-                                                        border.width: 1.2
-                                                        border.color: root.darkMode ? "#4b5563" : "#3b82f6"
-
-                                                        Rectangle {
-                                                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                            height: 3; radius: 1
-                                                            color: root.darkMode ? Qt.rgba(255, 255, 255, 0.25) : Qt.rgba(0, 0, 0, 0.20)
-                                                        }
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 12; height: 7; radius: 1.5
-                                                            color: root.darkMode ? "#2a2e3d" : "#ffffff"
-                                                        }
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 17
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 4; height: 5; color: "#9ca3af"
-                                                    }
-                                                    Rectangle {
-                                                        anchors.top: parent.top; anchors.topMargin: 22
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 14; height: 2.5; radius: 1; color: "#9ca3af"
-                                                    }
-                                                }
-
-                                                Column {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: parent.width - 44
-                                                    spacing: 2
-
-                                                    Text {
-                                                        text: "Appearance"
-                                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 11
-                                                    }
-                                                    Text {
-                                                        text: root.darkMode ? "Dark Mode" : "Light Mode"
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // 2. Region & Language with Apple Globe Icon
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 16; anchors.rightMargin: 16
-                                                spacing: 12
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                // Apple Globe Icon
-                                                Item {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: 28; height: 28
-
-                                                    Canvas {
-                                                        anchors.centerIn: parent
-                                                        width: 24; height: 24
-                                                        onPaint: {
-                                                            var ctx = getContext("2d");
-                                                            ctx.reset();
-                                                            var cx = width / 2;
-                                                            var cy = height / 2;
-                                                            var r = 10.5;
-                                                            ctx.strokeStyle = "#38bdf8";
-                                                            ctx.lineWidth = 1.6;
-
-                                                            // Outer Sphere
-                                                            ctx.beginPath();
-                                                            ctx.arc(cx, cy, r, 0, Math.PI * 2);
-                                                            ctx.stroke();
-
-                                                            // Equator
-                                                            ctx.beginPath();
-                                                            ctx.moveTo(cx - r, cy);
-                                                            ctx.lineTo(cx + r, cy);
-                                                            ctx.stroke();
-
-                                                            // Prime Meridian
-                                                            ctx.beginPath();
-                                                            ctx.moveTo(cx, cy - r);
-                                                            ctx.lineTo(cx, cy + r);
-                                                            ctx.stroke();
-
-                                                            // Longitude Curve
-                                                            ctx.lineWidth = 1.3;
-                                                            ctx.beginPath();
-                                                            ctx.ellipse(cx - 5.5, cy - r, 11, r * 2);
-                                                            ctx.stroke();
-                                                        }
-                                                    }
-                                                }
-
-                                                Column {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: parent.width - 44
-                                                    spacing: 2
-
-                                                    Text {
-                                                        text: "Region & Language"
-                                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 11
-                                                    }
-                                                    Text {
-                                                        text: root.selectedCountry
-                                                        color: "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
-                                                        width: parent.width
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // 3. Apple Wi-Fi Network
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 16; anchors.rightMargin: 16
-                                                spacing: 12
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                Item {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: 28; height: 28
-
-                                                    Canvas {
-                                                        anchors.centerIn: parent
-                                                        width: 24; height: 24
-                                                        onPaint: {
-                                                            var ctx = getContext("2d");
-                                                            ctx.reset();
-                                                            var cx = width / 2;
-                                                            var cy = height * 0.88;
-                                                            ctx.strokeStyle = "#38bdf8";
-                                                            ctx.lineCap = "round";
-
-                                                            // Arc 3 (Outer)
-                                                            ctx.beginPath();
-                                                            ctx.arc(cx, cy, 16, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                            ctx.lineWidth = 2.2;
-                                                            ctx.stroke();
-
-                                                            // Arc 2 (Middle)
-                                                            ctx.beginPath();
-                                                            ctx.arc(cx, cy, 10.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                            ctx.lineWidth = 2.0;
-                                                            ctx.stroke();
-
-                                                            // Arc 1 (Inner)
-                                                            ctx.beginPath();
-                                                            ctx.arc(cx, cy, 5.5, -Math.PI * 0.75, -Math.PI * 0.25, false);
-                                                            ctx.lineWidth = 1.9;
-                                                            ctx.stroke();
-
-                                                            // Dot
-                                                            ctx.beginPath();
-                                                            ctx.arc(cx, cy - 0.5, 1.8, 0, Math.PI * 2);
-                                                            ctx.fillStyle = "#38bdf8";
-                                                            ctx.fill();
-                                                        }
-                                                    }
-                                                }
-
-                                                Column {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: parent.width - 44
-                                                    spacing: 2
-
-                                                    Text {
-                                                        text: "Wi-Fi Network"
-                                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 11
-                                                    }
-                                                    Text {
-                                                        text: root.wifiConnectedSsid ? root.wifiConnectedSsid : (root.wifiManagerEnabled ? "Ready to connect" : "Disabled")
-                                                        color: root.wifiConnectedSsid ? "#34c759" : "#ffffff"
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
-                                                        width: parent.width
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // 4. Apple Intelligence & Siri with Animated Orb
-                                        Rectangle {
-                                            width: (parent.width - 12) / 2; height: 64; radius: 12
-                                            color: Qt.rgba(1, 1, 1, 0.06)
-                                            border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.14)
-
-                                            Row {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 16; anchors.rightMargin: 16
-                                                spacing: 12
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                Item {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: 28; height: 28
-                                                    SiriOrb {
-                                                        anchors.fill: parent
-                                                        active: root.currentStep === 5
-                                                        isProcessing: root.siriEnabled
-                                                    }
-                                                }
-
-                                                Column {
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    width: parent.width - 44
-                                                    spacing: 2
-
-                                                    Text {
-                                                        text: "Apple Intelligence"
-                                                        color: Qt.rgba(1, 1, 1, 0.50)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 11
-                                                    }
-                                                    Text {
-                                                        text: root.siriEnabled ? "Active & Ready" : "Disabled"
-                                                        color: root.siriEnabled ? "#34c759" : Qt.rgba(1, 1, 1, 0.50)
-                                                        font.family: "Open Runde"
-                                                        font.pixelSize: 13
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                }
-                                            }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🌐"; font.pixelSize: 20 }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            Text { text: "Preferred Language"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
+                                            Text { text: root.selectedCountry + " (English)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                         }
                                     }
+                                }
 
-                                    Item { width: 1; height: 8 }
+                                Rectangle {
+                                    width: 400; height: 50; radius: 10
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
-                                    // Completion banner
-                                    Rectangle {
-                                        width: parent.width
-                                        height: 68
-                                        radius: 12
-                                        color: Qt.rgba(0, 122, 255, 0.10)
-                                        border.width: 1
-                                        border.color: Qt.rgba(0, 122, 255, 0.28)
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 16; anchors.rightMargin: 16
+                                        spacing: 12
 
-                                        Row {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 16; anchors.rightMargin: 16
-                                            spacing: 14
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "📶"; font.pixelSize: 20 }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            Text { text: "Wi-Fi Network"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
+                                            Text { text: root.wifiConnectedSsid || "Ready to connect"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                        }
+                                    }
+                                }
 
-                                            Item {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 28; height: 28
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "✨"
-                                                    font.pixelSize: 20
-                                                }
-                                            }
+                                Rectangle {
+                                    width: 400; height: 50; radius: 10
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
-                                            Column {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 46
-                                                spacing: 3
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 16; anchors.rightMargin: 16
+                                        spacing: 12
 
-                                                Text {
-                                                    text: "Setup Completed"
-                                                    color: "#ffffff"
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 13
-                                                    font.weight: Font.DemiBold
-                                                }
-                                                Text {
-                                                    text: "Your macOS desktop environment is ready. Click \"Get Started\" below to launch."
-                                                    color: Qt.rgba(1, 1, 1, 0.65)
-                                                    font.family: "Open Runde"
-                                                    font.pixelSize: 11
-                                                }
-                                            }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🎙️"; font.pixelSize: 20 }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            Text { text: "Apple Intelligence & Siri"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
+                                            Text { text: root.siriEnabled ? "Enabled (" + root.selectedVoice.split("-")[2] + ")" : "Disabled"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                         }
                                     }
                                 }
@@ -2804,84 +2071,89 @@ Scope {
                     }
 
                     // ═════════════════════════════════════════════════════════
-                    // Seamless Floating Bottom Navigation Bar (No dark slabs)
+                    // Bottom Navigation Bar (Image 1, 2, 3, 4, 5)
                     // ═════════════════════════════════════════════════════════
                     Item {
                         id: cardBottomNav
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        height: 56
+                        height: 52
                         anchors.leftMargin: 28
                         anchors.rightMargin: 28
                         anchors.bottomMargin: 14
 
-                        // Left: Back button
-                        Rectangle {
+                        // Left: Auxiliary / Legal / Options link (Image 1, 3, 4, 5)
+                        Text {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: root.currentStep > 1
-                            width: 100; height: 36; radius: 18
-                            color: backBtnHover.hovered ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.08)
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.20)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "← Back"
-                                color: "#ffffff"
-                                font.family: "Open Runde"
-                                font.pixelSize: 13
-                                font.weight: Font.Medium
+                            color: Qt.rgba(1, 1, 1, 0.45)
+                            font.family: "Open Runde"
+                            font.pixelSize: 11
+                            text: {
+                                switch (root.currentStep) {
+                                    case 1: return "By using this software, you agree to the software license terms.";
+                                    case 2: return "Other Network Options...";
+                                    case 3: return "About Ask Siri, Dictation & Privacy...";
+                                    case 4: return "Arch Linux & Hyprland";
+                                    default: return "";
+                                }
                             }
-
-                            HoverHandler { id: backBtnHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.goBack() }
                         }
 
-                        // Right: Continue / Install / Get Started Pill Button
-                        Rectangle {
+                        // Right: Side-by-side classic macOS Back and Continue buttons (Image 2, 3, 4, 5)
+                        Row {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            width: (root.currentStep === 4 && !root.downloadCompleted) ? 165 : (root.currentStep === 5 ? 135 : 125)
-                            height: 36
-                            radius: 18
-                            color: nextBtnHover.hovered ? "#0062cc" : "#007aff"
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.25)
+                            spacing: 10
 
-                            Row {
-                                anchors.centerIn: parent
-                                spacing: 6
+                            // Back Button
+                            Rectangle {
+                                visible: root.currentStep > 1 && root.currentStep < 5
+                                width: 76
+                                height: 28
+                                radius: 6
+                                color: backBtnHover.hovered ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.10)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.20)
 
                                 Text {
+                                    anchors.centerIn: parent
+                                    text: "Back"
+                                    color: "#ffffff"
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                }
+
+                                HoverHandler { id: backBtnHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: root.goBack() }
+                            }
+
+                            // Continue / Get Started Button
+                            Rectangle {
+                                width: root.currentStep === 5 ? 115 : 86
+                                height: root.currentStep === 5 ? 32 : 28
+                                radius: root.currentStep === 5 ? 16 : 6
+                                color: nextBtnHover.hovered ? "#0062cc" : "#007aff"
+
+                                Text {
+                                    anchors.centerIn: parent
                                     font.family: "Open Runde"
                                     font.pixelSize: 13
                                     font.weight: Font.DemiBold
                                     color: "#ffffff"
-                                    text: {
-                                        if (root.currentStep === 4 && !root.downloadCompleted) return "Install & Continue";
-                                        if (root.currentStep === 5) return "Get Started";
-                                        return "Continue";
-                                    }
+                                    text: root.currentStep === 5 ? "Get Started" : "Continue"
                                 }
 
-                                Text {
-                                    text: "→"
-                                    color: "#ffffff"
-                                    font.pixelSize: 14
-                                    font.weight: Font.Bold
-                                    visible: root.currentStep < 5
-                                }
-                            }
-
-                            HoverHandler { id: nextBtnHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler {
-                                onTapped: {
-                                    if (root.currentStep === 5) {
-                                        root.finishSetup();
-                                    } else {
-                                        root.goNext();
+                                HoverHandler { id: nextBtnHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: {
+                                        if (root.currentStep === 5) {
+                                            root.finishSetup();
+                                        } else {
+                                            root.goNext();
+                                        }
                                     }
                                 }
                             }

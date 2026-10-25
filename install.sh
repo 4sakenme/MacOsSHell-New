@@ -347,6 +347,10 @@ mkdir -p "$HOME/.config/quickshell" "$HOME/.config/macshell" "$CONFIG_DEST" "$LO
 # Deploy MacShell components directly into $CONFIG_DEST (never nested)
 if [ -d "$REPO_ROOT/MacShell" ]; then
     cp -ru "$REPO_ROOT/MacShell"/* "$CONFIG_DEST/" 2>/dev/null || true
+    if [ -f "$REPO_ROOT/MacShell/assets/wallpapers/tahoe.jpg" ]; then
+        mkdir -p "$CONFIG_DEST/assets/wallpapers"
+        cp -u "$REPO_ROOT/MacShell/assets/wallpapers/tahoe.jpg" "$CONFIG_DEST/assets/wallpapers/tahoe.jpg" 2>/dev/null || true
+    fi
 fi
 
 # Flatten any nested MacShell directory if accidentally present
