@@ -852,7 +852,7 @@ Scope {
 
                                     ShapePath {
                                         strokeColor: "#ffffff"
-                                        strokeWidth: 26.0
+                                        strokeWidth: 18.0
                                         fillColor: "transparent"
                                         capStyle: ShapePath.RoundCap
                                         joinStyle: ShapePath.RoundJoin
@@ -867,9 +867,9 @@ Scope {
                             layer.enabled: true
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
-                                shadowColor: "#45000000"
-                                shadowBlur: 0.50
-                                shadowVerticalOffset: 6
+                                shadowColor: "#35000000"
+                                shadowBlur: 0.40
+                                shadowVerticalOffset: 4
                             }
                         }
 
