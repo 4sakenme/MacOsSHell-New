@@ -29,7 +29,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 MACSHELL_DIR = SCRIPT_DIR.parent
 VENV_PYTHON = MACSHELL_DIR / "venv" / "bin" / "python"
 
-if VENV_PYTHON.exists() and sys.executable != str(VENV_PYTHON):
+if VENV_PYTHON.exists() and sys.executable != str(VENV_PYTHON) and "-c" not in sys.argv:
     try:
         os.execv(str(VENV_PYTHON), [str(VENV_PYTHON)] + sys.argv)
     except Exception as e:
@@ -45,9 +45,9 @@ DEFAULT_CONFIG = {
     "wake_words": ["hey siri", "siri", "ơi siri"],
     "live_voice_streaming": True,
     "language": "auto",       # "auto", "vi-VN", "en-US"
-    "tts_engine": "espeak-ng", # "espeak-ng", "piper"
-    "tts_voice_en": "en-us+f3",
-    "tts_voice_vi": "vi",
+    "tts_engine": "edge-tts", # "edge-tts", "piper"
+    "tts_voice_en": "en-US-JennyNeural",
+    "tts_voice_vi": "vi-VN-NamMinhNeural",
     "speech_rate": 165
 }
 
@@ -346,6 +346,38 @@ def search_files(keyword: str) -> str:
         return f"Error searching files: {e}"
 
 
+def take_screenshot(region: str = "full") -> str:
+    """Take a full or region screenshot using grim, copy to clipboard, and play shutter sound."""
+    pictures_dir = Path.home() / "Pictures" / "Screenshots"
+    pictures_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    filepath = pictures_dir / f"Screenshot_{timestamp}.png"
+
+    try:
+        if region in ["selection", "area", "region"]:
+            res = subprocess.run(f"grim -g \"$(slurp)\" '{filepath}'", shell=True, capture_output=True)
+        else:
+            res = subprocess.run(["grim", str(filepath)], capture_output=True)
+
+        if res.returncode == 0 and filepath.exists():
+            # Copy image to clipboard
+            try:
+                subprocess.run(f"wl-copy < '{filepath}'", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+            # Play authentic camera shutter sound
+            shutter_sound = Path.home() / ".local" / "share" / "sounds" / "macshell" / "shutter.wav"
+            if not shutter_sound.exists():
+                shutter_sound = Path("/usr/share/sounds/freedesktop/stereo/camera-shutter.oga")
+            if shutter_sound.exists():
+                subprocess.Popen(["pw-play", str(shutter_sound)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"Đã chụp ảnh màn hình và lưu vào thư mục Screenshots."
+        else:
+            return "Không thể chụp màn hình."
+    except Exception as e:
+        return f"Lỗi chụp màn hình: {e}"
+
+
 # ── LOCAL-FIRST INTENT ROUTER (0 AI TOKENS) ──
 def normalize_text(text: str) -> str:
     """Normalize text by converting to lowercase and stripping accents."""
@@ -364,6 +396,36 @@ def handle_local_intent(query: str):
     norm_q = normalize_text(raw_q)
     if not norm_q:
         return None
+
+    # 0. CHỤP MÀN HÌNH (Screenshot)
+    screenshot_keywords = ["chup man hinh", "chup anh man hinh", "chup man", "chup anh", "screenshot", "capture screen"]
+    for sk in screenshot_keywords:
+        if sk in norm_q:
+            is_selection = any(k in norm_q for k in ["vung", "chon", "area", "selection", "khu vuc"])
+            return take_screenshot("selection" if is_selection else "full")
+
+    # HYPRLAND / HỆ THỐNG (Dark Mode, Brightness, Volume)
+    if any(k in norm_q for k in ["dark mode", "che do toi", "bat dark mode", "giao dien toi"]):
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", "prefer-dark"], stdout=subprocess.DEVNULL)
+        return "Đã chuyển sang chế độ Dark Mode."
+    elif any(k in norm_q for k in ["light mode", "che do sang", "bat light mode", "giao dien sang"]):
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"], stdout=subprocess.DEVNULL)
+        return "Đã chuyển sang chế độ Light Mode."
+    elif any(k in norm_q for k in ["tang do sang", "brightness up"]):
+        subprocess.run(["brightnessctl", "s", "+10%"], stdout=subprocess.DEVNULL)
+        return "Đã tăng độ sáng màn hình."
+    elif any(k in norm_q for k in ["giam do sang", "brightness down"]):
+        subprocess.run(["brightnessctl", "s", "10%-"], stdout=subprocess.DEVNULL)
+        return "Đã giảm độ sáng màn hình."
+    elif any(k in norm_q for k in ["tang am luong", "volume up"]):
+        subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "10%+"], stdout=subprocess.DEVNULL)
+        return "Đã tăng âm lượng."
+    elif any(k in norm_q for k in ["giam am luong", "volume down"]):
+        subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "10%-"], stdout=subprocess.DEVNULL)
+        return "Đã giảm âm lượng."
+    elif any(k in norm_q for k in ["tat am", "mute", "bat am"]):
+        subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"], stdout=subprocess.DEVNULL)
+        return "Đã chuyển trạng thái âm thanh."
 
     # 1. MỞ NHẠC (Music Playback)
     music_keywords = ["mo nhac", "bat nhac", "nghe nhac", "nghe bai", "play music", "play"]
@@ -455,7 +517,7 @@ def query_gemini(prompt: str) -> str:
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        tools=[launch_app, open_url, play_music, fetch_weather, search_files],
+        tools=[launch_app, open_url, play_music, fetch_weather, search_files, take_screenshot],
         temperature=0.3
     )
 
@@ -585,38 +647,38 @@ def speak(text: str):
         played = False
 
         # 1. High Quality Edge Neural TTS (Pristine audio, no buzzing / no distortion)
-        try:
-            import asyncio, edge_tts
-            async def synthesize():
-                comm = edge_tts.Communicate(clean_text, neural_voice, rate=rate_str)
-                await comm.save(tmp_audio)
-            asyncio.run(synthesize())
+        edge_bin = "/home/kuro/.config/quickshell/MacShell/venv/bin/edge-tts"
+        if not os.path.exists(edge_bin):
+            edge_bin = shutil.which("edge-tts")
 
-            if os.path.exists(tmp_audio) and os.path.getsize(tmp_audio) > 0:
-                CURRENT_PLAYER_PROC = subprocess.Popen(
-                    ["mpv", "--no-terminal", "--really-quiet", "--volume=100", tmp_audio],
+        if edge_bin:
+            try:
+                res = subprocess.run(
+                    [edge_bin, "--voice", neural_voice, "--rate", rate_str, "--text", clean_text, "--write-media", tmp_audio],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.PIPE,
+                    timeout=10
                 )
-                CURRENT_PLAYER_PROC.wait()
-                CURRENT_PLAYER_PROC = None
-                played = True
-        except Exception as e:
-            print(f"[TTS] Neural TTS notice: {e}, falling back to espeak-ng", file=sys.stderr)
+                if os.path.exists(tmp_audio) and os.path.getsize(tmp_audio) > 0:
+                    CURRENT_PLAYER_PROC = subprocess.Popen(
+                        ["mpv", "--no-terminal", "--really-quiet", "--volume=100", tmp_audio],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    CURRENT_PLAYER_PROC.wait()
+                    CURRENT_PLAYER_PROC = None
+                    played = True
+            except Exception as e:
+                print(f"[TTS] Neural TTS notice: {e}", file=sys.stderr)
 
-        # 2. Fallback to espeak-ng if neural TTS fails or offline
+        # 2. Fallback: Gentle notification sound if offline instead of harsh espeak-ng
         if not played:
             try:
-                raw_voice = "vi" if is_vi else "en-us+f3"
-                CURRENT_PLAYER_PROC = subprocess.Popen(
-                    ["espeak-ng", "-v", raw_voice, "-s", str(speech_rate), clean_text],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                CURRENT_PLAYER_PROC.wait()
-                CURRENT_PLAYER_PROC = None
-            except Exception as e:
-                print(f"[TTS] espeak-ng error: {e}", file=sys.stderr)
+                chime_sound = Path.home() / ".local" / "share" / "sounds" / "macshell" / "tink.wav"
+                if chime_sound.exists():
+                    subprocess.run(["pw-play", str(chime_sound)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
         # Cleanup temporary mp3 file
         if os.path.exists(tmp_audio):

@@ -447,10 +447,16 @@ ShellRoot {
         target: "setup"
         function start(): void {
             sharedHub.setupCompleted = false;
+            setupAssistant.exitOpacity = 1.0;
+            setupAssistant.exitScale = 1.0;
+            setupAssistant.active = true;
             setupAssistant.currentStep = 0;
         }
         function step(n: int): void {
             sharedHub.setupCompleted = false;
+            setupAssistant.exitOpacity = 1.0;
+            setupAssistant.exitScale = 1.0;
+            setupAssistant.active = true;
             setupAssistant.currentStep = n;
         }
         function finish(): void {

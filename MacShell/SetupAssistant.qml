@@ -115,17 +115,85 @@ Scope {
     readonly property real cameraPanX: isFirstHello ? (targetPanX * Math.pow(1.0 - macroProgress, 2.0)) : 0.0
     readonly property real cameraPanY: isFirstHello ? (targetPanY * Math.pow(1.0 - macroProgress, 2.0)) : 0.0
 
-    // Region & Language
-    property string selectedCountry: "United States"
+    // Region & Language State
+    property string selectedCountry: "Vietnam"
+    property string countrySearchQuery: ""
     property var countriesList: [
-        { name: "United States", flag: "🇺🇸", lang: "English", code: "en-US", voice: "en-US-JennyNeural" },
         { name: "Vietnam", flag: "🇻🇳", lang: "Tiếng Việt", code: "vi-VN", voice: "vi-VN-NamMinhNeural" },
+        { name: "United States", flag: "🇺🇸", lang: "English", code: "en-US", voice: "en-US-JennyNeural" },
         { name: "United Kingdom", flag: "🇬🇧", lang: "English", code: "en-GB", voice: "en-US-JennyNeural" },
-        { name: "Japan", flag: "🇯🇵", lang: "日本語", code: "ja-JP", voice: "ja-JP-NanamiNeural" },
+        { name: "Australia", flag: "🇦🇺", lang: "English", code: "en-AU", voice: "en-US-JennyNeural" },
+        { name: "Canada", flag: "🇨🇦", lang: "English / Français", code: "en-CA", voice: "en-US-JennyNeural" },
         { name: "France", flag: "🇫🇷", lang: "Français", code: "fr-FR", voice: "fr-FR-DeniseNeural" },
         { name: "Germany", flag: "🇩🇪", lang: "Deutsch", code: "de-DE", voice: "de-DE-KatjaNeural" },
-        { name: "Spain", flag: "🇪🇸", lang: "Español", code: "es-ES", voice: "es-ES-ElviraNeural" }
+        { name: "Japan", flag: "🇯🇵", lang: "日本語", code: "ja-JP", voice: "ja-JP-NanamiNeural" },
+        { name: "South Korea", flag: "🇰🇷", lang: "한국어", code: "ko-KR", voice: "en-US-JennyNeural" },
+        { name: "Singapore", flag: "🇸🇬", lang: "English / 中文", code: "en-SG", voice: "en-US-JennyNeural" },
+        { name: "Spain", flag: "🇪🇸", lang: "Español", code: "es-ES", voice: "es-ES-ElviraNeural" },
+        { name: "Italy", flag: "🇮🇹", lang: "Italiano", code: "it-IT", voice: "en-US-JennyNeural" },
+        { name: "Brazil", flag: "🇧🇷", lang: "Português", code: "pt-BR", voice: "en-US-JennyNeural" },
+        { name: "India", flag: "🇮🇳", lang: "English / हिन्दी", code: "en-IN", voice: "en-US-JennyNeural" },
+        { name: "Switzerland", flag: "🇨🇭", lang: "Deutsch / Français", code: "de-CH", voice: "de-DE-KatjaNeural" }
     ]
+
+    readonly property string selectedCountryDisplayName: {
+        for (var i = 0; i < root.countriesList.length; i++) {
+            var c = root.countriesList[i];
+            if (c.code === root.selectedCountry || c.name === root.selectedCountry) {
+                return c.name + " (" + c.lang + ")";
+            }
+        }
+        return root.selectedCountry || "Vietnam";
+    }
+
+    readonly property var filteredCountriesList: {
+        var q = root.countrySearchQuery.toLowerCase().trim();
+        if (!q) return root.countriesList;
+        return root.countriesList.filter(function(c) {
+            return c.name.toLowerCase().indexOf(q) !== -1 ||
+                   c.lang.toLowerCase().indexOf(q) !== -1 ||
+                   c.code.toLowerCase().indexOf(q) !== -1;
+        });
+    }
+
+    // Siri & Hardware Detection State
+    property string siriActivationMode: "voice" // "voice" ('Hey Siri'), "type" (Super+Space), "manual" (Click icon)
+    property string hardwareInfoText: "Detecting AI acceleration hardware..."
+    property bool hasAiAcceleration: false
+
+    // Step Transition Animation State
+    property real contentSlideX: 0.0
+    property real contentOpacity: 1.0
+    readonly property bool canContinue: {
+        if (root.currentStep === 1) return root.selectedCountry !== "";
+        return true;
+    }
+
+    onCurrentStepChanged: {
+        if (root.currentStep > 0) {
+            stepTransitionAnim.restart();
+        }
+        if (root.currentStep === 3) {
+            root.runHardwareCheck();
+        }
+    }
+
+    SequentialAnimation {
+        id: stepTransitionAnim
+        ParallelAnimation {
+            NumberAnimation { target: root; property: "contentOpacity"; to: 0.0; duration: 90; easing.type: Easing.OutQuad }
+            NumberAnimation { target: root; property: "contentSlideX"; to: -24; duration: 90; easing.type: Easing.OutQuad }
+        }
+        ScriptAction {
+            script: {
+                root.contentSlideX = 24;
+            }
+        }
+        ParallelAnimation {
+            NumberAnimation { target: root; property: "contentOpacity"; to: 1.0; duration: 240; easing.type: Easing.OutCubic }
+            NumberAnimation { target: root; property: "contentSlideX"; to: 0; duration: 240; easing.type: Easing.OutCubic }
+        }
+    }
 
     function proceedFromHello() {
         if (root.currentStep !== 0 || root.isTransitioningToCard) return;
@@ -377,9 +445,50 @@ Scope {
     // 5. Completion Process
     Process {
         id: completeProc
-        command: ["python3", root.workerScript, "complete_setup"]
+        command: ["python3", root.workerScript, "run_setup", JSON.stringify({
+            "dark_mode": root.darkMode,
+            "liquid_glass": root.liquidGlassEnabled,
+            "stage_manager": root.stageManagerEnabled,
+            "wifi_manager": root.wifiManagerEnabled,
+            "sound_pack": root.soundPackEnabled,
+            "siri": root.siriEnabled,
+            "siri_activation_mode": root.siriActivationMode,
+            "gemini_api_key": root.geminiApiKey,
+            "live_voice_streaming": root.liveVoiceStreaming,
+            "tts_voice": root.selectedVoice,
+            "tts_language": root.selectedLanguage,
+            "selected_country": root.selectedCountry,
+            "selected_language": root.selectedLanguage
+        })]
         onExited: {
             if (root.hub) root.hub.setupCompleted = true;
+        }
+    }
+
+    // 6. Hardware AI Check Process
+    Process {
+        id: hardwareProc
+        command: ["python3", root.workerScript, "hardware_check"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var line = text.trim();
+                var prefix = "HARDWARE:";
+                var idx = line.indexOf(prefix);
+                if (idx !== -1) {
+                    try {
+                        var jsonStr = line.substring(idx + prefix.length).trim();
+                        var o = JSON.parse(jsonStr);
+                        root.hardwareInfoText = o.hardware || "Standard Engine";
+                        root.hasAiAcceleration = !!o.has_ai_accel;
+                    } catch (e) {}
+                }
+            }
+        }
+    }
+
+    function runHardwareCheck() {
+        if (!hardwareProc.running) {
+            hardwareProc.running = true;
         }
     }
 
@@ -469,38 +578,22 @@ Scope {
         exitAnim.restart();
     }
 
-    // Navigation logic with dynamic step skipping
+    // Navigation logic following authentic macOS sequence
     function goNext() {
         root.playSound("pop");
         if (currentStep === 0) {
             proceedFromHello();
             return;
         } else if (currentStep === 1) {
-            if (root.wifiManagerEnabled) {
-                currentStep = 2;
-                scanWifiNetworks();
-            } else if (root.siriEnabled) {
-                currentStep = 3;
-            } else {
-                currentStep = 4;
-                runDepsCheck();
-            }
+            currentStep = 2;
+            scanWifiNetworks();
         } else if (currentStep === 2) {
-            if (root.siriEnabled) {
-                currentStep = 3;
-            } else {
-                currentStep = 4;
-                runDepsCheck();
-            }
+            currentStep = 3;
+            runHardwareCheck();
         } else if (currentStep === 3) {
             currentStep = 4;
-            runDepsCheck();
         } else if (currentStep === 4) {
-            if (!root.downloadCompleted) {
-                startResourceSetup();
-            } else {
-                currentStep = 5;
-            }
+            currentStep = 5;
         } else if (currentStep === 5) {
             finishSetup();
         }
@@ -511,12 +604,9 @@ Scope {
         if (currentStep === 2) {
             currentStep = 1;
         } else if (currentStep === 3) {
-            if (root.wifiManagerEnabled) currentStep = 2;
-            else currentStep = 1;
+            currentStep = 2;
         } else if (currentStep === 4) {
-            if (root.siriEnabled) currentStep = 3;
-            else if (root.wifiManagerEnabled) currentStep = 2;
-            else currentStep = 1;
+            currentStep = 3;
         } else if (currentStep === 5) {
             currentStep = 4;
         }
@@ -792,6 +882,15 @@ Scope {
                     }
                 }
 
+                // Offscreen texture source of wallpaper for physical glass refraction shader
+                ShaderEffectSource {
+                    id: wallpaperTex
+                    sourceItem: wallpaperContainer
+                    live: true
+                    recursive: false
+                    smooth: true
+                    mipmap: true
+                }
 
                 // ─────────────────────────────────────────────────────────────
                 // SCREEN 0: Apple Single-Stroke Handwriting Screen
@@ -1206,19 +1305,37 @@ Scope {
                             }
                         }
 
-                        // Step 4: System Setup / Display Disc
+                        // Step 4: Appearance Dual-Tone Disc (macOS Look & Feel)
                         Rectangle {
                             anchors.fill: parent
                             radius: 36
                             visible: root.currentStep === 4
-                            color: Qt.rgba(0, 122, 255, 0.20)
-                            border.width: 1
-                            border.color: "#35ffffff"
+                            clip: true
+                            border.width: 1.5
+                            border.color: "#40ffffff"
 
-                            Text {
+                            // Left Half: Light
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.left: parent.left
+                                width: parent.width / 2
+                                color: "#f8fafc"
+                            }
+                            // Right Half: Dark
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.right: parent.right
+                                width: parent.width / 2
+                                color: "#1e293b"
+                            }
+                            // Subtle dividing meridian
+                            Rectangle {
                                 anchors.centerIn: parent
-                                text: "⚙️"
-                                font.pixelSize: 32
+                                width: 1
+                                height: parent.height
+                                color: Qt.rgba(1, 1, 1, 0.25)
                             }
                         }
 
@@ -1254,8 +1371,8 @@ Scope {
                             switch (root.currentStep) {
                                 case 1: return "Select Your Country or Region";
                                 case 2: return "Select a Wi-Fi Network";
-                                case 3: return "Siri";
-                                case 4: return "Setting Up Your Mac";
+                                case 3: return "Siri & Apple Intelligence";
+                                case 4: return "Choose Your Look";
                                 case 5: return "Welcome to MacShell";
                                 default: return "MacShell Setup";
                             }
@@ -1279,9 +1396,9 @@ Scope {
                             switch (root.currentStep) {
                                 case 1: return "Select your country or region to configure language and regional formats.";
                                 case 2: return "Choose a wireless network to connect to the internet, sync widgets, and download resources.";
-                                case 3: return "Siri helps you get things done just by asking. Siri can also make suggestions before you ask in apps, search, and keyboards.";
-                                case 4: return "Configuring system resources, typography fonts, audio engine, and macOS Tahoe theme...";
-                                case 5: return "Your macOS desktop environment is ready.";
+                                case 3: return "Siri helps you get things done, answers questions, controls your Mac, and creates with Apple Intelligence.";
+                                case 4: return "Select a look for your desktop, menus, and apps. You can adjust this later in System Settings.";
+                                case 5: return "Your macOS desktop environment is configured and ready.";
                                 default: return "";
                             }
                         }
@@ -1295,7 +1412,9 @@ Scope {
                         anchors.bottom: cardBottomNav.top
                         anchors.bottomMargin: 14
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: 440
+                        width: Math.min(parent.width - 80, 520)
+                        opacity: root.contentOpacity
+                        transform: Translate { x: root.contentSlideX }
 
                         // ─────────────────────────────────────────────────────
                         // STEP 1: Country & Region (Image 1 & 2)
@@ -1306,12 +1425,68 @@ Scope {
 
                             Column {
                                 anchors.fill: parent
-                                spacing: 14
+                                spacing: 10
+
+                                // Frosted Pill Search Box
+                                Rectangle {
+                                    width: parent.width
+                                    height: 32
+                                    radius: 16
+                                    color: Qt.rgba(1, 1, 1, 0.08)
+                                    border.width: 1
+                                    border.color: countrySearchInput.activeFocus ? "#007aff" : Qt.rgba(1, 1, 1, 0.16)
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+                                        spacing: 8
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "🔍"
+                                            font.pixelSize: 12
+                                            opacity: 0.65
+                                        }
+
+                                        TextInput {
+                                            id: countrySearchInput
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width - 50
+                                            color: "#ffffff"
+                                            font.family: "Open Runde"
+                                            font.pixelSize: 13
+                                            clip: true
+                                            onTextChanged: root.countrySearchQuery = text
+
+                                            Text {
+                                                text: "Search"
+                                                color: Qt.rgba(1, 1, 1, 0.40)
+                                                visible: !countrySearchInput.text
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 13
+                                            }
+                                        }
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: countrySearchInput.text !== ""
+                                            text: "✕"
+                                            color: Qt.rgba(1, 1, 1, 0.6)
+                                            font.pixelSize: 12
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: countrySearchInput.text = ""
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // Centered Rounded List Box (Image 1 & 2)
                                 Rectangle {
                                     width: parent.width
-                                    height: 180
+                                    height: 228
                                     radius: 10
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1
@@ -1322,7 +1497,7 @@ Scope {
                                         id: countryListView
                                         anchors.fill: parent
                                         anchors.margins: 4
-                                        model: root.countriesList
+                                        model: root.filteredCountriesList
                                         spacing: 2
                                         boundsBehavior: Flickable.StopAtBounds
 
@@ -1330,28 +1505,29 @@ Scope {
                                             id: countryRow
                                             required property var modelData
                                             required property int index
-                                            readonly property bool isSelected: root.selectedCountry === modelData.name
+                                            readonly property bool isSelected: (root.selectedCountry === modelData.code || root.selectedCountry === modelData.name)
+                                            property bool isHovered: false
 
                                             width: parent.width
-                                            height: 32
+                                            height: 34
                                             radius: 6
-                                            color: isSelected ? "#007aff" : (cHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                            color: isSelected ? "#007aff" : (isHovered ? Qt.rgba(1, 1, 1, 0.09) : "transparent")
 
                                             Row {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 12
                                                 anchors.rightMargin: 12
-                                                spacing: 10
+                                                spacing: 12
 
                                                 Text {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     text: countryRow.modelData.flag
-                                                    font.pixelSize: 15
+                                                    font.pixelSize: 16
                                                 }
 
                                                 Text {
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    width: parent.width - 120
+                                                    width: parent.width - 150
                                                     text: countryRow.modelData.name
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
@@ -1368,6 +1544,8 @@ Scope {
                                                     font.pixelSize: 12
                                                 }
 
+                                                Item { width: 1; height: 1 }
+
                                                 Text {
                                                     anchors.verticalCenter: parent.verticalCenter
                                                     visible: countryRow.isSelected
@@ -1378,76 +1556,18 @@ Scope {
                                                 }
                                             }
 
-                                            HoverHandler { id: cHover; cursorShape: Qt.PointingHandCursor }
-                                            TapHandler {
-                                                onTapped: {
-                                                    root.selectedCountry = countryRow.modelData.name;
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                hoverEnabled: true
+                                                onEntered: countryRow.isHovered = true
+                                                onExited: countryRow.isHovered = false
+                                                onClicked: {
+                                                    root.selectedCountry = countryRow.modelData.code;
                                                     root.selectedLanguage = countryRow.modelData.code;
                                                     root.selectedVoice = countryRow.modelData.voice;
                                                     root.playSound("tink");
                                                 }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Compact System Appearance Segment (Light / Dark)
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 14
-
-                                    // Light Mode
-                                    Rectangle {
-                                        width: 140; height: 38; radius: 8
-                                        color: !root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
-                                        border.width: !root.darkMode ? 1.5 : 1
-                                        border.color: !root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.centerIn: parent
-                                            spacing: 8
-                                            Text { text: "☀️"; font.pixelSize: 14 }
-                                            Text {
-                                                text: "Light"
-                                                color: "#ffffff"
-                                                font.family: "Open Runde"
-                                                font.pixelSize: 12
-                                                font.weight: !root.darkMode ? Font.DemiBold : Font.Normal
-                                            }
-                                        }
-                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        TapHandler {
-                                            onTapped: {
-                                                root.darkMode = false;
-                                                root.playSound("tink");
-                                            }
-                                        }
-                                    }
-
-                                    // Dark Mode
-                                    Rectangle {
-                                        width: 140; height: 38; radius: 8
-                                        color: root.darkMode ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
-                                        border.width: root.darkMode ? 1.5 : 1
-                                        border.color: root.darkMode ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
-
-                                        Row {
-                                            anchors.centerIn: parent
-                                            spacing: 8
-                                            Text { text: "🌙"; font.pixelSize: 14 }
-                                            Text {
-                                                text: "Dark"
-                                                color: "#ffffff"
-                                                font.family: "Open Runde"
-                                                font.pixelSize: 12
-                                                font.weight: root.darkMode ? Font.DemiBold : Font.Normal
-                                            }
-                                        }
-                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        TapHandler {
-                                            onTapped: {
-                                                root.darkMode = true;
-                                                root.playSound("tink");
                                             }
                                         }
                                     }
@@ -1767,7 +1887,7 @@ Scope {
                         }
 
                         // ─────────────────────────────────────────────────────
-                        // STEP 3: Siri (Image 4 & 5)
+                        // STEP 3: Siri & Apple Intelligence (Image 4 & 5)
                         // ─────────────────────────────────────────────────────
                         Item {
                             anchors.fill: parent
@@ -1775,55 +1895,158 @@ Scope {
 
                             Column {
                                 anchors.fill: parent
-                                spacing: 14
+                                spacing: 10
 
-                                // Centered Apple Checkbox (Image 4)
-                                Row {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    spacing: 10
+                                // 1. Hardware AI Engine Status Banner
+                                Rectangle {
+                                    width: parent.width; height: 32; radius: 8
+                                    color: Qt.rgba(0, 122, 255, 0.14)
+                                    border.width: 1
+                                    border.color: Qt.rgba(0, 122, 255, 0.35)
 
-                                    Rectangle {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: 20; height: 20; radius: 5
-                                        color: root.siriEnabled ? "#007aff" : Qt.rgba(1, 1, 1, 0.15)
-                                        border.width: 1
-                                        border.color: root.siriEnabled ? "#007aff" : Qt.rgba(1, 1, 1, 0.30)
-
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12; anchors.rightMargin: 12
+                                        spacing: 8
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "⚡"; font.pixelSize: 13 }
                                         Text {
-                                            anchors.centerIn: parent
-                                            visible: root.siriEnabled
-                                            text: "✓"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.hardwareInfoText
                                             color: "#ffffff"
-                                            font.pixelSize: 13
-                                            font.weight: Font.Bold
+                                            font.family: "Open Runde"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                            width: parent.width - 32
                                         }
-
-                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: root.siriEnabled = !root.siriEnabled }
-                                    }
-
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: "Enable Ask Siri"
-                                        color: "#ffffff"
-                                        font.family: "Open Runde"
-                                        font.pixelSize: 14
-                                        font.weight: Font.Medium
                                     }
                                 }
 
-                                // Centered Siri Voice List Box (Image 5)
+                                // 2. Three Activation Modes (Hey Siri, Type to Siri, Manual)
+                                Text {
+                                    text: "Siri Activation"
+                                    color: Qt.rgba(1, 1, 1, 0.70)
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Row {
+                                    width: parent.width
+                                    spacing: 8
+
+                                    // Mode 1: Voice Wake-up
+                                    Rectangle {
+                                        width: (parent.width - 16) / 3; height: 56; radius: 8
+                                        readonly property bool isSelected: root.siriActivationMode === "voice"
+                                        color: isSelected ? Qt.rgba(0, 122, 255, 0.25) : Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: isSelected ? 1.5 : 1
+                                        border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "🎙️"; font.pixelSize: 16 }
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: "Voice Wake-up"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 11
+                                                font.weight: parent.parent.isSelected ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.siriActivationMode = "voice";
+                                                root.playSound("tink");
+                                            }
+                                        }
+                                    }
+
+                                    // Mode 2: Type to Siri (Super+Space)
+                                    Rectangle {
+                                        width: (parent.width - 16) / 3; height: 56; radius: 8
+                                        readonly property bool isSelected: root.siriActivationMode === "type"
+                                        color: isSelected ? Qt.rgba(0, 122, 255, 0.25) : Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: isSelected ? 1.5 : 1
+                                        border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "⌨️"; font.pixelSize: 16 }
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: "Type to Siri"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 11
+                                                font.weight: parent.parent.isSelected ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.siriActivationMode = "type";
+                                                root.playSound("tink");
+                                            }
+                                        }
+                                    }
+
+                                    // Mode 3: Manual Click
+                                    Rectangle {
+                                        width: (parent.width - 16) / 3; height: 56; radius: 8
+                                        readonly property bool isSelected: root.siriActivationMode === "manual"
+                                        color: isSelected ? Qt.rgba(0, 122, 255, 0.25) : Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: isSelected ? 1.5 : 1
+                                        border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.12)
+
+                                        Column {
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "🖱️"; font.pixelSize: 16 }
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: "Manual Click"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 11
+                                                font.weight: parent.parent.isSelected ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.siriActivationMode = "manual";
+                                                root.playSound("tink");
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 3. Siri Voice Picker Box
+                                Text {
+                                    text: "Siri Neural Voice"
+                                    color: Qt.rgba(1, 1, 1, 0.70)
+                                    font.family: "Open Runde"
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
+
                                 Rectangle {
-                                    width: 380
-                                    height: 120
-                                    radius: 10
-                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width; height: 68; radius: 8
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1
                                     border.color: Qt.rgba(1, 1, 1, 0.14)
                                     clip: true
-                                    opacity: root.siriEnabled ? 1.0 : 0.4
-                                    enabled: root.siriEnabled
 
                                     ListView {
                                         anchors.fill: parent
@@ -1831,11 +2054,11 @@ Scope {
                                         spacing: 2
                                         boundsBehavior: Flickable.StopAtBounds
                                         model: [
-                                            { id: "en-US-JennyNeural", name: "Voice 1 (English US)" },
-                                            { id: "vi-VN-NamMinhNeural", name: "Voice 2 (Tiếng Việt)" },
-                                            { id: "ja-JP-NanamiNeural", name: "Voice 3 (Japanese)" },
-                                            { id: "fr-FR-DeniseNeural", name: "Voice 4 (French)" },
-                                            { id: "de-DE-KatjaNeural", name: "Voice 5 (German)" }
+                                            { id: "vi-VN-NamMinhNeural", name: "Voice 1 (Tiếng Việt - Nam Minh)" },
+                                            { id: "vi-VN-HoaiMyNeural", name: "Voice 2 (Tiếng Việt - Hoài My)" },
+                                            { id: "en-US-JennyNeural", name: "Voice 3 (English US - Jenny)" },
+                                            { id: "en-US-GuyNeural", name: "Voice 4 (English US - Guy)" },
+                                            { id: "ja-JP-NanamiNeural", name: "Voice 5 (Japanese - Nanami)" }
                                         ]
 
                                         delegate: Rectangle {
@@ -1843,16 +2066,14 @@ Scope {
                                             required property var modelData
                                             required property int index
                                             readonly property bool isSelected: root.selectedVoice === modelData.id
+                                            property bool isHovered: false
 
-                                            width: parent.width
-                                            height: 28
-                                            radius: 6
-                                            color: isSelected ? "#007aff" : (vHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                            width: parent.width; height: 26; radius: 6
+                                            color: isSelected ? "#007aff" : (isHovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
 
                                             Row {
                                                 anchors.fill: parent
-                                                anchors.leftMargin: 12
-                                                anchors.rightMargin: 12
+                                                anchors.leftMargin: 10; anchors.rightMargin: 10
                                                 spacing: 8
 
                                                 Text {
@@ -1860,7 +2081,7 @@ Scope {
                                                     text: voiceItem.modelData.name
                                                     color: "#ffffff"
                                                     font.family: "Open Runde"
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: 11
                                                     font.weight: voiceItem.isSelected ? Font.DemiBold : Font.Normal
                                                 }
 
@@ -1871,14 +2092,18 @@ Scope {
                                                     visible: voiceItem.isSelected
                                                     text: "✓"
                                                     color: "#ffffff"
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: 11
                                                     font.weight: Font.Bold
                                                 }
                                             }
 
-                                            HoverHandler { id: vHover; cursorShape: Qt.PointingHandCursor }
-                                            TapHandler {
-                                                onTapped: {
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                hoverEnabled: true
+                                                onEntered: voiceItem.isHovered = true
+                                                onExited: voiceItem.isHovered = false
+                                                onClicked: {
                                                     root.selectedVoice = voiceItem.modelData.id;
                                                     root.playSound("tink");
                                                 }
@@ -1887,15 +2112,12 @@ Scope {
                                     }
                                 }
 
-                                // Optional Gemini Key input
+                                // 4. Gemini API Key Input
                                 Rectangle {
-                                    width: 380; height: 32; radius: 6
-                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width; height: 32; radius: 8
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1
                                     border.color: Qt.rgba(1, 1, 1, 0.12)
-                                    opacity: root.siriEnabled ? 1.0 : 0.4
-                                    enabled: root.siriEnabled
 
                                     TextInput {
                                         id: keyInput
@@ -1919,81 +2141,257 @@ Scope {
                         }
 
                         // ─────────────────────────────────────────────────────
-                        // STEP 4: Setting Up Your Mac (Installation Progress)
+                        // STEP 4: Appearance (macOS 3-Option Look)
                         // ─────────────────────────────────────────────────────
                         Item {
                             anchors.fill: parent
                             visible: root.currentStep === 4
 
-                            Column {
+                            Row {
                                 anchors.centerIn: parent
-                                spacing: 14
+                                spacing: 18
 
-                                // Centered macOS Progress Bar
+                                // ── 1. Light Mode Card ──
                                 Rectangle {
-                                    width: 380
-                                    height: 6
-                                    radius: 3
-                                    color: Qt.rgba(1, 1, 1, 0.15)
-                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 142; height: 185; radius: 14
+                                    readonly property bool isSelected: !root.darkMode
+                                    color: isSelected ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: isSelected ? 2.5 : 1
+                                    border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
 
-                                    Rectangle {
-                                        width: (root.downloadProgress / 100.0) * parent.width
-                                        height: parent.height
-                                        radius: 3
-                                        color: "#007aff"
-                                        Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 12
+
+                                        // Light Window Mockup
+                                        Rectangle {
+                                            width: 115; height: 95; radius: 8
+                                            color: "#e2e8f0"
+                                            border.width: 1
+                                            border.color: "#cbd5e1"
+                                            clip: true
+
+                                            // Light Window Header
+                                            Rectangle {
+                                                anchors.top: parent.top; width: parent.width; height: 18
+                                                color: "#f8fafc"
+                                                Row {
+                                                    anchors.left: parent.left; anchors.leftMargin: 6
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    spacing: 4
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#ff5f56" }
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#ffbd2e" }
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#27c93f" }
+                                                }
+                                            }
+
+                                            // Body Content lines
+                                            Column {
+                                                anchors.centerIn: parent
+                                                spacing: 5
+                                                Rectangle { width: 70; height: 4; radius: 2; color: "#94a3b8" }
+                                                Rectangle { width: 55; height: 4; radius: 2; color: "#cbd5e1" }
+                                                Rectangle { width: 40; height: 4; radius: 2; color: "#cbd5e1" }
+                                            }
+                                        }
+
+                                        // Label with Radio indicator
+                                        Row {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            spacing: 6
+
+                                            Rectangle {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 14; height: 14; radius: 7
+                                                color: parent.parent.parent.isSelected ? "#007aff" : "transparent"
+                                                border.width: 1.5
+                                                border.color: parent.parent.parent.isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.40)
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: 6; height: 6; radius: 3; color: "#ffffff"
+                                                    visible: parent.parent.parent.parent.isSelected
+                                                }
+                                            }
+
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: "Light"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 13
+                                                font.weight: parent.parent.parent.isSelected ? Font.DemiBold : Font.Normal
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.darkMode = false;
+                                            root.applyThemeToSystem();
+                                            root.playSound("tink");
+                                        }
                                     }
                                 }
 
-                                Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: root.downloadStatusText || "Configuring system resources..."
-                                    color: Qt.rgba(1, 1, 1, 0.65)
-                                    font.family: "Open Runde"
-                                    font.pixelSize: 12
-                                }
-
-                                Item { width: 1; height: 10 }
-
-                                // Checklist Cards
+                                // ── 2. Dark Mode Card ──
                                 Rectangle {
-                                    width: 380; height: 120; radius: 10
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    color: Qt.rgba(1, 1, 1, 0.05)
-                                    border.width: 1
-                                    border.color: Qt.rgba(1, 1, 1, 0.12)
-                                    clip: true
+                                    width: 142; height: 185; radius: 14
+                                    readonly property bool isSelected: root.darkMode
+                                    color: isSelected ? Qt.rgba(0, 122, 255, 0.22) : Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: isSelected ? 2.5 : 1
+                                    border.color: isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.14)
 
-                                    ListView {
-                                        anchors.fill: parent
-                                        anchors.margins: 8
-                                        spacing: 4
-                                        boundsBehavior: Flickable.StopAtBounds
-                                        model: root.dependenciesList
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 12
 
-                                        delegate: Row {
-                                            required property var modelData
-                                            width: parent.width; height: 22
-                                            spacing: 8
+                                        // Dark Window Mockup
+                                        Rectangle {
+                                            width: 115; height: 95; radius: 8
+                                            color: "#1e1e24"
+                                            border.width: 1
+                                            border.color: "#2a2b36"
+                                            clip: true
 
-                                            Text {
+                                            // Dark Window Header
+                                            Rectangle {
+                                                anchors.top: parent.top; width: parent.width; height: 18
+                                                color: "#16161c"
+                                                Row {
+                                                    anchors.left: parent.left; anchors.leftMargin: 6
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    spacing: 4
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#ff5f56" }
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#ffbd2e" }
+                                                    Rectangle { width: 5; height: 5; radius: 2.5; color: "#27c93f" }
+                                                }
+                                            }
+
+                                            // Body Content lines
+                                            Column {
+                                                anchors.centerIn: parent
+                                                spacing: 5
+                                                Rectangle { width: 70; height: 4; radius: 2; color: "#475569" }
+                                                Rectangle { width: 55; height: 4; radius: 2; color: "#334155" }
+                                                Rectangle { width: 40; height: 4; radius: 2; color: "#334155" }
+                                            }
+                                        }
+
+                                        // Label with Radio indicator
+                                        Row {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            spacing: 6
+
+                                            Rectangle {
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                text: "✓"
-                                                color: "#34c759"
-                                                font.pixelSize: 12
-                                                font.weight: Font.Bold
+                                                width: 14; height: 14; radius: 7
+                                                color: parent.parent.parent.isSelected ? "#007aff" : "transparent"
+                                                border.width: 1.5
+                                                border.color: parent.parent.parent.isSelected ? "#007aff" : Qt.rgba(1, 1, 1, 0.40)
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: 6; height: 6; radius: 3; color: "#ffffff"
+                                                    visible: parent.parent.parent.parent.isSelected
+                                                }
                                             }
 
                                             Text {
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                width: parent.width - 30
-                                                text: modelData.name || ""
+                                                text: "Dark"
                                                 color: "#ffffff"
                                                 font.family: "Open Runde"
-                                                font.pixelSize: 11
-                                                elide: Text.ElideRight
+                                                font.pixelSize: 13
+                                                font.weight: parent.parent.parent.isSelected ? Font.DemiBold : Font.Normal
                                             }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.darkMode = true;
+                                            root.applyThemeToSystem();
+                                            root.playSound("tink");
+                                        }
+                                    }
+                                }
+
+                                // ── 3. Auto Mode Card ──
+                                Rectangle {
+                                    width: 142; height: 185; radius: 14
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.14)
+
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 12
+
+                                        // Split Diagonal / Dual Window Mockup
+                                        Rectangle {
+                                            width: 115; height: 95; radius: 8
+                                            border.width: 1
+                                            border.color: "#334155"
+                                            clip: true
+
+                                            // Left half light
+                                            Rectangle {
+                                                anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                                width: parent.width / 2; color: "#e2e8f0"
+                                                Rectangle {
+                                                    anchors.top: parent.top; width: parent.width; height: 18; color: "#f8fafc"
+                                                    Row {
+                                                        anchors.left: parent.left; anchors.leftMargin: 6; anchors.verticalCenter: parent.verticalCenter; spacing: 3
+                                                        Rectangle { width: 5; height: 5; radius: 2.5; color: "#ff5f56" }
+                                                        Rectangle { width: 5; height: 5; radius: 2.5; color: "#ffbd2e" }
+                                                    }
+                                                }
+                                            }
+                                            // Right half dark
+                                            Rectangle {
+                                                anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                                width: parent.width / 2; color: "#1e1e24"
+                                                Rectangle {
+                                                    anchors.top: parent.top; width: parent.width; height: 18; color: "#16161c"
+                                                    Rectangle { anchors.left: parent.left; anchors.leftMargin: 3; anchors.verticalCenter: parent.verticalCenter; width: 5; height: 5; radius: 2.5; color: "#27c93f" }
+                                                }
+                                            }
+                                        }
+
+                                        // Label with Radio indicator
+                                        Row {
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            spacing: 6
+
+                                            Rectangle {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 14; height: 14; radius: 7
+                                                color: "transparent"
+                                                border.width: 1.5
+                                                border.color: Qt.rgba(1, 1, 1, 0.40)
+                                            }
+
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: "Auto"
+                                                color: "#ffffff"
+                                                font.family: "Open Runde"
+                                                font.pixelSize: 13
+                                            }
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            var hr = new Date().getHours();
+                                            root.darkMode = (hr < 6 || hr >= 18);
+                                            root.applyThemeToSystem();
+                                            root.playSound("tink");
                                         }
                                     }
                                 }
@@ -2009,11 +2407,11 @@ Scope {
 
                             Column {
                                 anchors.centerIn: parent
-                                spacing: 10
+                                spacing: 8
 
-                                // 3 Summary Rows (Like Image 3!)
+                                // Summary Card 1: Language & Region
                                 Rectangle {
-                                    width: 400; height: 50; radius: 10
+                                    width: 440; height: 46; radius: 8
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
@@ -2022,18 +2420,22 @@ Scope {
                                         anchors.leftMargin: 16; anchors.rightMargin: 16
                                         spacing: 12
 
-                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🌐"; font.pixelSize: 20 }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🌐"; font.pixelSize: 18 }
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 2
-                                            Text { text: "Preferred Language"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
-                                            Text { text: root.selectedCountry + " (English)"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                            Text { text: "Region & Input Method"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 10 }
+                                            Text {
+                                                text: (root.selectedCountry === "vi-VN" || root.selectedCountry === "Vietnam") ? "Vietnam (Tiếng Việt & Bamboo IME)" : root.selectedCountryDisplayName
+                                                color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold
+                                            }
                                         }
                                     }
                                 }
 
+                                // Summary Card 2: Wi-Fi
                                 Rectangle {
-                                    width: 400; height: 50; radius: 10
+                                    width: 440; height: 46; radius: 8
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
@@ -2042,18 +2444,19 @@ Scope {
                                         anchors.leftMargin: 16; anchors.rightMargin: 16
                                         spacing: 12
 
-                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "📶"; font.pixelSize: 20 }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "📶"; font.pixelSize: 18 }
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 2
-                                            Text { text: "Wi-Fi Network"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
-                                            Text { text: root.wifiConnectedSsid || "Ready to connect"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                            Text { text: "Wi-Fi Network"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 10 }
+                                            Text { text: root.wifiConnectedSsid || "Connected"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                         }
                                     }
                                 }
 
+                                // Summary Card 3: Siri
                                 Rectangle {
-                                    width: 400; height: 50; radius: 10
+                                    width: 440; height: 46; radius: 8
                                     color: Qt.rgba(1, 1, 1, 0.05)
                                     border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
 
@@ -2062,12 +2465,36 @@ Scope {
                                         anchors.leftMargin: 16; anchors.rightMargin: 16
                                         spacing: 12
 
-                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🎙️"; font.pixelSize: 20 }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🎙️"; font.pixelSize: 18 }
                                         Column {
                                             anchors.verticalCenter: parent.verticalCenter
                                             spacing: 2
-                                            Text { text: "Apple Intelligence & Siri"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 11 }
-                                            Text { text: root.siriEnabled ? "Enabled (" + root.selectedVoice.split("-")[2] + ")" : "Disabled"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                                            Text { text: "Apple Intelligence & Siri"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 10 }
+                                            Text {
+                                                text: (root.siriActivationMode === "voice" ? "Voice Wake-up ('Hey Siri')" : (root.siriActivationMode === "type" ? "Type to Siri (Super+Space)" : "Manual Click")) + " • " + (root.selectedVoice.indexOf("NamMinh") !== -1 ? "Nam Minh" : (root.selectedVoice.indexOf("HoaiMy") !== -1 ? "Hoài My" : "Jenny Neural"))
+                                                color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Summary Card 4: Appearance
+                                Rectangle {
+                                    width: 440; height: 46; radius: 8
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.12)
+
+                                    Row {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 16; anchors.rightMargin: 16
+                                        spacing: 12
+
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "🌓"; font.pixelSize: 18 }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            Text { text: "Appearance Look"; color: Qt.rgba(1, 1, 1, 0.45); font.pixelSize: 10 }
+                                            Text { text: root.darkMode ? "Dark Mode" : "Light Mode"; color: "#ffffff"; font.pixelSize: 12; font.weight: Font.DemiBold }
                                         }
                                     }
                                 }
@@ -2100,7 +2527,8 @@ Scope {
                                     case 1: return "By using this software, you agree to the software license terms.";
                                     case 2: return "Other Network Options...";
                                     case 3: return "About Ask Siri, Dictation & Privacy...";
-                                    case 4: return "Arch Linux & Hyprland";
+                                    case 4: return "Appearance & Desktop Options...";
+                                    case 5: return "Apple Intelligence & MacShell";
                                     default: return "";
                                 }
                             }
@@ -2112,7 +2540,7 @@ Scope {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 10
 
-                            // Back Button
+                            // Back Button (Hidden on First and Finish Step)
                             Rectangle {
                                 visible: root.currentStep > 1 && root.currentStep < 5
                                 width: 76
@@ -2137,9 +2565,11 @@ Scope {
 
                             // Continue / Get Started Button
                             Rectangle {
-                                width: root.currentStep === 5 ? 115 : 86
-                                height: root.currentStep === 5 ? 32 : 28
-                                radius: root.currentStep === 5 ? 16 : 6
+                                width: root.currentStep === 5 ? 124 : 88
+                                height: root.currentStep === 5 ? 34 : 28
+                                radius: root.currentStep === 5 ? 17 : 6
+                                opacity: root.canContinue ? 1.0 : 0.45
+                                enabled: root.canContinue
                                 color: nextBtnHover.hovered ? "#0062cc" : "#007aff"
 
                                 Text {

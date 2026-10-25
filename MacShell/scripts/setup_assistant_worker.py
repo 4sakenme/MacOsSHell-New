@@ -12,6 +12,7 @@ Comprehensive backend for the macOS Setup Assistant (OOBE):
 
 import sys
 import os
+import re
 import time
 import json
 import math
@@ -66,6 +67,44 @@ def test_gemini_key(api_key: str):
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. Dependency & Feature Checking
 # ══════════════════════════════════════════════════════════════════════════════
+
+def hardware_check():
+    """Detect GPU / NPU hardware for Apple Intelligence."""
+    info = {
+        "hardware": "Integrated CPU Engine",
+        "has_ai_accel": False,
+        "detail": "Standard CPU"
+    }
+    try:
+        res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5)
+        lines = [line.strip() for line in res.stdout.split("\n") if line.strip()]
+        for line in lines:
+            if re.search(r'NPU|VPU', line, re.IGNORECASE):
+                info["hardware"] = "Dedicated Neural Processing Unit (NPU)"
+                info["has_ai_accel"] = True
+                info["detail"] = line.split(":")[-1].strip()
+                break
+            elif re.search(r'NVIDIA|GeForce|RTX', line, re.IGNORECASE):
+                info["hardware"] = "NVIDIA Tensor Core GPU"
+                info["has_ai_accel"] = True
+                info["detail"] = line.split(":")[-1].strip()
+                break
+            elif re.search(r'Iris Xe|Intel.*Graphics|Arc', line, re.IGNORECASE):
+                info["hardware"] = "Intel Iris Xe Graphics (AI Acceleration Ready)"
+                info["has_ai_accel"] = True
+                info["detail"] = line.split(":")[-1].strip()
+                break
+            elif re.search(r'Radeon|AMD.*Graphics', line, re.IGNORECASE):
+                info["hardware"] = "AMD Radeon Graphics (ROCm / Vulkan Ready)"
+                info["has_ai_accel"] = True
+                info["detail"] = line.split(":")[-1].strip()
+                break
+    except Exception as e:
+        info["detail"] = str(e)
+
+    print(f"HARDWARE:{json.dumps(info)}", flush=True)
+    return info
+
 
 def check_command(cmd: str) -> bool:
     return shutil.which(cmd) is not None
@@ -727,15 +766,60 @@ def run_setup(options_raw: str = ""):
         "live_voice_streaming": opts.get("live_voice_streaming", True),
         "tts_voice": opts.get("tts_voice", "vi-VN-NamMinhNeural"),
         "tts_language": opts.get("tts_language", "vi-VN"),
+        "country": opts.get("selected_country", "United States"),
+        "country_code": opts.get("selected_language", "en-US"),
         "configured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")
     }
     with open(CONFIG_DIR / "config.json", "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2, ensure_ascii=False)
 
+    # 7. Apply Locale & Vietnamese Input Method
+    country_code = opts.get("selected_language", "en-US")
+    selected_country = opts.get("selected_country", "United States")
+    if "vi" in country_code.lower() or "vietnam" in selected_country.lower():
+        try:
+            locale_conf = HOME / ".config" / "locale.conf"
+            locale_conf.parent.mkdir(parents=True, exist_ok=True)
+            with open(locale_conf, "w", encoding="utf-8") as f:
+                f.write("LANG=vi_VN.UTF-8\nLC_ALL=vi_VN.UTF-8\n")
+        except Exception:
+            pass
+        # Configure fcitx5 profile with bamboo
+        try:
+            fcitx5_profile = HOME / ".config" / "fcitx5" / "profile"
+            fcitx5_profile.parent.mkdir(parents=True, exist_ok=True)
+            fcitx5_content = (
+                "[Groups/0]\n"
+                "Name=Default\n"
+                "Default Layout=us\n"
+                "DefaultIM=bamboo\n\n"
+                "[Groups/0/Items/0]\n"
+                "Name=keyboard-us\n"
+                "Layout=\n\n"
+                "[Groups/0/Items/1]\n"
+                "Name=bamboo\n"
+                "Layout=\n\n"
+                "[GroupOrder]\n"
+                "0=Default\n"
+            )
+            with open(fcitx5_profile, "w", encoding="utf-8") as f:
+                f.write(fcitx5_content)
+        except Exception:
+            pass
+    else:
+        try:
+            locale_conf = HOME / ".config" / "locale.conf"
+            locale_conf.parent.mkdir(parents=True, exist_ok=True)
+            with open(locale_conf, "w", encoding="utf-8") as f:
+                f.write("LANG=en_US.UTF-8\nLC_ALL=en_US.UTF-8\n")
+        except Exception:
+            pass
+
     # Save siri settings
     siri_data = {
         "siri_enabled": siri_requested,
         "gemini_api_key": api_key if siri_requested else "",
+        "activation_mode": opts.get("siri_activation_mode", "voice"),
         "live_voice": opts.get("live_voice_streaming", True) if siri_requested else False,
         "voice": opts.get("tts_voice", "vi-VN-NamMinhNeural"),
         "language": opts.get("tts_language", "vi-VN")
@@ -827,6 +911,8 @@ if __name__ == "__main__":
 
     if cmd == "test_gemini_key":
         test_gemini_key(arg1)
+    elif cmd == "hardware_check":
+        hardware_check()
     elif cmd == "check_dependencies":
         check_dependencies(arg1)
     elif cmd == "wifi_status":
