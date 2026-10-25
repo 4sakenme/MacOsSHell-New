@@ -923,9 +923,9 @@ Scope {
                             property variant mask: strokeMask
                             property variant hmap: strokeHeightMap
 
-                            property real refractScale: 0.05
-                            property real specularBoost: 1.8
-                            property real fresnelBoost: 0.7
+                            property real refractScale: 0.015
+                            property real specularBoost: 1.4
+                            property real shadowBoost: 0.25
                             property vector4d p00_p10: Qt.vector4d(p00.x, p00.y, p10.x, p10.y)
                             property vector4d p01_p11: Qt.vector4d(p01.x, p01.y, p11.x, p11.y)
                             property vector2d srcSize: Qt.vector2d(mainContainer.width, mainContainer.height)
