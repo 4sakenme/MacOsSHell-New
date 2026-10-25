@@ -48,7 +48,7 @@ void main() {
     float h = clamp(rawH, 0.0, 1.0);
     float distFromCenter = clamp(1.0 - smoothstep(0.06, 0.94, h), 0.0, 1.0);
 
-    // Screen-space background mapping
+    // Bilinear mapping from local UV to screen-space wallpaper UV
     vec2 p00 = p00_p10.xy;
     vec2 p10 = p00_p10.zw;
     vec2 p01 = p01_p11.xy;
@@ -61,11 +61,14 @@ void main() {
 
     // Sample background wallpaper with chromatic dispersion
     vec3 backgroundCol;
-    backgroundCol.r = texture(src, clamp(baseUV + refractionOffset * 1.05, vec2(0.001), vec2(0.999))).r;
+    backgroundCol.r = texture(src, clamp(baseUV + refractionOffset * 1.04, vec2(0.001), vec2(0.999))).r;
     backgroundCol.g = texture(src, clamp(baseUV + refractionOffset * 1.00, vec2(0.001), vec2(0.999))).g;
-    backgroundCol.b = texture(src, clamp(baseUV + refractionOffset * 0.95, vec2(0.001), vec2(0.999))).b;
+    backgroundCol.b = texture(src, clamp(baseUV + refractionOffset * 0.96, vec2(0.001), vec2(0.999))).b;
 
-    // 2. 3D Specular Highlight & Fresnel Rim
+    // 100% pure wallpaper refraction - NO purple or blue diffuse tint!
+    vec3 glassBody = backgroundCol.rgb;
+
+    // 2. 3D Specular Highlight & Bright Specular Ribbon
     float nz = sqrt(max(1.0 - distFromCenter * distFromCenter, 0.0));
     vec3 normal3D = normalize(vec3(-normal2D * distFromCenter, nz));
 
@@ -73,15 +76,14 @@ void main() {
     vec3 viewDir = vec3(0.0, 0.0, 1.0);
 
     vec3 refl = reflect(-lightDir, normal3D);
-    float spec = pow(max(dot(refl, viewDir), 0.0), 32.0);
+    float spec = pow(max(dot(refl, viewDir), 0.0), 24.0);
     vec3 specularColor = vec3(1.0, 1.0, 1.0) * spec * specularBoost;
 
-    float fresnel = pow(1.0 - max(dot(normal3D, vec3(0.0, 0.0, 1.0)), 0.0), 3.0);
-    vec3 rimGlow = vec3(0.85, 0.92, 1.0) * fresnel * fresnelBoost;
+    // 3. Icy White Fresnel Rim Light
+    float fresnel = pow(1.0 - max(dot(normal3D, vec3(0.0, 0.0, 1.0)), 0.0), 2.5);
+    vec3 rimLight = vec3(0.90, 0.95, 1.0) * fresnel * fresnelBoost;
 
-    // 3. Translucent Glass Tint
-    vec3 tint = vec3(0.1, 0.3, 0.8) * 0.15;
-
-    vec3 rgb = backgroundCol * 1.02 + tint + specularColor + rimGlow;
-    fragColor = vec4(clamp(rgb, 0.0, 1.0) * a, a) * qt_Opacity;
+    // Final composite: crystal clear translucent liquid glass
+    vec3 finalCol = glassBody + specularColor + rimLight;
+    fragColor = vec4(clamp(finalCol, 0.0, 1.0) * a, a) * qt_Opacity;
 }
