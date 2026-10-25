@@ -723,6 +723,15 @@ Scope {
                     }
                 }
 
+                // Offscreen texture source of wallpaper for physical glass refraction shader
+                ShaderEffectSource {
+                    id: wallpaperTex
+                    sourceItem: wallpaperContainer
+                    live: true
+                    recursive: false
+                    smooth: true
+                }
+
                 // ─────────────────────────────────────────────────────────────
                 // SCREEN 0: Apple Single-Stroke Handwriting Screen
                 // ─────────────────────────────────────────────────────────────
@@ -751,131 +760,129 @@ Scope {
                             y: root.cameraPanY
                         }
 
-                        Repeater {
-                            model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
+                        // ── Liquid Glass Stroke Mask Item ──
+                        Item {
+                            id: strokeMaskBox
+                            anchors.fill: parent
+                            anchors.margins: -24
+                            visible: false
 
-                            delegate: Item {
-                                id: strokeItem
-                                required property var modelData
-                                required property int index
-
+                            Item {
                                 anchors.fill: parent
+                                anchors.margins: 24
 
-                                readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
-                                readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
-                                readonly property bool isDot: (modelData && modelData.length !== undefined && modelData.length < 2.0)
+                                Repeater {
+                                    model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
 
-                                readonly property real localProgress: {
-                                    var g = root.strokeDrawProgress;
-                                    if (g <= startPct) return 0.0;
-                                    if (g >= endPct) return 1.0;
-                                    return (g - startPct) / Math.max(endPct - startPct, 0.0001);
-                                }
+                                    delegate: Shape {
+                                        id: strokeShape
+                                        required property var modelData
+                                        required property int index
 
-                                readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
+                                        anchors.fill: parent
+                                        preferredRendererType: Shape.CurveRenderer
 
-                                // ── Layer 1: Bottom Refraction & Deep Sapphire Drop Shadow (y +4.5px) ──
-                                Shape {
-                                    anchors.fill: parent
-                                    y: 4.5
-                                    preferredRendererType: Shape.CurveRenderer
+                                        readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
+                                        readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
+                                        readonly property bool isDot: (modelData && modelData.length !== undefined && modelData.length < 2.0)
 
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(0.01, 0.04, 0.22, 0.45)
-                                        strokeWidth: 22.0
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
+                                        readonly property real localProgress: {
+                                            var g = root.strokeDrawProgress;
+                                            if (g <= startPct) return 0.0;
+                                            if (g >= endPct) return 1.0;
+                                            return (g - startPct) / Math.max(endPct - startPct, 0.0001);
+                                        }
 
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(0.06, 0.26, 0.68, 0.32)
-                                        strokeWidth: 18.0
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
-                                }
+                                        readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
 
-                                // ── Layer 2: Main Cylindrical Liquid Glass Body & Refractive Core (y 0px) ──
-                                Shape {
-                                    anchors.fill: parent
-                                    preferredRendererType: Shape.CurveRenderer
-
-                                    // Outer cylindrical tube refraction wall
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(0.40, 0.72, 1.0, 0.25)
-                                        strokeWidth: 17.0
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
-
-                                    // Translucent glass core (reveals background blue ribbon)
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(0.72, 0.88, 1.0, 0.32)
-                                        strokeWidth: 14.0
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
-
-                                    // Luminous core reflection
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(0.90, 0.96, 1.0, 0.52)
-                                        strokeWidth: 8.5
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
-                                }
-
-                                // ── Layer 3: Top Specular Crest & Reflection Ridge (y -1.8px) ──
-                                Shape {
-                                    anchors.fill: parent
-                                    y: -1.8
-                                    preferredRendererType: Shape.CurveRenderer
-
-                                    // Upper curvature specular reflection ridge
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(1.0, 1.0, 1.0, 0.92)
-                                        strokeWidth: 3.5
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
-                                    }
-
-                                    // Top razor white crest specular highlight
-                                    ShapePath {
-                                        strokeColor: "#ffffff"
-                                        strokeWidth: 1.6
-                                        fillColor: "transparent"
-                                        capStyle: ShapePath.RoundCap
-                                        joinStyle: ShapePath.RoundJoin
-                                        trim.start: 0.0
-                                        trim.end: strokeItem.drawEnd
-                                        PathSvg { path: strokeItem.modelData.d }
+                                        ShapePath {
+                                            strokeColor: "#ffffff"
+                                            strokeWidth: 17.0
+                                            fillColor: "transparent"
+                                            capStyle: ShapePath.RoundCap
+                                            joinStyle: ShapePath.RoundJoin
+                                            trim.start: 0.0
+                                            trim.end: strokeShape.drawEnd
+                                            PathSvg { path: strokeShape.modelData.d }
+                                        }
                                     }
                                 }
                             }
+                        }
+
+                        // Sharp mask FBO
+                        ShaderEffectSource {
+                            id: strokeMask
+                            sourceItem: strokeMaskBox
+                            hideSource: true
+                            visible: false
+                            smooth: true
+                        }
+
+                        // Softened heightmap for optical surface normal / gradient calculation
+                        MultiEffect {
+                            id: strokeHeightFx
+                            anchors.fill: strokeMaskBox
+                            source: strokeMask
+                            blurEnabled: true
+                            blurMax: 16
+                            blur: 0.36
+                            autoPaddingEnabled: false
+                            visible: false
+                        }
+
+                        ShaderEffectSource {
+                            id: strokeHeightMap
+                            sourceItem: strokeHeightFx
+                            visible: false
+                            smooth: true
+                        }
+
+                        // Physical ambient ocean-sapphire drop shadow under the glass tube
+                        MultiEffect {
+                            anchors.fill: strokeMaskBox
+                            anchors.topMargin: 5
+                            source: strokeMask
+                            blurEnabled: true
+                            blurMax: 32
+                            blur: 0.65
+                            colorization: 1.0
+                            colorizationColor: "#02071a"
+                            opacity: 0.40
+                        }
+
+                        // ──  Official macOS Tahoe Liquid Glass Tube ShaderEffect ──
+                        ShaderEffect {
+                            id: liquidGlassTube
+                            anchors.fill: strokeMaskBox
+                            fragmentShader: Qt.resolvedUrl("liquidglasstube.frag.qsb")
+
+                            readonly property var bounds: {
+                                var p0 = liquidGlassTube.mapToItem(mainContainer, 0, 0);
+                                var p1 = liquidGlassTube.mapToItem(mainContainer, width, height);
+                                return {
+                                    x: p0.x,
+                                    y: p0.y,
+                                    w: Math.max(p1.x - p0.x, 1.0),
+                                    h: Math.max(p1.y - p0.y, 1.0)
+                                };
+                            }
+
+                            property variant src: wallpaperTex
+                            property variant mask: strokeMask
+                            property variant hmap: strokeHeightMap
+
+                            property vector2d itemSize: Qt.vector2d(bounds.w, bounds.h)
+                            property vector2d srcSize: Qt.vector2d(mainContainer.width, mainContainer.height)
+                            property vector2d srcOffset: Qt.vector2d(bounds.x, bounds.y)
+
+                            // Light direction: top-left lighting
+                            property vector2d lightDir: Qt.vector2d(-0.5, -0.8)
+                            property real refractAmount: 0.04
+                            property real specularPower: 16.0
+                            property real specularBoost: 0.90
+                            property real fresnelBoost: 0.45
+                            property real causticsBoost: 0.50
                         }
 
                         // ── Glowing Pen Tip Point ──
