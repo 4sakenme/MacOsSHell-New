@@ -792,15 +792,6 @@ Scope {
                     }
                 }
 
-                // Offscreen texture source of wallpaper for physical glass refraction shader
-                ShaderEffectSource {
-                    id: wallpaperTex
-                    sourceItem: wallpaperContainer
-                    live: true
-                    recursive: false
-                    smooth: true
-                    mipmap: true
-                }
 
                 // ─────────────────────────────────────────────────────────────
                 // SCREEN 0: Apple Single-Stroke Handwriting Screen
@@ -830,106 +821,56 @@ Scope {
                             y: root.cameraPanY
                         }
 
-                        // ── Liquid Glass Stroke Mask Item ──
+                        // ── Apple Iconic White Handwriting Script ──
                         Item {
-                            id: strokeMaskBox
+                            id: whiteStrokeBox
                             anchors.fill: parent
-                            anchors.margins: -32
-                            visible: false
 
-                            Item {
-                                anchors.fill: parent
-                                anchors.margins: 32
+                            Repeater {
+                                model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
 
-                                Repeater {
-                                    model: (root.currentHelloWord && root.currentHelloWord.strokes) ? root.currentHelloWord.strokes : []
+                                delegate: Shape {
+                                    id: strokeShape
+                                    required property var modelData
+                                    required property int index
 
-                                    delegate: Shape {
-                                        id: strokeShape
-                                        required property var modelData
-                                        required property int index
+                                    anchors.fill: parent
+                                    preferredRendererType: Shape.CurveRenderer
 
-                                        anchors.fill: parent
-                                        preferredRendererType: Shape.CurveRenderer
+                                    readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
+                                    readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
+                                    readonly property bool isDot: (modelData && modelData.length !== undefined && modelData.length < 2.0)
 
-                                        readonly property real startPct: (modelData && modelData.start_pct !== undefined) ? modelData.start_pct : 0.0
-                                        readonly property real endPct: (modelData && modelData.end_pct !== undefined) ? modelData.end_pct : 1.0
-                                        readonly property bool isDot: (modelData && modelData.length !== undefined && modelData.length < 2.0)
+                                    readonly property real localProgress: {
+                                        var g = root.strokeDrawProgress;
+                                        if (g <= startPct) return 0.0;
+                                        if (g >= endPct) return 1.0;
+                                        return (g - startPct) / Math.max(endPct - startPct, 0.0001);
+                                    }
 
-                                        readonly property real localProgress: {
-                                            var g = root.strokeDrawProgress;
-                                            if (g <= startPct) return 0.0;
-                                            if (g >= endPct) return 1.0;
-                                            return (g - startPct) / Math.max(endPct - startPct, 0.0001);
-                                        }
+                                    readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
 
-                                        readonly property real drawEnd: isDot ? (localProgress >= 0.5 ? 1.0 : 0.0) : localProgress
-
-                                        ShapePath {
-                                            strokeColor: "#ffffff"
-                                            strokeWidth: 26.0
-                                            fillColor: "transparent"
-                                            capStyle: ShapePath.RoundCap
-                                            joinStyle: ShapePath.RoundJoin
-                                            trim.start: 0.0
-                                            trim.end: strokeShape.drawEnd
-                                            PathSvg { path: strokeShape.modelData.d }
-                                        }
+                                    ShapePath {
+                                        strokeColor: "#ffffff"
+                                        strokeWidth: 26.0
+                                        fillColor: "transparent"
+                                        capStyle: ShapePath.RoundCap
+                                        joinStyle: ShapePath.RoundJoin
+                                        trim.start: 0.0
+                                        trim.end: strokeShape.drawEnd
+                                        PathSvg { path: strokeShape.modelData.d }
                                     }
                                 }
                             }
-                        }
 
-                        // Sharp mask FBO
-                        ShaderEffectSource {
-                            id: strokeMask
-                            sourceItem: strokeMaskBox
-                            hideSource: true
-                            visible: false
-                            smooth: true
-                        }
-
-                        // Smooth tubular heightmap for normal calculation and optical lens curvature
-                        MultiEffect {
-                            id: strokeHeightFx
-                            anchors.fill: strokeMaskBox
-                            source: strokeMask
-                            blurEnabled: true
-                            blurMax: 32
-                            blur: 0.32
-                            autoPaddingEnabled: false
-                            visible: false
-                        }
-
-                        ShaderEffectSource {
-                            id: strokeHeightMap
-                            sourceItem: strokeHeightFx
-                            visible: false
-                            smooth: true
-                        }
-
-                        // ──  MacShell Liquid Glass Tube Physical Refraction Shader ──
-                        ShaderEffect {
-                            id: liquidGlassTube
-                            anchors.fill: strokeMaskBox
-                            fragmentShader: Qt.resolvedUrl("glasstube.frag.qsb")
-
-                            readonly property point p00: liquidGlassTube.mapToItem(mainContainer, 0, 0)
-                            readonly property point p10: liquidGlassTube.mapToItem(mainContainer, width, 0)
-                            readonly property point p01: liquidGlassTube.mapToItem(mainContainer, 0, height)
-                            readonly property point p11: liquidGlassTube.mapToItem(mainContainer, width, height)
-
-                            property variant src: wallpaperTex
-                            property variant mask: strokeMask
-                            property variant hmap: strokeHeightMap
-
-                            property real refractScale: 0.015
-                            property real specularBoost: 1.4
-                            property real shadowBoost: 0.25
-                            property vector4d p00_p10: Qt.vector4d(p00.x, p00.y, p10.x, p10.y)
-                            property vector4d p01_p11: Qt.vector4d(p01.x, p01.y, p11.x, p11.y)
-                            property vector2d srcSize: Qt.vector2d(mainContainer.width, mainContainer.height)
-                            property vector2d itemSize: Qt.vector2d(width, height)
+                            // Subtle depth lift to make white strokes pop over both light and dark ribbons
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: "#45000000"
+                                shadowBlur: 0.50
+                                shadowVerticalOffset: 6
+                            }
                         }
 
                         // ── Glowing Pen Tip Point ──
