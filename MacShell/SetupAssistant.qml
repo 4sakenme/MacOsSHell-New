@@ -730,6 +730,7 @@ Scope {
                     live: true
                     recursive: false
                     smooth: true
+                    mipmap: true
                 }
 
                 // ─────────────────────────────────────────────────────────────
@@ -819,14 +820,14 @@ Scope {
                             smooth: true
                         }
 
-                        // Softened heightmap for optical surface normal / gradient calculation
+                        // Lightly blurred heightmap for finding the thin glass rim along the edges
                         MultiEffect {
                             id: strokeHeightFx
                             anchors.fill: strokeMaskBox
                             source: strokeMask
                             blurEnabled: true
                             blurMax: 16
-                            blur: 0.36
+                            blur: 0.28
                             autoPaddingEnabled: false
                             visible: false
                         }
@@ -838,51 +839,28 @@ Scope {
                             smooth: true
                         }
 
-                        // Physical ambient ocean-sapphire drop shadow under the glass tube
-                        MultiEffect {
-                            anchors.fill: strokeMaskBox
-                            anchors.topMargin: 5
-                            source: strokeMask
-                            blurEnabled: true
-                            blurMax: 32
-                            blur: 0.65
-                            colorization: 1.0
-                            colorizationColor: "#02071a"
-                            opacity: 0.40
-                        }
-
-                        // ──  Official macOS Tahoe Liquid Glass Tube ShaderEffect ──
+                        // ──  MacShell / MacLock Official Liquid Glass ShaderEffect ──
                         ShaderEffect {
                             id: liquidGlassTube
                             anchors.fill: strokeMaskBox
-                            fragmentShader: Qt.resolvedUrl("liquidglasstube.frag.qsb")
+                            fragmentShader: Qt.resolvedUrl("glasstext.frag.qsb")
 
-                            readonly property var bounds: {
-                                var p0 = liquidGlassTube.mapToItem(mainContainer, 0, 0);
-                                var p1 = liquidGlassTube.mapToItem(mainContainer, width, height);
-                                return {
-                                    x: p0.x,
-                                    y: p0.y,
-                                    w: Math.max(p1.x - p0.x, 1.0),
-                                    h: Math.max(p1.y - p0.y, 1.0)
-                                };
-                            }
+                            readonly property point fp: liquidGlassTube.mapToItem(mainContainer, 0, 0)
 
                             property variant src: wallpaperTex
                             property variant mask: strokeMask
                             property variant hmap: strokeHeightMap
 
-                            property vector2d itemSize: Qt.vector2d(bounds.w, bounds.h)
+                            property vector2d itemSize: Qt.vector2d(width, height)
                             property vector2d srcSize: Qt.vector2d(mainContainer.width, mainContainer.height)
-                            property vector2d srcOffset: Qt.vector2d(bounds.x, bounds.y)
+                            property vector2d srcOffset: Qt.vector2d(fp.x, fp.y)
 
-                            // Light direction: top-left lighting
-                            property vector2d lightDir: Qt.vector2d(-0.5, -0.8)
-                            property real refractAmount: 0.04
-                            property real specularPower: 16.0
-                            property real specularBoost: 0.90
-                            property real fresnelBoost: 0.45
-                            property real causticsBoost: 0.50
+                            property real mode: 1.0           // 1.0 = Liquid Glass mode
+                            property real intensity: 0.02    // 0.02 = crystal clear glass (translucent, shows wallpaper)
+                            property real refract: 12.0      // edge refraction shift in px
+                            property real bevel: 1.15        // rim slope scale
+                            property vector4d tint: Qt.vector4d(1.0, 1.0, 1.0, 1.0)
+                            property vector2d lightDir: Qt.vector2d(-0.6, -0.8)
                         }
 
                         // ── Glowing Pen Tip Point ──

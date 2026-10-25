@@ -28,6 +28,24 @@ log_err()  { echo -e "  ${RED}✕${NC} $1"; }
 
 banner() {
     clear 2>/dev/null || true
+    echo -e "${CYAN}"
+    cat <<'EOF'
+                     ▄█▄
+               ▄   ▄  █  ▄   ▄
+                ▀▄  ▀▄█▄▀  ▄▀
+                 ▄▀███████▀▄
+           ▀█▄▄ ▀  ██   ██  ▀ ▄▄█▀
+             ▀███▄  ▀   ▀  ▄███▀
+           ▄▄▄▄ ▀██▄ ▄ ▄ ▄██▀ ▄▄▄▄
+          ▀█▄ ▀▀█████   █████▀▀ ▄█▀
+           ▀▀▀▀ ▄██▀ ▀ ▀ ▀██▄ ▀▀▀▀
+             ▄███▀  ▄   ▄  ▀███▄
+           ▄█▀▀ ▄  ██   ██  ▄ ▀▀█▄
+                 ▀▄███████▄▀
+                ▄▀  ▄▀█▀▄  ▀▄
+               ▀   ▀  █  ▀   ▀
+                     ▀█▀
+EOF
     echo -e "${BLUE}"
     cat <<'EOF'
     __  ___           _____ __          ____
@@ -37,7 +55,9 @@ banner() {
 /_/  /_/\__,_/\___//____/_/ /_/\___//_/_/   
 EOF
     echo -e "${NC}"
-    echo -e "  ${BOLD} MacShell Universal Installer${NC} ${DIM}· macOS Experience on Arch Linux & Hyprland${NC}"
+    echo -e "  ${BOLD} MacShell Installer${NC} ${DIM}· macOS Experience on Hyprland${NC}"
+    echo -e "  ${BOLD} -----------------------MAIN REPO-----------------------------{NC}"
+    echo -e "  ${BOLD}          https://github.com/0-ss/MacShell{NC}                 "
     echo -e "  ${DIM}─────────────────────────────────────────────────────────────────${NC}\n"
 }
 
@@ -347,10 +367,8 @@ mkdir -p "$HOME/.config/quickshell" "$HOME/.config/macshell" "$CONFIG_DEST" "$LO
 # Deploy MacShell components directly into $CONFIG_DEST (never nested)
 if [ -d "$REPO_ROOT/MacShell" ]; then
     cp -ru "$REPO_ROOT/MacShell"/* "$CONFIG_DEST/" 2>/dev/null || true
-    if [ -f "$REPO_ROOT/MacShell/assets/wallpapers/tahoe.jpg" ]; then
-        mkdir -p "$CONFIG_DEST/assets/wallpapers"
-        cp -u "$REPO_ROOT/MacShell/assets/wallpapers/tahoe.jpg" "$CONFIG_DEST/assets/wallpapers/tahoe.jpg" 2>/dev/null || true
-    fi
+    mkdir -p "$CONFIG_DEST/assets/wallpapers"
+    cp -ru "$REPO_ROOT/MacShell/assets/wallpapers"/* "$CONFIG_DEST/assets/wallpapers/" 2>/dev/null || true
 fi
 
 # Flatten any nested MacShell directory if accidentally present
