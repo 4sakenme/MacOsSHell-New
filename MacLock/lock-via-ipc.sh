@@ -2,8 +2,11 @@
 # Each WlSessionLock instance is used once. Start a fresh IPC-capable instance per lock.
 set -u
 
+# Ensure a UTF-8 locale so Qt doesn't emit non-UTF8 warning to stdout
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+
 get_state() {
-    qs -c MacLock ipc call lockscreen state 2>/dev/null || true
+    qs -c MacLock ipc call lockscreen state 2>/dev/null | grep -E '^(ready|busy|stopping)$' | tail -n 1 || true
 }
 
 lock_now() {
@@ -50,6 +53,9 @@ while [ "$tries" -lt 60 ]; do
     sleep 0.1
     tries=$((tries + 1))
 done
+
+# If it failed to become ready, clean up the daemon process so zombies don't accumulate
+kill "$daemon_pid" 2>/dev/null || true
 
 printf '%s\n' 'MacLock IPC did not become ready. Check that Quickshell can load the MacLock config.' >&2
 exit 1

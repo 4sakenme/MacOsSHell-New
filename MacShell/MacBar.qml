@@ -4308,7 +4308,7 @@ Scope {
     property string wallpaperAppearance: "auto"     // auto (follows Dark Mode) | light | dark | dynamic (time of day)
     property string wpPairLight: ""
     property string wpPairDark: ""
-    readonly property bool wpHasPair: wpPairLight !== "" && wpPairDark !== ""
+    readonly property bool wpHasPair: wpPairLight !== "" && wpPairDark !== "" && (wallpaperPath === "" || wallpaperPath === wpPairLight || wallpaperPath === wpPairDark)
     readonly property string dynwallScript: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-dynwall.sh"
     // "<name>-Light.ext" ↔ "<name>-Dark.ext" in the same folder (from the folder scan)
     function wpPairOf(path) {
@@ -4338,6 +4338,7 @@ Scope {
     ].join("\n")
     readonly property string awwwScript: [
         'p="$1"',
+        '[ -n "$p" ] && [ -f "$p" ] || exit 0',
         root.stopVideoScript,
         'if command -v awww >/dev/null 2>&1; then',
         '  if ! awww query >/dev/null 2>&1; then',
@@ -4390,9 +4391,21 @@ Scope {
     Timer { interval: 2500; running: true; onTriggered: root.wpApplyAppearance() }
 
     function wpApply(path) {
+        if (!path || path === "") return;
         var pair = wpPairOf(path);
-        if (pair) { wpPairLight = pair.light; wpPairDark = pair.dark; root.wpAppliedPair = ""; wpApplyAppearance(); return; }
-        wpPairLight = ""; wpPairDark = ""; root.wpAppliedPair = "";
+        if (pair) {
+            wpPairLight = pair.light;
+            wpPairDark = pair.dark;
+            root.wpAppliedPair = "";
+            root.wpRestorePath = path;
+            root.wallpaperPath = path;
+            try { if (root.hub && root.hub.dock) root.hub.dock.wallpaperPath = path; } catch (e) {}
+            wpApplyAppearance();
+            return;
+        }
+        wpPairLight = "";
+        wpPairDark = "";
+        root.wpAppliedPair = "";
         // animated wallpapers go through macshell-setwall.sh (mpvpaper for videos); pictures are always set with awww below
         if (root.wpIsVideo(path)) {
             root.wallpaperVideo = path;
@@ -4418,8 +4431,8 @@ Scope {
             setwallProc.running = true;
             return;
         }
-        var p = root.wpRestorePath;
-        if (p === "") return;
+        var p = (root.wpRestorePath && root.wpRestorePath !== "") ? root.wpRestorePath : root.wallpaperPath;
+        if (!p || p === "") return;
         var cmd = (wallpaperCmd || "").trim();
         var script = cmd !== "" ? '[ -f "$1" ] || exit 0\n' + root.stopVideoScript + "\n" + cmd.split("{}").join('"$1"')
                                 : '[ -f "$1" ] || exit 0\nif command -v awww >/dev/null 2>&1 && awww query 2>/dev/null | grep -qF -- "$1"; then exit 0; fi\n' + root.awwwScript;

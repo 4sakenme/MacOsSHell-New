@@ -507,10 +507,14 @@ Scope {
         // 3. Update MacBar / MacDock if running live
         if (root.hub && root.hub.bar) {
             root.hub.bar.darkMode = root.darkMode;
-            root.hub.bar.wpPairLight = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg";
-            root.hub.bar.wpPairDark = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg";
-            root.hub.bar.wallpaperAppearance = "auto";
-            root.hub.bar.wpApplyAppearance();
+            // Only force Tahoe wallpaper pair if no custom wallpaper was already set by the user
+            var currentWp = root.hub.bar.wallpaperPath || "";
+            if (currentWp === "" || currentWp.indexOf("tahoe") >= 0) {
+                root.hub.bar.wpPairLight = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg";
+                root.hub.bar.wpPairDark = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg";
+                root.hub.bar.wallpaperAppearance = "auto";
+                root.hub.bar.wpApplyAppearance();
+            }
         }
         if (root.hub && root.hub.dock) {
             root.hub.dock.darkMode = root.darkMode;
@@ -523,11 +527,13 @@ Scope {
                     "    with open(p) as f: d = json.load(f)\n" +
                     "    d['darkMode'] = " + (root.darkMode ? "True" : "False") + "\n" +
                     "    d['appearanceMode'] = '" + (root.darkMode ? "dark" : "light") + "'\n" +
-                    "    d['wallpaperPath'] = '" + wpPath + "'\n" +
-                    "    d['wpRestorePath'] = '" + wpPath + "'\n" +
-                    "    d['wpPairLight'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg')\n" +
-                    "    d['wpPairDark'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg')\n" +
-                    "    d['wallpaperAppearance'] = 'auto'\n" +
+                    "    cur_wp = d.get('wallpaperPath', '')\n" +
+                    "    if not cur_wp or 'tahoe' in cur_wp:\n" +
+                    "        d['wallpaperPath'] = '" + wpPath + "'\n" +
+                    "        d['wpRestorePath'] = '" + wpPath + "'\n" +
+                    "        d['wpPairLight'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg')\n" +
+                    "        d['wpPairDark'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg')\n" +
+                    "        d['wallpaperAppearance'] = 'auto'\n" +
                     "    with open(p, 'w') as f: json.dump(d, f, indent=2)\n";
         Quickshell.execDetached(["python3", "-c", pyCmd]);
     }
