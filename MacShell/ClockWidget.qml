@@ -4,6 +4,7 @@
 
 import QtQuick
 import QtQuick.Effects
+import "Fonts.js" as Fonts
 
 Item {
     id: w
@@ -59,7 +60,7 @@ Item {
 
     readonly property real tint:
         Math.min(0.92,
-                 dark ? 0.25 + glassOpacity * 0.8
+                 dark ? 0.06 + glassOpacity * 0.5
                       : 0.45 + glassOpacity * 0.9)
 
     width: (isSmall ? 158 : 358) * scaleF
@@ -163,6 +164,27 @@ Item {
 
         sourceComponent: Item {
             id: gl
+            // ── render once, then rest (saves GPU and RAM) ──
+            // The wallpaper -> blur textures are captured when something changed (wallpaper, size, position, blur) and then left alone.
+            // They only stream while an animated wallpaper plays inside the glass, or for a moment while the widget is moved / resized.
+            property bool moving: false
+            readonly property bool streaming: w.wallVideo !== "" || moving
+            readonly property string capSig: [w.wallUrl, w.screenX, w.screenY, w.screenW, w.screenH, w.width, w.height, w.glassBlur, w.shaderUrl].join("|")
+            onCapSigChanged: { moving = true; settle.restart(); }
+            property int capStep: 0
+            function recap() { capStep = 0; capTimer.restart(); }
+            Timer { id: settle; interval: 450; onTriggered: { gl.moving = false; gl.recap(); } }
+            Timer {
+                id: capTimer
+                interval: 60
+                onTriggered: {
+                    // two stages, in order: the wallpaper capture first, then the blur that reads it
+                    if (gl.capStep === 0) bsrc.scheduleUpdate(); else blurred.scheduleUpdate();
+                    gl.capStep++;
+                    if (gl.capStep < 2) capTimer.restart();
+                }
+            }
+            Component.onCompleted: recap()
 
             readonly property real margin: 72
             readonly property real padPx: 10
@@ -217,6 +239,7 @@ Item {
                     width: w.screenW
                     height: w.screenH
                     source: w.wallUrl
+                    onStatusChanged: if (status === Image.Ready) { gl.moving = true; settle.restart(); }
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     sourceSize.width: w.screenW
@@ -247,7 +270,7 @@ Item {
                 id: bsrc
                 sourceItem: backdrop
                 hideSource: true
-                live: w.editing || gl.updating
+live: (gl.streaming || w.editing || gl.updating)
                 visible: false
 
                 textureSize: Qt.size(
@@ -271,7 +294,7 @@ Item {
             ShaderEffectSource {
                 id: blurred
                 sourceItem: blurFx
-                live: w.editing || gl.updating
+live: (gl.streaming || w.editing || gl.updating)
                 visible: false
             }
 
@@ -393,7 +416,7 @@ Item {
             ? Qt.rgba(1, 1, 1, 0.55)
             : Qt.rgba(0, 0, 0, 0.46)
 
-        font.family: w.fam
+        font.family: Fonts.forWeight(Font.Bold, w.fam)
         font.pixelSize: 11.5 * w.u
         font.weight: Font.Bold
         font.letterSpacing: 0.4 * w.u

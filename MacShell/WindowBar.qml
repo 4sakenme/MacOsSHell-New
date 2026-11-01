@@ -12,6 +12,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import "I18n.js" as I18n
+import "Fonts.js" as Fonts
 
 Scope {
     id: root
@@ -53,7 +54,11 @@ Scope {
     // did; in Opaque nothing did, so the controls had nowhere to go)
     Binding { target: root.hub; property: "winBarWantsGeo"; value: root.enabled; when: root.hub !== null }
     function dispatch(d) { Hyprland.dispatch(d + "({ window = \"address:" + activeAddr + "\" })"); }
-    function close() { Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + activeAddr + '" })'); }
+    function close() {
+        var a = activeAddr;
+        var go = function () { Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + a + '" })'); };
+        if (hub && hub.closeQuietly) hub.closeQuietly(go); else go();     // live captures pause for a moment first
+    }
     function minimize() {
         Quickshell.execDetached(["sh", "-c", "if [ -x \"$HOME/.local/bin/macshell-genie\" ]; then \"$HOME/.local/bin/macshell-genie\" min; else hyprctl dispatch 'hl.dsp.window.move({ workspace = \"special:minimized\", follow = false, window = \"address:" + activeAddr + "\" })'; fi"]);
     }
@@ -166,7 +171,7 @@ Scope {
                         }
                         duration: 260
                         color: root.darkMode ? "white" : "#1D1D1F"
-                        font.family: root.fam; font.pixelSize: 11; font.weight: Font.DemiBold
+                        font.family: Fonts.forWeight(Font.DemiBold, root.fam); font.pixelSize: 11; font.weight: Font.DemiBold
                     }
                 }
             }

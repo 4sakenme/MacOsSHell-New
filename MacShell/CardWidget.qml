@@ -56,7 +56,7 @@ Item {
     readonly property color fgSub: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.45)
     readonly property color line: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
     // glass tint: stronger than the Weather widget's, so black (light mode) / white (dark mode) text stays readable on any wallpaper
-    readonly property real tint: Math.min(0.92, dark ? 0.25 + glassOpacity * 0.8 : 0.45 + glassOpacity * 0.9)
+    readonly property real tint: Math.min(0.92, dark ? 0.06 + glassOpacity * 0.5 : 0.45 + glassOpacity * 0.9)
 
     // ───────────────────────── background ─────────────────────────
     // Normal: solid card
@@ -96,6 +96,27 @@ Item {
         active: w.glassOn
         sourceComponent: Item {
             id: gl
+            // ── render once, then rest (saves GPU and RAM) ──
+            // The wallpaper -> blur textures are captured when something changed (wallpaper, size, position, blur) and then left alone.
+            // They only stream while an animated wallpaper plays inside the glass, or for a moment while the widget is moved / resized.
+            property bool moving: false
+            readonly property bool streaming: w.wallVideo !== "" || moving
+            readonly property string capSig: [w.wallUrl, w.screenX, w.screenY, w.screenW, w.screenH, w.width, w.height, w.glassBlur, w.shaderUrl].join("|")
+            onCapSigChanged: { moving = true; settle.restart(); }
+            property int capStep: 0
+            function recap() { capStep = 0; capTimer.restart(); }
+            Timer { id: settle; interval: 450; onTriggered: { gl.moving = false; gl.recap(); } }
+            Timer {
+                id: capTimer
+                interval: 60
+                onTriggered: {
+                    // two stages, in order: the wallpaper capture first, then the blur that reads it
+                    if (gl.capStep === 0) bsrc.scheduleUpdate(); else blurred.scheduleUpdate();
+                    gl.capStep++;
+                    if (gl.capStep < 2) capTimer.restart();
+                }
+            }
+            Component.onCompleted: recap()
             readonly property real margin: 72           // backdrop captured around the widget (blur + refraction reach)
             readonly property real padPx: 10            // shader item padding (soft shadow)
             readonly property real ds: w.glassBlur >= 8 ? 0.5 : 1.0
@@ -121,6 +142,7 @@ Item {
                     width: w.screenW
                     height: w.screenH
                     source: w.wallUrl
+                    onStatusChanged: if (status === Image.Ready) { gl.moving = true; settle.restart(); }
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     sourceSize.width: w.screenW
@@ -140,7 +162,7 @@ Item {
                 id: bsrc
                 sourceItem: backdrop
                 hideSource: true
-                live: true
+                live: gl.streaming
                 visible: false
                 textureSize: Qt.size(Math.max(1, Math.round(backdrop.width * gl.ds)),
                                      Math.max(1, Math.round(backdrop.height * gl.ds)))
@@ -159,7 +181,7 @@ Item {
             ShaderEffectSource {
                 id: blurred
                 sourceItem: blurFx
-                live: true
+                live: gl.streaming
                 visible: false
             }
             ShaderEffect {

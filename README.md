@@ -335,6 +335,7 @@ This shell **replaces** your bar, dock and notification daemon. Stop anything th
    ```sh
    curl -fsSL https://raw.githubusercontent.com/4sakenme/MacOsSHell-New/main/install.sh | bash
    ```
+   Then choose option 1 (or 6 for Graphical Installer)
    The installer will create a new .lua file in your /.config/hypr/ that have keybinds and auto start, so you don't need to to manually bind MacShell.
    
    It installs **MacShell** to `~/.config/quickshell/MacShell` and **MacLock** to `~/.config/quickshell/MacLock`,
@@ -381,24 +382,24 @@ Environment: `MACSHELL_REPO`, `MACSHELL_BRANCH`, `MACSHELL_CHANNEL`, `MACSHELL_D
 
 ## Updating
 
-The Best way to make sure you have the latest update Is to delete the MacShell folder in /home (IF needed) and run this again :
+The Best way to make sure you have the latest update Is to delete the MacShell folder in /home/ (needed) and run this again :
 
    ```sh
    git clone https://github.com/4sakenme/MacOsSHell-New
    cd MacOsSHell-New
    bash install.sh
    ```
-or you can use this method :
-
-Run the installer (`./install.sh` in your clone, or `macshell-install` from anywhere). It shows a menu:
+Then Choose install
 
 ```
-MacShell (installed: a1b2c3d4e5f6)
+MacShell (installed: x.x.x)
 
   1) Install shell (Best for install and updating)
-  2) Check for updates
+  2) Check for updates (Only checks for updates)
   3) Uninstall shell
   4) Bind help
+  5) Check this setup (doctor)
+  6) Graphical Installer "Choose it for better updating/installing"
   q) Quit
 ```
 
@@ -406,29 +407,10 @@ MacShell (installed: a1b2c3d4e5f6)
 - **Check for updates** compares your version with GitHub and, if there is a newer one, asks whether to install it (y/n).
 - **Uninstall shell** removes MacShell and MacLock (your settings are kept).
 - **Bind help** opens the Hyprland keybind section of this README in your browser.
+- **Check this setup** checks your current setup, looks for issues and solves it.
+- **Graphical Installer** runs the Graphical Installer "GUI" absolutely recommended
 
 The other tools are still available as options: `--doctor`, `--low-power`, `--deps-only` (see `--help`).
-
-An update also installs the dependencies the new version needs, updates MacShell and MacLock together, saves the old
-install first, and never touches your settings. The command-line tool is still there for scripts and the daily timer:
-
-```sh
-macshell-update check       # is there a newer version?
-macshell-update log         # what changed since the installed version
-macshell-update update      # download and install it (MacShell and MacLock), including new dependencies
-macshell-update rollback    # go back to the previous install (MacShell and MacLock)
-macshell-update channel main   # follow the newest commit instead of releases (or: release)
-macshell-update status
-```
-
-`macshell-update update` runs the *new* version's installer too, so new files, new dependencies and a new start script
-come along. It keeps the last 3 installs, and does one update at a time. Dependencies are installed only when `sudo` works without a password (an unattended timer
-cannot type one); otherwise you get a notice listing what to install with `bash install.sh --deps-only`.
-
-The shell also checks by itself and tells you. `bash install.sh --check` does the same check from a clone, and
-`bash install.sh --auto-update` installs a daily timer (`systemctl --user list-timers macshell-update.timer`) so updates
-install without you doing anything. MacShell reloads itself after an update; MacLock picks up the new files the next
-time it locks.
 
 ## Hyprland configuration (Lua)
 

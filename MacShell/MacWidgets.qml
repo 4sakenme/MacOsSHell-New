@@ -5,8 +5,8 @@
 //   * Weather data from Open-Meteo, a local-date Calendar, a live local-time Clock, and a Music player (MPRIS) widget
 //   * settings + placed widgets are saved to ~/.config/macwidgets/settings.json
 //
-//   qs -c macbar ipc call widgets refresh        re-fetch the weather now
-//   qs -c macbar ipc call widgets edit true      start / stop editing
+//   qs -c MacShell ipc call widgets refresh        re-fetch the weather now
+//   qs -c MacShell ipc call widgets edit true      start / stop editing
 //
 // Hyprland: nothing is required. (No blur layerrule is needed, the Liquid Glass style blurs the wallpaper itself.)
 
@@ -42,7 +42,8 @@ Scope {
     readonly property real glassLiquid: dock ? dock.glassLiquid : 1.0
     readonly property real glassRim: dock ? dock.glassRim : 0.45
     readonly property real glassGrain: dock ? dock.glassGrain : 0.03
-    readonly property bool darkGlass: dock ? dock.darkMode : true
+    // widgets keep their own look: the shell's Light / Dark setting does not change them (each widget's own style still can)
+    readonly property bool darkGlass: true
     // Control Center border colour (follows the wallpaper's dominant colour)
     readonly property color borderTint: (hub && hub.bar) ? hub.bar.menuBorderColor : "#8A9AB5"
 

@@ -1,4 +1,4 @@
-// About This Linux — the "About This Mac" window for MacShell.
+//0.4.9// About This Linux — the "About This Mac" window for MacShell.
 //
 //   qs -c MacShell ipc call about open | close | toggle        (the Apple menu's "About This Linux" opens it too)
 //
@@ -14,6 +14,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import "I18n.js" as I18n
+import "Fonts.js" as Fonts
 
 Scope {
     id: root
@@ -33,7 +34,8 @@ Scope {
 
     readonly property string fam: dock ? dock.fontFamily : "Open Runde"
     readonly property string boldFontFamily: hub && hub.boldFontFamily ? hub.boldFontFamily : "Open Runde Semibold"
-    function fontForWeight(weight, regularFamily) { return Number(weight) >= Font.DemiBold ? boldFontFamily : regularFamily; }
+    // Open Runde: bold text uses its Semibold face; another selected font keeps its own family (and real bold weight)
+    function fontForWeight(weight, regularFamily) { return (Number(weight) >= Font.DemiBold && regularFamily === "Open Runde") ? boldFontFamily : regularFamily; }
 
     property var info: ({})
     readonly property string scriptPath: decodeURIComponent(String(Qt.resolvedUrl("assets/about-info.sh")).replace(/^file:\/\//, ""))
@@ -89,10 +91,11 @@ Scope {
     Window {
         id: win
         title: "About This Linux"
-        readonly property int wantH: Math.ceil(content.implicitHeight) + 40 + 26
-        width: 300
+        readonly property real uiS: root.bar ? root.bar.uiScale : 1      // UI scale (Settings → Menu Bar)
+        readonly property int wantH: Math.round((Math.ceil(content.implicitHeight) + 40 + 26) * uiS)
+        width: Math.round(300 * uiS)
         height: wantH
-        minimumWidth: 300; maximumWidth: 300
+        minimumWidth: width; maximumWidth: width
         minimumHeight: wantH; maximumHeight: wantH
         visible: false
         color: "transparent"
@@ -100,20 +103,28 @@ Scope {
 
         onVisibleChanged: if (visible) { root.refresh(); floatTries = 0; floatTimer.restart(); }
         property int floatTries: 0
+        // the size changed while the window is open (UI scale, or the content grew): send Hyprland the new size again
+        onWidthChanged: if (visible) { floatTries = 0; floatTimer.restart(); }
+        onHeightChanged: if (visible) { floatTries = 0; floatTimer.restart(); }
         Timer {
             id: floatTimer
-            interval: 140
+            interval: 60
             repeat: true
             onTriggered: {
                 // the compositor maps the window a moment after it becomes visible: send the dispatches a few times
                 var sel = 'window = "title:^(' + win.title + ')$"';
                 Hyprland.dispatch('hl.dsp.window.float({ action = "enable", ' + sel + ' })');
+                Hyprland.dispatch('hl.dsp.window.fullscreen({ mode = "maximized", action = "unset", ' + sel + ' })');
                 // this window draws its own macOS-style edge: no Hyprland border, and Hyprland's corner rounding
                 // (also used for its shadow and blur) matches the window's own radius
                 Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "border_size", value = "0", ' + sel + ' })');
-                Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "rounding", value = "' + frame.radius + '", ' + sel + ' })');
-                if (win.floatTries >= 1) Hyprland.dispatch('hl.dsp.window.center({ ' + sel + ' })');
-                if (++win.floatTries >= 4) stop();
+                Hyprland.dispatch('hl.dsp.window.set_prop({ prop = "rounding", value = "' + Math.round(frame.radius * win.uiS) + '", ' + sel + ' })');
+                if (win.floatTries >= 2) {
+                    // Hyprland keeps the size the window was first mapped with (and its blur / shadow region): force the scaled size
+                    Hyprland.dispatch('hl.dsp.window.resize({ x = ' + win.width + ', y = ' + win.height + ', "exact", ' + sel + ' })');
+                    Hyprland.dispatch('hl.dsp.window.center({ ' + sel + ' })');
+                }
+                if (++win.floatTries >= 12) stop();
             }
         }
         Shortcut { sequences: ["Escape", "Ctrl+W"]; onActivated: win.visible = false }
@@ -126,7 +137,7 @@ Scope {
             readonly property color text2: dark ? Qt.rgba(1, 1, 1, 0.55) : Qt.rgba(0, 0, 0, 0.5)
             readonly property color text3: dark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(0, 0, 0, 0.42)
             readonly property color border: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.18)
-            readonly property color edgeOuter: dark ? Qt.rgba(0, 0, 0, 0.55) : Qt.rgba(0, 0, 0, 0.40)     // thin dark line on the outside
+            readonly property color edgeOuter: Qt.rgba(1, 1, 1, 0.50)     // thin dark line on the outside
             readonly property color edgeInner: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.65)      // soft highlight just inside it
             function lightBorder(active, c) { return active ? Qt.darker(c, dark ? 1.12 : 1.22) : "transparent"; }
             readonly property color lightOff: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.15)
@@ -136,7 +147,9 @@ Scope {
 
         Rectangle {
             id: frame
-            anchors.fill: parent
+            // drawn at a scaled size: the window content shrinks with the UI scale, the window itself shrinks to match
+            width: parent.width / win.uiS; height: parent.height / win.uiS
+            scale: win.uiS; transformOrigin: Item.TopLeft
             radius: 18
             color: pal.bg
             border.width: 1; border.color: pal.edgeOuter
@@ -226,7 +239,7 @@ Scope {
                         width: 108; height: 78; radius: 9
                         color: "transparent"
                         border.width: 4; border.color: pal.text2
-                        Text { anchors.centerIn: parent; text: ">_"; font.family: "monospace"; font.pixelSize: 30; font.bold: true; color: pal.text2 }
+                        Text { anchors.centerIn: parent; text: ">_"; font.family: Fonts.forWeight(Font.Bold, root.fam); font.pixelSize: 30; font.bold: true; color: pal.text2 }
                     }
                 }
                 Item { width: 1; height: 20 }
@@ -240,7 +253,7 @@ Scope {
                     elide: Text.ElideRight
                     text: "MacShell"
                     color: pal.text
-                    font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 24; font.weight: Font.Bold
+                    font.family: root.fontForWeight(Font.Bold, root.fam); font.pixelSize: 24; font.weight: Font.Bold
                 }
                 Item { width: 1; height: 3 }
                 Text {
@@ -249,7 +262,7 @@ Scope {
                     elide: Text.ElideRight
                     text: root.info.sub || ""
                     color: pal.text3
-                    font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 12
+                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12
                 }
                 Item { width: 1; height: 22 }
 
@@ -269,7 +282,7 @@ Scope {
                                 wrapMode: Text.Wrap
                                 text: modelData.k
                                 color: pal.text
-                                font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 12; font.weight: Font.DemiBold
+                                font.family: root.fontForWeight(Font.DemiBold, root.fam); font.pixelSize: 12; font.weight: Font.DemiBold
                             }
                             Column {
                                 width: parent.width - 104
@@ -278,7 +291,7 @@ Scope {
                                     wrapMode: Text.Wrap
                                     text: modelData.v
                                     color: pal.text
-                                    font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 12
+                                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12
                                 }
                                 Text {
                                     visible: modelData.s !== ""
@@ -286,7 +299,7 @@ Scope {
                                     wrapMode: Text.Wrap
                                     text: modelData.s
                                     color: pal.text2
-                                    font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 11
+                                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 11
                                 }
                             }
                         }
@@ -302,7 +315,7 @@ Scope {
                         width: moreTxt.implicitWidth + 30; height: 24; radius: 7
                         color: moreMa.pressed ? pal.btnDown : pal.btn
                         border.width: 1; border.color: pal.border
-                        Text { id: moreTxt; anchors.centerIn: parent; text: I18n.tr("More Info\u2026"); color: pal.text; font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 12 }
+                        Text { id: moreTxt; anchors.centerIn: parent; text: I18n.tr("More Info\u2026"); color: pal.text; font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 12 }
                         MouseArea {
                             id: moreMa; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                             onClicked: {
@@ -322,7 +335,7 @@ Scope {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: (root.info.osname || "Linux") + " " + I18n.tr("Website")
                         color: pal.text2
-                        font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 11; font.underline: true
+                        font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 11; font.underline: true
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Quickshell.execDetached(["xdg-open", root.info.home || "https://www.kernel.org"]) }
                     }
                 }
@@ -331,9 +344,9 @@ Scope {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
-                    text: "Linux® is a registered trademark of Linus Torvalds.\nMacShell 0.3.2"
+                    text: "Linux® is a registered trademark of Linus Torvalds.\nMacShell 0.4.9"
                     color: pal.text3
-                    font.family: root.fontForWeight(font.weight, root.fam); font.pixelSize: 10
+                    font.family: root.fontForWeight(Font.Normal, root.fam); font.pixelSize: 10
                     lineHeight: 1.1
                 }
             }
