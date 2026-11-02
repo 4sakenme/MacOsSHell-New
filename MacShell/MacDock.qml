@@ -4928,9 +4928,27 @@ Scope {
         return out;
     }
 
+    function focusTl(tl) {
+        if (!tl) return;
+        var addr = "";
+        var v = Hyprland.toplevels.values;
+        for (var i = 0; i < v.length; i++) {
+            if (v[i].wayland === tl) {
+                addr = "0x" + String(v[i].address).replace(/^0x/, "");
+                break;
+            }
+        }
+        if (addr !== "") {
+            Hyprland.dispatch('hl.dsp.focus({ window = "address:' + addr + '" })');
+        }
+        tl.activate();
+    }
+
     function activate(item, forceNew) {
         if (item.kind === "win") {
-            if ( item.tl && genieDock(item.tl, [item.tl])) return; if (item.tl) item.tl.activate(); return; }
+            if (item.tl) root.focusTl(item.tl);
+            return;
+        }
         if (item.special === "apps") { if (bar) bar.spotOpen("apps"); return; }
         if (item.special === "trash") {
             // the file manager first (Dolphin understands trash:/ natively); xdg-open only as the last resort
@@ -4944,7 +4962,8 @@ Scope {
         if (wins.length > 0 && !forceNew) {
             var idx = -1;
             for (var i = 0; i < wins.length; i++) if (wins[i].activated) idx = i;
-            wins[(idx + 1) % wins.length].activate();
+            var target = wins[(idx + 1) % wins.length];
+            root.focusTl(target);
             return;
         }
         if (item.entry || item.key) {
@@ -5022,7 +5041,6 @@ Scope {
     function menuFor(item) {
         var m = [];
         if (item.kind === "win") {
-            if ( item.tl && genieDock(item.tl, [item.tl])) return;
             m.push({ kind: "item", label: I18n.tr("Show"), run: function () { activate(item, false); } });
             m.push({ kind: "item", label: I18n.tr("Close"), run: function () { var t = item.tl; if (!t) return; if (root.hub) root.hub.closeQuietly(function () { if (t) t.close(); }); else t.close(); } });
             m.push({ kind: "sep" });
@@ -5708,7 +5726,6 @@ Scope {
                     following = false; ghostFade.stop();
                     tearAddr = "";
                     if (item.kind === "win") {
-            if ( item.tl && genieDock(item.tl, [item.tl])) return;
                         var h = hyprOf(item.tl), o = h ? h.lastIpcObject : null;
                         tearAddr = h ? ("0x" + h.address.replace(/^0x/, "")) : "";
                         var sw = win.modelData.width, sh = win.modelData.height;

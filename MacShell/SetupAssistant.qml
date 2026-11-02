@@ -49,6 +49,60 @@ Scope {
     property string updateReleaseTitle: "macOS MacShell 0.5.1"
     property string updateReleaseNotes: ""
 
+    // Dynamic Tag Release Notes List
+    readonly property var dynamicNotesList: {
+        var raw = (root.updateReleaseNotes || "").trim();
+        if (!raw) {
+            return [
+                { icon: "🏷️", title: "Bản phát hành " + (root.updateVersionTag || "0.5.1"), desc: root.updateReleaseTitle || "macOS MacShell Update" },
+                { icon: "✨", title: "Cải tiến & Tối ưu", desc: "Hệ thống đã cập nhật thành công các gói tính năng mới nhất từ kho lưu trữ." }
+            ];
+        }
+        var lines = raw.split(/[\r\n•]+/).map(s => s.trim().replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").trim()).filter(s => s.length > 2);
+        var res = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var low = line.toLowerCase();
+            if (low === "what's new?" || low === "what's new" || low === "new features" || low === "improved") continue;
+            if (low.indexOf("and more changes") >= 0) continue;
+
+            var ic = "✨";
+            if (low.indexOf("folder") >= 0 || low.indexOf("directory") >= 0) ic = "📁";
+            else if (low.indexOf("look") >= 0 || low.indexOf("picture") >= 0 || low.indexOf("info") >= 0) ic = "👁️";
+            else if (low.indexOf("dock") >= 0 || low.indexOf("app") >= 0 || low.indexOf("menu") >= 0) ic = "🚀";
+            else if (low.indexOf("fix") >= 0 || low.indexOf("bug") >= 0 || low.indexOf("sorry") >= 0) ic = "🛠️";
+            else if (low.indexOf("update") >= 0 || low.indexOf("version") >= 0 || low.indexOf("shell") >= 0) ic = "⚙️";
+
+            var colon = line.indexOf(":");
+            var t = line;
+            var d = "";
+            if (colon > 0 && colon < line.length - 1) {
+                t = line.substring(0, colon).trim();
+                d = line.substring(colon + 1).trim();
+            }
+            if (!t && !d) continue;
+            res.push({ icon: ic, title: t, desc: d });
+        }
+        return res.length > 0 ? res.slice(0, 6) : [
+            { icon: "🏷️", title: "Phiên bản " + (root.updateVersionTag || "0.5.1"), desc: raw }
+        ];
+    }
+
+    Process {
+        id: fetchNotesProc
+        command: ["python3", "-c", "import urllib.request, json\nreq = urllib.request.Request('https://api.github.com/repos/0-ss/MacShell/releases/latest', headers={'User-Agent': 'MacShell'})\ndata = json.loads(urllib.request.urlopen(req, timeout=5).read())\nprint(json.dumps({'tag': data.get('tag_name',''), 'name': data.get('name',''), 'body': data.get('body','')}))\n"]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    var o = JSON.parse(data);
+                    if (o.tag) root.updateVersionTag = o.tag;
+                    if (o.name) root.updateReleaseTitle = o.name;
+                    if (o.body) root.updateReleaseNotes = o.body;
+                } catch(e) {}
+            }
+        }
+    }
+
     function fontForWeight(weight, family) {
         var fam = family || root.systemFontFamily || "Open Runde";
         if (fam === "Open Runde" || fam === "Open Runde Semibold") {
@@ -61,6 +115,12 @@ Scope {
         if (version) root.updateVersionTag = version;
         if (title) root.updateReleaseTitle = title;
         if (notes) root.updateReleaseNotes = notes;
+        if (!root.updateReleaseNotes && root.hub && root.hub.bar && root.hub.bar.updateReleaseNotes) {
+            root.updateReleaseNotes = root.hub.bar.updateReleaseNotes;
+        }
+        if (!root.updateReleaseNotes) {
+            fetchNotesProc.running = true;
+        }
         root.isUpdateWelcome = true;
         root.currentStep = 0;
         root.exitOpacity = 1.0;
@@ -2777,7 +2837,7 @@ Scope {
                                 }
 
                                 Text {
-                                    text: "Cập nhật hoàn tất! Khám phá các tính năng mới trên MacShell:"
+                                    text: "Cập nhật hoàn tất! Chi tiết bản phát hành từ GitHub tag:"
                                     color: Qt.rgba(1, 1, 1, 0.72)
                                     font.family: root.fontForWeight(Font.Normal, root.systemFontFamily)
                                     font.pixelSize: 13
@@ -2785,71 +2845,71 @@ Scope {
                             }
                         }
 
-                        // Feature list (4 cards)
-                        Column {
+                        // Dynamic feature list from GitHub tag release notes
+                        Flickable {
                             width: parent.width
-                            spacing: 10
+                            height: Math.min(contentHeight, 280)
+                            contentWidth: width
+                            contentHeight: notesCol.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
 
-                            // Feature 1
-                            Rectangle {
-                                width: parent.width; height: 60; radius: 14
-                                color: Qt.rgba(0, 0, 0, 0.28)
-                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
-                                Row {
-                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
-                                    Text { text: "📁"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                                        Text { text: "Tùy biến thư mục Desktop (Customizable Folders)"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
-                                        Text { text: "Thêm thư mục ra Desktop, đổi màu sắc và biểu tượng thư mục tùy ý."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
-                                    }
-                                }
-                            }
+                            Column {
+                                id: notesCol
+                                width: parent.width
+                                spacing: 8
 
-                            // Feature 2
-                            Rectangle {
-                                width: parent.width; height: 60; radius: 14
-                                color: Qt.rgba(0, 0, 0, 0.28)
-                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
-                                Row {
-                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
-                                    Text { text: "👁️"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                                        Text { text: "Desktop Quick Look & Picture Sheet"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
-                                        Text { text: "Xem nhanh thông tin tệp và xem ảnh chụp màn hình trực tiếp từ Desktop."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
-                                    }
-                                }
-                            }
+                                Repeater {
+                                    model: root.dynamicNotesList
+                                    delegate: Rectangle {
+                                        id: noteItemBox
+                                        required property var modelData
+                                        width: notesCol.width
+                                        height: Math.max(54, noteContentCol.implicitHeight + 18)
+                                        radius: 14
+                                        color: Qt.rgba(0, 0, 0, 0.28)
+                                        border.width: 1
+                                        border.color: Qt.rgba(1, 1, 1, 0.10)
 
-                            // Feature 3
-                            Rectangle {
-                                width: parent.width; height: 60; radius: 14
-                                color: Qt.rgba(0, 0, 0, 0.28)
-                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
-                                Row {
-                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
-                                    Text { text: "🚀"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                                        Text { text: "Apps Grid trên Dock & Menu chuột phải mới"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
-                                        Text { text: "Nút Apps mở nhanh ứng dụng từ Dock, kéo thả sắp xếp tự do và menu chuột phải cải tiến."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
-                                    }
-                                }
-                            }
+                                        Row {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 14
+                                            anchors.rightMargin: 14
+                                            spacing: 14
 
-                            // Feature 4
-                            Rectangle {
-                                width: parent.width; height: 60; radius: 14
-                                color: Qt.rgba(0, 0, 0, 0.28)
-                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
-                                Row {
-                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
-                                    Text { text: "⚙️"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                                        Text { text: "Software Update Engine chuẩn macOS"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
-                                        Text { text: "Tự động so sánh mã nguồn từ repo, kiểm tra tag và cập nhật 1-click trong Settings."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
+                                            Text {
+                                                text: noteItemBox.modelData.icon || "✨"
+                                                font.pixelSize: 22
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+
+                                            Column {
+                                                id: noteContentCol
+                                                width: parent.width - 42
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 2
+
+                                                Text {
+                                                    text: noteItemBox.modelData.title
+                                                    color: "#FFFFFF"
+                                                    font.family: root.fontForWeight(Font.DemiBold, root.systemFontFamily)
+                                                    font.pixelSize: 13
+                                                    font.weight: Font.DemiBold
+                                                    wrapMode: Text.WordWrap
+                                                    width: parent.width
+                                                }
+
+                                                Text {
+                                                    visible: noteItemBox.modelData.desc !== ""
+                                                    text: noteItemBox.modelData.desc
+                                                    color: Qt.rgba(1, 1, 1, 0.68)
+                                                    font.family: root.fontForWeight(Font.Normal, root.systemFontFamily)
+                                                    font.pixelSize: 11
+                                                    wrapMode: Text.WordWrap
+                                                    width: parent.width
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

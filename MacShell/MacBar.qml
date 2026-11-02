@@ -1098,6 +1098,43 @@ Scope {
                 poly([11, 3.5, 5.5, 9, 11, 14.5], false);
             } else if (k === "chevR") {
                 poly([7, 3.5, 12.5, 9, 7, 14.5], false);
+            } else if (k === "cpu") {
+                ctx.lineWidth = 1.2;
+                rrect(4.5, 4.5, 9, 9, 1.8); ctx.stroke();
+                rrect(7, 7, 4, 4, 0.8); ctx.fill();
+                line(6.5, 1.5, 6.5, 4.0); line(9, 1.5, 9, 4.0); line(11.5, 1.5, 11.5, 4.0);
+                line(6.5, 14.0, 6.5, 16.5); line(9, 14.0, 9, 16.5); line(11.5, 14.0, 11.5, 16.5);
+                line(1.5, 6.5, 4.0, 6.5); line(1.5, 9, 4.0, 9); line(1.5, 11.5, 4.0, 11.5);
+                line(14.0, 6.5, 16.5, 6.5); line(14.0, 9, 16.5, 9); line(14.0, 11.5, 16.5, 11.5);
+            } else if (k === "ram") {
+                ctx.lineWidth = 1.2;
+                rrect(2.5, 4.5, 13, 9, 1.5); ctx.stroke();
+                rrect(4.5, 6.5, 2.5, 3.5, 0.6); ctx.fill();
+                rrect(8, 6.5, 2.5, 3.5, 0.6); ctx.fill();
+                rrect(11.5, 6.5, 2.5, 3.5, 0.6); ctx.fill();
+                line(3.5, 14.5, 4.5, 14.5); line(6.0, 14.5, 7.5, 14.5); line(9.5, 14.5, 11.0, 14.5); line(12.5, 14.5, 14.5, 14.5);
+            } else if (k === "gpu") {
+                ctx.lineWidth = 1.2;
+                rrect(2.0, 4.0, 14, 10, 1.6); ctx.stroke();
+                circ(9, 9, 3.2); ctx.stroke();
+                circ(9, 9, 1.1); ctx.fill();
+                line(6.5, 9, 11.5, 9); line(9, 6.5, 9, 11.5);
+                line(16, 6, 16, 12);
+            } else if (k === "disk") {
+                ctx.lineWidth = 1.2;
+                rrect(3, 3.5, 12, 11, 2); ctx.stroke();
+                circ(9, 8.5, 2.8); ctx.stroke();
+                circ(9, 8.5, 1); ctx.fill();
+                circ(12.5, 12.5, 0.8); ctx.fill();
+            } else if (k === "temp") {
+                ctx.lineWidth = 1.2;
+                line(9, 3.5, 9, 9.5);
+                circ(9, 12.5, 2.6); ctx.fill();
+                rrect(7.5, 2.5, 3, 8.5, 1.5); ctx.stroke();
+            } else if (k === "net") {
+                ctx.lineWidth = 1.3;
+                line(6, 13, 6, 4.5); poly([3.5, 7, 6, 4, 8.5, 7], false);
+                line(12, 5, 12, 13.5); poly([9.5, 11, 12, 14, 14.5, 11], false);
             } else if (k === "bell") {
                 ctx.beginPath(); ctx.moveTo(3.4, 12.9);
                 ctx.bezierCurveTo(4.6, 11.8, 5.0, 10.6, 5.0, 8.2);
