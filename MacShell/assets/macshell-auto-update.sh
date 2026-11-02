@@ -122,12 +122,16 @@ cmd_apply() {
     cur_ver=$(get_current_version)
     cur_sha=$(get_current_commit)
 
-    # If local git clone exists at ~/MacShell:
-    if [ -d "$HOME/MacShell/.git" ]; then
-        echo "PROGRESS:15:Syncing git workspace with upstream and origin..."
-        cd "$HOME/MacShell"
-        git fetch upstream 2>/dev/null || true
-        git fetch origin "$BRANCH" 2>/dev/null || true
+    # 1. Smart Upstream Ingest & Auto-Push Engine:
+    # Automatically pulls new changes from 0-ss/MacShell, merges them into our fork,
+    # protects custom features, and automatically pushes to GitHub (4sakenme/MacOsSHell-New)!
+    local sync_script=""
+    [ -f "$DEST/assets/macshell-upstream-sync.py" ] && sync_script="$DEST/assets/macshell-upstream-sync.py"
+    [ -z "$sync_script" ] && [ -f "$HOME/MacShell/MacShell/assets/macshell-upstream-sync.py" ] && sync_script="$HOME/MacShell/MacShell/assets/macshell-upstream-sync.py"
+
+    if [ -n "$sync_script" ]; then
+        echo "PROGRESS:15:Auto-ingesting upstream updates from 0-ss/MacShell..."
+        python3 "$sync_script" 2>&1 | while read -r line; do echo "PROGRESS:25:$line"; done || true
     fi
 
     local tmp_dir
