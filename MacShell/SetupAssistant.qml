@@ -43,6 +43,40 @@ Scope {
     property string selectedLanguage: "vi-VN"
     property string selectedVoice: "vi-VN-NamMinhNeural"
 
+    // Update Welcome Mode State
+    property bool isUpdateWelcome: false
+    property string updateVersionTag: "0.5.1"
+    property string updateReleaseTitle: "macOS MacShell 0.5.1"
+    property string updateReleaseNotes: ""
+
+    function startUpdateWelcome(version, title, notes) {
+        if (version) root.updateVersionTag = version;
+        if (title) root.updateReleaseTitle = title;
+        if (notes) root.updateReleaseNotes = notes;
+        root.isUpdateWelcome = true;
+        root.currentStep = 0;
+        root.exitOpacity = 1.0;
+        root.exitScale = 1.0;
+        root.strokeDrawProgress = 0.0;
+        root.helloOpacity = 1.0;
+        root.helloZoomScale = 1.0;
+        root.helloWordIndex = 0;
+        root.active = true;
+        if (root.hub && root.hub.bar) root.hub.bar.barEnabled = false;
+        if (root.hub && root.hub.dock) root.hub.dock.dockEnabled = false;
+        step0Timer.restart();
+    }
+
+    function finishUpdateWelcome() {
+        root.playSound("pop");
+        exitAnim.restart();
+        if (root.hub && root.hub.bar) root.hub.bar.barEnabled = true;
+        if (root.hub && root.hub.dock) root.hub.dock.dockEnabled = true;
+        Qt.callLater(function() {
+            root.isUpdateWelcome = false;
+        });
+    }
+
     // Wi-Fi State
     property bool wifiRadioOn: true
     property string wifiConnectedSsid: ""
@@ -755,7 +789,11 @@ Scope {
         }
 
         onFinished: {
-            root.currentStep = 1;
+            if (root.isUpdateWelcome) {
+                root.currentStep = 10;
+            } else {
+                root.currentStep = 1;
+            }
             root.isTransitioningToCard = false;
         }
     }
@@ -765,6 +803,9 @@ Scope {
     // ═════════════════════════════════════════════════════════════════════════
     IpcHandler {
         target: "setup"
+        function welcome(): void {
+            root.startUpdateWelcome();
+        }
         function start(): void {
             root.currentStep = 0;
             root.exitScale = 1.0;
@@ -874,6 +915,30 @@ Scope {
                             Behavior on opacity {
                                 NumberAnimation { duration: 500; easing.type: Easing.InOutCubic }
                             }
+                        }
+
+                        // User's custom current wallpaper (active when isUpdateWelcome is true)
+                        Image {
+                            id: userActiveWallpaperImg
+                            anchors.fill: parent
+                            visible: root.isUpdateWelcome
+                            source: {
+                                var wp = (root.hub && root.hub.dock && root.hub.dock.resolvedWallpaper)
+                                         ? root.hub.dock.resolvedWallpaper
+                                         : ((root.hub && root.hub.bar && root.hub.bar.resolvedWallpaper) ? root.hub.bar.resolvedWallpaper : "")
+                                return wp !== "" ? ("file://" + wp) : Qt.resolvedUrl("assets/wallpapers/tahoe_dark.jpg");
+                            }
+                            fillMode: Image.PreserveAspectCrop
+                            smooth: true
+                            mipmap: true
+                            opacity: root.isUpdateWelcome ? 1.0 : 0.0
+                            z: 2
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: root.isUpdateWelcome
+                            color: Qt.rgba(0, 0, 0, 0.40)
+                            z: 3
                         }
                     }
 
@@ -1083,7 +1148,7 @@ Scope {
 
                     scale: cardScale
                     transform: Translate { y: setupCard.cardYOffset }
-                    opacity: (root.currentStep === 0) ? 0.0 : 1.0
+                    opacity: (root.currentStep === 0 || root.isUpdateWelcome) ? 0.0 : 1.0
                     visible: opacity > 0.001
 
                     Behavior on cardScale {
@@ -2596,6 +2661,213 @@ Scope {
                                             root.goNext();
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ─────────────────────────────────────────────────────────────
+                // SCREEN 10: Centered Liquid Glass "What's New in MacShell 0.5.1" Card
+                // ─────────────────────────────────────────────────────────────
+                Rectangle {
+                    id: updateWelcomeCard
+                    anchors.centerIn: parent
+                    width: Math.min(Math.max(parent.width * 0.45, 680), 760)
+                    height: 540
+                    radius: 28
+
+                    property real cardScale: (root.currentStep === 10) ? 1.0 : 0.88
+                    property real cardYOffset: (root.currentStep === 10) ? 0 : 80
+
+                    scale: cardScale
+                    transform: Translate { y: updateWelcomeCard.cardYOffset }
+                    opacity: (root.isUpdateWelcome && root.currentStep === 10) ? 1.0 : 0.0
+                    visible: opacity > 0.001
+
+                    Behavior on cardScale {
+                        NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                    }
+                    Behavior on cardYOffset {
+                        NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.08 }
+                    }
+                    Behavior on opacity {
+                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                    }
+
+                    // Pure Apple Liquid Glass Material
+                    color: "#28181824"
+                    border.width: 1.2
+                    border.color: Qt.rgba(0.2, 0.6, 1.0, 0.40)
+
+                    // Subtle cyan/blue rim refraction
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 28
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, 0.18)
+                    }
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 28
+                        spacing: 18
+
+                        // Header with MacOS_26_icon.webp
+                        Row {
+                            spacing: 16
+                            width: parent.width
+
+                            Rectangle {
+                                width: 68; height: 68; radius: 18
+                                color: Qt.rgba(0, 0.35, 0.85, 0.25)
+                                border.width: 1.2
+                                border.color: Qt.rgba(0.2, 0.7, 1.0, 0.5)
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: 54; height: 54
+                                    source: Qt.resolvedUrl("assets/MacOS_26_icon.webp")
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true; mipmap: true
+                                }
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+
+                                Row {
+                                    spacing: 8
+                                    Text {
+                                        text: root.updateReleaseTitle || "macOS MacShell 0.5.1"
+                                        color: "#FFFFFF"
+                                        font.family: root.fontForWeight(Font.Bold, root.systemFontFamily)
+                                        font.pixelSize: 22
+                                        font.weight: Font.Bold
+                                    }
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 48; height: 18; radius: 9
+                                        color: Qt.rgba(0.0, 0.55, 1.0, 0.35)
+                                        border.width: 1
+                                        border.color: Qt.rgba(0.2, 0.7, 1.0, 0.6)
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: root.updateVersionTag || "0.5.1"
+                                            color: "#60C0FF"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: "Cập nhật hoàn tất! Khám phá các tính năng mới trên MacShell:"
+                                    color: Qt.rgba(1, 1, 1, 0.72)
+                                    font.family: root.fontForWeight(Font.Normal, root.systemFontFamily)
+                                    font.pixelSize: 13
+                                }
+                            }
+                        }
+
+                        // Feature list (4 cards)
+                        Column {
+                            width: parent.width
+                            spacing: 10
+
+                            // Feature 1
+                            Rectangle {
+                                width: parent.width; height: 60; radius: 14
+                                color: Qt.rgba(0, 0, 0, 0.28)
+                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
+                                Row {
+                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
+                                    Text { text: "📁"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                        Text { text: "Tùy biến thư mục Desktop (Customizable Folders)"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
+                                        Text { text: "Thêm thư mục ra Desktop, đổi màu sắc và biểu tượng thư mục tùy ý."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
+                                    }
+                                }
+                            }
+
+                            // Feature 2
+                            Rectangle {
+                                width: parent.width; height: 60; radius: 14
+                                color: Qt.rgba(0, 0, 0, 0.28)
+                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
+                                Row {
+                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
+                                    Text { text: "👁️"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                        Text { text: "Desktop Quick Look & Picture Sheet"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
+                                        Text { text: "Xem nhanh thông tin tệp và xem ảnh chụp màn hình trực tiếp từ Desktop."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
+                                    }
+                                }
+                            }
+
+                            // Feature 3
+                            Rectangle {
+                                width: parent.width; height: 60; radius: 14
+                                color: Qt.rgba(0, 0, 0, 0.28)
+                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
+                                Row {
+                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
+                                    Text { text: "🚀"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                        Text { text: "Apps Grid trên Dock & Menu chuột phải mới"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
+                                        Text { text: "Nút Apps mở nhanh ứng dụng từ Dock, kéo thả sắp xếp tự do và menu chuột phải cải tiến."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
+                                    }
+                                }
+                            }
+
+                            // Feature 4
+                            Rectangle {
+                                width: parent.width; height: 60; radius: 14
+                                color: Qt.rgba(0, 0, 0, 0.28)
+                                border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.10)
+                                Row {
+                                    anchors.fill: parent; anchors.margins: 10; spacing: 14
+                                    Text { text: "⚙️"; font.pixelSize: 22; anchors.verticalCenter: parent.verticalCenter }
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                        Text { text: "Software Update Engine chuẩn macOS"; color: "#FFFFFF"; font.pixelSize: 13; font.bold: true }
+                                        Text { text: "Tự động so sánh mã nguồn từ repo, kiểm tra tag và cập nhật 1-click trong Settings."; color: Qt.rgba(1, 1, 1, 0.65); font.pixelSize: 11 }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom row with Get Started button
+                        Item {
+                            width: parent.width
+                            height: 42
+
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 140
+                                height: 36
+                                radius: 18
+                                color: "#007AFF"
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.finishUpdateWelcome()
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Get Started"
+                                    color: "#FFFFFF"
+                                    font.family: root.fontForWeight(Font.DemiBold, root.systemFontFamily)
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
                                 }
                             }
                         }

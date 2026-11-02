@@ -423,6 +423,7 @@ ShellRoot {
         sharedHub.about = aboutApp;
         sharedHub.stagemanager = stageManager;
         sharedHub.desktop = desktopIcons;
+        sharedHub.setupAssistant = setupAssistant;
     }
 
     // qs -c MacShell ipc call siri activate true | false
@@ -527,6 +528,19 @@ ShellRoot {
             setupAssistant.currentStep = 0;
         }
     }
+    IpcHandler {
+        target: "update"
+        function welcome(): void {
+            setupAssistant.startUpdateWelcome(macBar ? macBar.updateVersion : "0.5.1", macBar ? macBar.updateReleaseTitle : "MacShell 0.5.1", macBar ? macBar.updateReleaseNotes : "");
+        }
+        function check(): void {
+            if (macBar) macBar.checkForUpdates(true);
+        }
+        function apply(): void {
+            if (macBar) macBar.applyUpdate();
+        }
+    }
+
     IpcHandler {
         target: "airdrop"
         function open() { airDrop.open(); }

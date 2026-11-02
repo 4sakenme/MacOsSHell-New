@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# macshell-auto-update.sh: Checks and applies updates for MacShell from 4sakenme/MacOsSHell-New
+# macshell-auto-update.sh: Checks and applies updates for MacShell from 0-ss/MacShell & 4sakenme/MacOsSHell-New
 set -uo pipefail
 
 REPO="${MACSHELL_REPO:-4sakenme/MacOsSHell-New}"
+UPSTREAM_REPO="0-ss/MacShell"
 BRANCH="${MACSHELL_BRANCH:-main}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -24,12 +25,11 @@ state_set() {
     fi
 }
 
-# Current installed version & commit
 get_current_version() {
     local v=""
     [ -f "$DEST/VERSION" ] && v=$(head -n1 "$DEST/VERSION" | tr -d '[:space:]')
     [ -z "$v" ] && v=$(state_get installed)
-    printf '%s' "${v:-0.4.9}"
+    printf '%s' "${v:-0.5.1}"
 }
 
 get_current_commit() {
@@ -41,86 +41,116 @@ get_current_commit() {
     printf '%s' "${c:-unknown}"
 }
 
-clean_str() { printf '%s' "$1" | tr -d '"\\\n\r' | cut -c1-200; }
+clean_str() { printf '%s' "$1" | tr -d '"\\\n\r' | cut -c1-300; }
 
 cmd_check() {
-    local cur_ver cur_sha remote_sha remote_ver msg date url status
+    local cur_ver cur_sha remote_sha remote_ver rel_title rel_body msg date url status
     cur_ver=$(get_current_version)
     cur_sha=$(get_current_commit)
     url="https://github.com/$REPO"
 
-    # 1. Query remote commit SHA
+    # 1. Check latest release tag and body from upstream 0-ss/MacShell
+    local upstream_json
+    upstream_json=$(curl -fsSL --max-time 8 "https://api.github.com/repos/$UPSTREAM_REPO/releases/latest" 2>/dev/null || true)
+    
+    local up_tag up_name up_body
+    up_tag=$(printf '%s' "$upstream_json" | jq -r '.tag_name // ""' 2>/dev/null || true)
+    up_name=$(printf '%s' "$upstream_json" | jq -r '.name // ""' 2>/dev/null || true)
+    up_body=$(printf '%s' "$upstream_json" | jq -r '.body // ""' 2>/dev/null || true)
+    
+    # 2. Check latest commit from 4sakenme/MacOsSHell-New
     remote_sha=$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$BRANCH" 2>/dev/null | awk '{print $1}')
     if [ -z "$remote_sha" ]; then
-        remote_sha=$(curl -fsSL --max-time 10 -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/$REPO/commits/$BRANCH" 2>/dev/null || true)
+        remote_sha=$(curl -fsSL --max-time 8 -H "Accept: application/vnd.github.sha" "https://api.github.com/repos/$REPO/commits/$BRANCH" 2>/dev/null || true)
     fi
 
-    if [ -z "$remote_sha" ]; then
-        printf '{"status":"error","message":"Cannot connect to repository %s"}\n' "$REPO"
-        return 1
-    fi
+    # 3. Clean up release notes
+    local clean_notes
+    clean_notes=$(python3 -c "
+import sys, re
+body = sys.stdin.read()
+body = re.sub(r'<[^>]+>', '', body)
+body = re.sub(r'#+\s*', '', body)
+body = re.sub(r'\r', '', body).strip()
+lines = [l.strip() for l in body.split('\n') if l.strip()]
+print(' • '.join(lines[:6]))
+" <<< "$up_body" 2>/dev/null || true)
 
-    # 2. Query remote details & commit message
+    [ -z "$clean_notes" ] && clean_notes="Desktop Quick Look, Customizable Folders, Apps Dock Launcher & Right Click improvements."
+
+    # Commit message from fork
     msg=""
     date=""
-    remote_ver="$cur_ver"
     local json_info
-    json_info=$(curl -fsSL --max-time 10 "https://api.github.com/repos/$REPO/commits/$BRANCH" 2>/dev/null || true)
+    json_info=$(curl -fsSL --max-time 8 "https://api.github.com/repos/$REPO/commits/$BRANCH" 2>/dev/null || true)
     if [ -n "$json_info" ]; then
         msg=$(printf '%s' "$json_info" | jq -r '.commit.message // ""' 2>/dev/null | head -n1 || true)
         date=$(printf '%s' "$json_info" | jq -r '.commit.committer.date // ""' 2>/dev/null || true)
     fi
-    [ -z "$msg" ] && msg="Latest changes on $BRANCH"
+    [ -z "$msg" ] && msg="Latest updates from $BRANCH"
 
-    # Try fetching remote VERSION
-    local r_ver
-    r_ver=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/$REPO/$BRANCH/MacShell/VERSION" 2>/dev/null | head -n1 | tr -d '[:space:]')
-    [ -n "$r_ver" ] && remote_ver="$r_ver"
-
-    # Compare
+    # Determine version and status
+    remote_ver="${up_tag:-$cur_ver}"
     local short_cur short_rem
     short_cur="${cur_sha:0:7}"
     short_rem="${remote_sha:0:7}"
 
-    if [ "$cur_sha" = "$remote_sha" ] || [ "$short_cur" = "$short_rem" ]; then
-        status="uptodate"
-    else
+    # Version comparison: does up_tag > cur_ver?
+    local cmp
+    cmp=$(printf '%s\n%s\n' "$cur_ver" "$remote_ver" | sort -V | tail -n1)
+    if [ "$remote_ver" != "$cur_ver" ] && [ "$cmp" = "$remote_ver" ]; then
         status="available"
+    elif [ -n "$remote_sha" ] && [ "$cur_sha" != "$remote_sha" ] && [ "$short_cur" != "$short_rem" ]; then
+        status="available"
+    else
+        status="uptodate"
     fi
 
-    printf '{"status":"%s","repo":"%s","branch":"%s","current_version":"%s","latest_version":"%s","current_commit":"%s","latest_commit":"%s","commit_message":"%s","commit_date":"%s","url":"%s"}\n' \
-        "$status" "$REPO" "$BRANCH" "$(clean_str "$cur_ver")" "$(clean_str "$remote_ver")" "$short_cur" "$short_rem" "$(clean_str "$msg")" "$(clean_str "$date")" "$url"
+    if [ "$status" = "available" ]; then
+        # Notify user of new update
+        notify-send -i "$DEST/assets/MacOS_26_icon.webp" "MacShell Software Update" "MacShell $remote_ver is available!\n$clean_notes" 2>/dev/null || true
+    fi
+
+    printf '{"status":"%s","repo":"%s","upstream_repo":"%s","branch":"%s","current_version":"%s","latest_version":"%s","release_title":"%s","release_notes":"%s","current_commit":"%s","latest_commit":"%s","commit_message":"%s","commit_date":"%s","url":"%s"}\n' \
+        "$status" "$REPO" "$UPSTREAM_REPO" "$BRANCH" "$(clean_str "$cur_ver")" "$(clean_str "$remote_ver")" "$(clean_str "${up_name:-MacShell $remote_ver}")" "$(clean_str "$clean_notes")" "$short_cur" "$short_rem" "$(clean_str "$msg")" "$(clean_str "$date")" "$url"
     return 0
 }
 
 cmd_apply() {
-    echo "PROGRESS:5:Connecting to GitHub repository $REPO..."
+    echo "PROGRESS:5:Connecting to repositories (0-ss/MacShell & 4sakenme/MacOsSHell-New)..."
     local cur_ver cur_sha
     cur_ver=$(get_current_version)
     cur_sha=$(get_current_commit)
+
+    # If local git clone exists at ~/MacShell:
+    if [ -d "$HOME/MacShell/.git" ]; then
+        echo "PROGRESS:15:Syncing git workspace with upstream and origin..."
+        cd "$HOME/MacShell"
+        git fetch upstream 2>/dev/null || true
+        git fetch origin "$BRANCH" 2>/dev/null || true
+    fi
 
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/macshell-update.XXXXXX)
     # shellcheck disable=SC2064
     trap "rm -rf '$tmp_dir'" EXIT INT TERM
 
-    echo "PROGRESS:20:Downloading latest update package from GitHub..."
+    echo "PROGRESS:30:Downloading update package..."
     local tarball="$tmp_dir/update.tar.gz"
     if ! curl -fsSL --retry 2 --max-time 120 "https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz" -o "$tarball"; then
-        echo "PROGRESS:100:Error: Failed to download update from GitHub." >&2
-        return 1
-    fi
-
-    echo "PROGRESS:45:Extracting and verifying package contents..."
-    mkdir -p "$tmp_dir/src"
-    if ! tar -xzf "$tarball" --strip-components=1 -C "$tmp_dir/src"; then
-        echo "PROGRESS:100:Error: Corrupted archive or extraction failed." >&2
-        return 1
-    fi
-
-    if [ ! -d "$tmp_dir/src/MacShell" ]; then
-        echo "PROGRESS:100:Error: Invalid MacShell directory structure." >&2
-        return 1
+        # Fallback to local clone if available
+        if [ -d "$HOME/MacShell/MacShell" ]; then
+            echo "PROGRESS:35:Using local updated git repository..."
+            mkdir -p "$tmp_dir/src"
+            cp -a "$HOME/MacShell/." "$tmp_dir/src/"
+        else
+            echo "PROGRESS:100:Error: Failed to download update from GitHub." >&2
+            return 1
+        fi
+    else
+        echo "PROGRESS:45:Extracting and verifying package contents..."
+        mkdir -p "$tmp_dir/src"
+        tar -xzf "$tarball" --strip-components=1 -C "$tmp_dir/src" || true
     fi
 
     local ts
@@ -149,18 +179,10 @@ cmd_apply() {
             "$tmp_dir/src/MacLock/" "$LOCK_DEST/"
     fi
 
-    # Also keep git repo in sync if user has local clone
-    if [ -d "$HOME/MacShell/.git" ]; then
-        echo "PROGRESS:85:Syncing local git workspace..."
-        git -C "$HOME/MacShell" fetch origin "$BRANCH" 2>/dev/null || true
-        git -C "$HOME/MacShell" checkout "$BRANCH" 2>/dev/null || true
-        git -C "$HOME/MacShell" pull --ff-only origin "$BRANCH" 2>/dev/null || true
-    fi
-
     # Compile shaders if qsb exists
     if command -v qsb >/dev/null 2>&1; then
         echo "PROGRESS:90:Compiling graphics shaders (qsb)..."
-        for sh in "$DEST"/*.frag "$DEST"/*.vert; do
+        for sh in "$DEST"/*.frag "$DEST"/*.vert "$DEST"/modules/*.frag; do
             [ -f "$sh" ] || continue
             qsb --glsl "300es,120" --hlsl 50 --msl 12 -o "$sh.qsb" "$sh" 2>/dev/null || true
         done
@@ -182,7 +204,9 @@ cmd_apply() {
     state_set "installed_commit" "$new_sha"
     state_set "installed_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    echo "PROGRESS:98:Reloading MacShell environment..."
+    echo "PROGRESS:97:Launching macOS Welcome experience & reloading..."
+    # Trigger the post-update Hello & What's New screen
+    qs -c MacShell ipc call update welcome 2>/dev/null || true
     touch "$DEST/shell.qml"
     [ -d "$LOCK_DEST" ] && touch "$LOCK_DEST/shell.qml"
 
