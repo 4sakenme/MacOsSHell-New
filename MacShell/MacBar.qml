@@ -184,25 +184,55 @@ Scope {
     //    flips it between light and dark by itself.
     // The choice is made by worst-case contrast (white text on the brightest part vs dark text on the darkest part, spread
     // included), with hysteresis so it never flickers, and falls back to the system look when both read equally well.
-    // ═════════ UPDATE CHECK ═════════
-    // Only ASKS whether a newer MacShell exists (assets/check-update.sh: the latest release, else VERSION on the main branch of
-    // github.com/0-ss/MacShell, compared with the VERSION file of this install). It never downloads or installs anything:
-    // the "Update" button just opens updateUrl in the browser.
-    readonly property string updateScript: decodeURIComponent(String(Qt.resolvedUrl("assets/check-update.sh")).replace(/^file:\/\//, ""))
-    property string updateUrl: "https://github.com/0-ss/MacShell/releases/latest"     // ← the link the "Update" button opens
+    // ═════════ UPDATE ENGINE ═════════
+    // Checks against GitHub repo (default: 4sakenme/MacOsSHell-New, main branch)
+    // and provides a full macOS native Software Update workflow:
+    // checking -> available/uptodate -> download & install in-place -> auto reload.
+    readonly property string updateScript: decodeURIComponent(String(Qt.resolvedUrl("assets/macshell-auto-update.sh")).replace(/^file:\/\//, ""))
+    property string updateRepo: "4sakenme/MacOsSHell-New"
+    property string updateBranch: "main"
+    property string updateUrl: "https://github.com/4sakenme/MacOsSHell-New"
     property bool updateChecking: false
-    property string updateState: ""            // "" = not checked yet | uptodate | available | error
-    property string updateVersion: ""          // the new version, e.g. "1.2.0"
+    property string updateState: ""            // "" = not checked yet | uptodate | available | error | updating | completed
+    property string updateVersion: "0.4.9"     // latest version or commit string
+    property string updateCurrentVersion: "0.4.9"
+    property string updateCommitCurrent: ""
+    property string updateCommitLatest: ""
+    property string updateCommitMessage: ""
+    property string updateCommitDate: ""
+    property string updateLastChecked: ""
     property bool updateDialogOpen: false      // the "New update x.x.x" window in Settings
     property bool updateAnnounce: false        // this check may open that window
+
+    // Progress & Installation State
+    property bool updateApplying: false
+    property int updateProgress: 0
+    property string updateStatusText: ""
+    property string updateLogText: ""
+    property string updateErrorMessage: ""
+
     function checkForUpdates(announce) {
         updateAnnounce = announce === true;
-        if (updateProc.running) return;
+        if (updateProc.running || applyUpdateProc.running) return;
         updateChecking = true;
-        updateProc.command = ["sh", updateScript];
+        updateProc.command = ["bash", updateScript, "check"];
         updateProc.running = true;
     }
+
+    function applyUpdate() {
+        if (applyUpdateProc.running) return;
+        updateApplying = true;
+        updateState = "updating";
+        updateProgress = 5;
+        updateStatusText = "Connecting to GitHub repository...";
+        updateLogText = "";
+        updateErrorMessage = "";
+        applyUpdateProc.command = ["bash", updateScript, "apply"];
+        applyUpdateProc.running = true;
+    }
+
     function openUpdateLink() { Quickshell.execDetached(["xdg-open", updateUrl]); }
+
     Process {
         id: updateProc
         stdout: StdioCollector {
@@ -212,17 +242,58 @@ Scope {
                 try { o = JSON.parse(text.trim().split("\n").pop()); } catch (e) { o = null; }
                 if (!o) { root.updateState = "error"; return; }
                 if (o.url) root.updateUrl = String(o.url);
+                if (o.repo) root.updateRepo = String(o.repo);
+                if (o.branch) root.updateBranch = String(o.branch);
+                if (o.current_version) root.updateCurrentVersion = String(o.current_version);
+                if (o.current_commit) root.updateCommitCurrent = String(o.current_commit);
+                if (o.latest_commit) root.updateCommitLatest = String(o.latest_commit);
+                if (o.commit_message) root.updateCommitMessage = String(o.commit_message);
+                if (o.commit_date) root.updateCommitDate = String(o.commit_date);
+                root.updateLastChecked = Qt.formatDateTime(new Date(), "hh:mm dd/MM/yyyy");
+
                 if (o.status === "available") {
-                    root.updateVersion = String(o.latest || "").replace(/^v(?=[0-9])/, "");
+                    root.updateVersion = String(o.latest_version || o.latest_commit || "").replace(/^v(?=[0-9])/, "");
                     root.updateState = "available";
                     if (root.updateAnnounce) root.updateDialogOpen = true;
-                } else {
-                    root.updateState = o.status === "uptodate" ? "uptodate" : "error";
+                } else if (o.status === "uptodate") {
+                    root.updateVersion = String(o.current_version || "0.4.9");
+                    root.updateState = "uptodate";
                     root.updateDialogOpen = false;
+                } else {
+                    root.updateState = "error";
                 }
             }
         }
         onExited: root.updateChecking = false
+    }
+
+    Process {
+        id: applyUpdateProc
+        stdout: SplitParser {
+            onRead: line => {
+                root.updateLogText += line + "\n";
+                if (root.updateLogText.length > 15000) root.updateLogText = root.updateLogText.slice(-15000);
+                if (line.indexOf("PROGRESS:") === 0) {
+                    var parts = line.split(":");
+                    if (parts.length >= 3) {
+                        var p = parseInt(parts[1]);
+                        if (!isNaN(p)) root.updateProgress = p;
+                        root.updateStatusText = parts.slice(2).join(":");
+                    }
+                }
+            }
+        }
+        onExited: exitCode => {
+            root.updateApplying = false;
+            if (exitCode === 0) {
+                root.updateProgress = 100;
+                root.updateState = "completed";
+                root.updateStatusText = "Update completed successfully! MacShell has reloaded.";
+            } else {
+                root.updateState = "error";
+                root.updateErrorMessage = "Update failed (exit code " + exitCode + "). Check log details.";
+            }
+        }
     }
 
     readonly property string recentScript: decodeURIComponent(String(Qt.resolvedUrl("assets/recent-files.sh")).replace(/^file:\/\//, ""))

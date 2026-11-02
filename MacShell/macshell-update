@@ -18,7 +18,7 @@ BACKUP_DIR="$STATE_DIR/backups"
 
 state_get() { [ -f "$STATE_FILE" ] && sed -n "s/^$1=//p" "$STATE_FILE" | head -n1; }
 
-REPO="${MACSHELL_REPO:-$(state_get repo)}"; REPO="${REPO:-0-ss/MacShell}"
+REPO="${MACSHELL_REPO:-$(state_get repo)}"; REPO="${REPO:-4sakenme/MacOsSHell-New}"
 BRANCH="${MACSHELL_BRANCH:-$(state_get branch)}"; BRANCH="${BRANCH:-main}"
 DEST="$(state_get dest)"; DEST="${DEST:-$CONFIG_HOME/quickshell/MacShell}"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

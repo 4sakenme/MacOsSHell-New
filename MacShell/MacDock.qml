@@ -618,6 +618,11 @@ Scope {
                     font.bold: true
                 }
             }
+            // update
+            Item {
+                visible: gl.kind === "update"; anchors.fill: parent
+                WGlyph { anchors.centerIn: parent; width: 14; height: 14; kind: "restart"; color: "white" }
+            }
         }
     }
 
@@ -675,6 +680,7 @@ Scope {
             { id: "network",    sec: 1, name: "Network",         wg: "ethernet",   c1: "#3D9BFF", c2: "#0A6CFF", keys: "ethernet ip address vpn tailscale connection" },
             // 2 · System
             { id: "general",    sec: 2, name: "General",         glyph: "behavior", c1: "#8E8E93", c2: "#636366", keys: "language shell enable disable dock menu bar panel show hide off on" },
+            { id: "softwareupdate", sec: 2, name: "Software Update", glyph: "update", c1: "#48484A", c2: "#2C2C2E", keys: "update software upgrade macshell version git github check repo install tahoe" },
             { id: "appearance", sec: 2, name: "Appearance",      glyph: "appearance", c1: "#3A3A3C", c2: "#1C1C1E", keys: "theme dark light auto mode accent color glass liquid apple style blur font spotlight top bar menus" },
             { id: "siri",       sec: 2, name: "Apple Intelligence & Siri", glyph: "siri", c1: "#00F0FF", c2: "#FF2D55", keys: "siri voice assistant ai gemini intelligence wake word edge glow type to siri" },
             { id: "wallpaper",  sec: 2, name: "Wallpaper",       glyph: "wallpaper", c1: "#5AC8FA", c2: "#007AFF", keys: "wallpaper background picture image video animated live motion desktop dynamic" },
@@ -904,8 +910,19 @@ Scope {
                         spacing: 10
                         SButton {
                             t: pal
-                            text: I18n.tr("Update")
-                            onClicked: { if (root.bar) root.bar.openUpdateLink(); }
+                            text: I18n.tr("Update Now")
+                            onClicked: {
+                                if (root.bar) {
+                                    root.bar.updateDialogOpen = false;
+                                    for (var pi = 0; pi < prefsWindow.panes.length; pi++) {
+                                        if (prefsWindow.panes[pi].id === "softwareupdate") {
+                                            prefsWindow.cur = pi;
+                                            break;
+                                        }
+                                    }
+                                    root.bar.applyUpdate();
+                                }
+                            }
                         }
                         SButton {
                             t: pal
@@ -1425,7 +1442,7 @@ Scope {
                     width: flick.width - 44
                     sourceComponent: ({
                         wifi: paneWifi, bluetooth: paneBt, network: paneNetwork, battery: paneBattery,
-                        general: paneGeneral, appearance: paneAppearance, siri: paneSiri, controlcenter: paneCC, dock: paneDesktopDock,
+                        general: paneGeneral, softwareupdate: paneSoftwareUpdate, appearance: paneAppearance, siri: paneSiri, controlcenter: paneCC, dock: paneDesktopDock,
                         displays: paneDisplays, menubar: paneMenuBar, wallpaper: paneWallpaper,
                         notifications: paneNotif, sound: paneSound, focus: paneFocus,
                         widgets: paneWidgets, lockscreen: paneLock, users: paneUsers, keyboard: paneKeyboard, mouse: paneMouse, trackpad: paneTrackpad,
@@ -1524,29 +1541,525 @@ Scope {
                         t: pal
                         title: I18n.tr("Software Update")
                         subtitle: !root.bar ? ""
+                                  : root.bar.updateApplying ? I18n.tr("Updating MacShell… ") + root.bar.updateProgress + "%"
                                   : root.bar.updateChecking ? I18n.tr("Checking for updates…")
                                   : root.bar.updateState === "available" ? I18n.tr("New update ") + root.bar.updateVersion
                                   : root.bar.updateState === "uptodate" ? I18n.tr("MacShell is up to date")
                                   : root.bar.updateState === "error" ? I18n.tr("Couldn't check for updates")
-                                  : ""
+                                  : I18n.tr("Check for updates from GitHub")
                         Row {
                             spacing: 8
                             SButton {
                                 t: pal
-                                visible: root.bar && root.bar.updateState === "available"
-                                text: I18n.tr("Update")
-                                onClicked: { if (root.bar) root.bar.openUpdateLink(); }
+                                visible: root.bar && root.bar.updateState === "available" && !root.bar.updateApplying
+                                text: I18n.tr("Update Now")
+                                onClicked: { if (root.bar) root.bar.applyUpdate(); }
                             }
                             SButton {
                                 t: pal
-                                opacity: root.bar && root.bar.updateChecking ? 0.5 : 1
-                                text: I18n.tr("Check for updates")
-                                onClicked: { if (root.bar && !root.bar.updateChecking) root.bar.checkForUpdates(false); }
+                                text: I18n.tr("Software Update…")
+                                onClicked: {
+                                    for (var spi = 0; spi < prefsWindow.panes.length; spi++) {
+                                        if (prefsWindow.panes[spi].id === "softwareupdate") {
+                                            prefsWindow.cur = spi;
+                                            break;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
+            }
+        }
+
+        // ── Software Update (macOS Sonoma / Tahoe Style) ──
+        Component {
+            id: paneSoftwareUpdate
+            Column {
+                id: updateCol
+                spacing: 12
+                property bool showLog: false
+
+                // ── Hero Banner ──
+                SCard {
+                    t: pal
+                    Item {
+                        width: parent.width
+                        height: 96
+                        Rectangle {
+                            id: gearIconBox
+                            x: 18; y: 16
+                            width: 64; height: 64
+                            radius: 16
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: pal.dark ? "#3A3A3C" : "#E5E5EA" }
+                                GradientStop { position: 1.0; color: pal.dark ? "#1C1C1E" : "#C7C7CC" }
+                            }
+                            border.width: 1
+                            border.color: pal.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.1)
+
+                            WGlyph {
+                                anchors.centerIn: parent
+                                width: 34; height: 34
+                                kind: root.bar && root.bar.updateApplying ? "restart" : "gear"
+                                color: pal.dark ? "#FFFFFF" : "#1C1C1E"
+                                RotationAnimation on rotation {
+                                    running: root.bar && (root.bar.updateChecking || root.bar.updateApplying)
+                                    loops: Animation.Infinite
+                                    from: 0; to: 360; duration: 2500
+                                }
+                            }
+                        }
+
+                        Column {
+                            anchors.left: gearIconBox.right
+                            anchors.leftMargin: 18
+                            anchors.verticalCenter: gearIconBox.verticalCenter
+                            spacing: 4
+
+                            Row {
+                                spacing: 8
+                                Text {
+                                    text: "macOS MacShell"
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                    font.pixelSize: 18
+                                    font.weight: Font.DemiBold
+                                }
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: verTxt.implicitWidth + 12
+                                    height: 18
+                                    radius: 9
+                                    color: Qt.rgba(pal.accent.r, pal.accent.g, pal.accent.b, 0.18)
+                                    Text {
+                                        id: verTxt
+                                        anchors.centerIn: parent
+                                        text: (root.bar ? root.bar.updateCurrentVersion : "0.4.9")
+                                        color: pal.accent
+                                        font.family: root.fontForWeight(Font.Medium, pal.fam)
+                                        font.pixelSize: 11
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: I18n.tr("GitHub Repository: ") + (root.bar ? root.bar.updateRepo : "4sakenme/MacOsSHell-New") + " (" + (root.bar ? root.bar.updateBranch : "main") + ")"
+                                color: pal.text2
+                                font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+                }
+
+                // ── Status & Action Card ──
+                SLabel { t: pal; header: true; text: I18n.tr("Status") }
+
+                SCard {
+                    t: pal
+
+                    // CASE 1: Checking for updates
+                    Item {
+                        width: parent.width
+                        height: 110
+                        visible: root.bar && root.bar.updateChecking && !root.bar.updateApplying
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 12
+
+                            Item {
+                                width: 28; height: 28
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                WGlyph {
+                                    anchors.fill: parent
+                                    kind: "restart"
+                                    color: pal.accent
+                                    RotationAnimation on rotation {
+                                        running: true
+                                        loops: Animation.Infinite
+                                        from: 0; to: 360; duration: 1200
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: I18n.tr("Checking for updates…")
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                font.pixelSize: 14
+                            }
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: I18n.tr("Contacting github.com/") + (root.bar ? root.bar.updateRepo : "4sakenme/MacOsSHell-New")
+                                color: pal.text2
+                                font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+
+                    // CASE 2: Updating in Progress
+                    Column {
+                        width: parent.width
+                        spacing: 12
+                        topPadding: 16; bottomPadding: 16; leftPadding: 18; rightPadding: 18
+                        visible: root.bar && root.bar.updateApplying
+
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            Text {
+                                text: I18n.tr("Installing macOS MacShell Update…")
+                                color: pal.text
+                                font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                font.pixelSize: 15
+                                font.weight: Font.DemiBold
+                            }
+                            Item { width: 1; height: 1 }
+                            Text {
+                                text: (root.bar ? root.bar.updateProgress : 0) + "%"
+                                color: pal.accent
+                                font.family: root.fontForWeight(Font.Bold, pal.fam)
+                                font.pixelSize: 14
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        // Progress track
+                        Rectangle {
+                            width: parent.width
+                            height: 8
+                            radius: 4
+                            color: Qt.rgba(pal.text.r, pal.text.g, pal.text.b, 0.12)
+                            clip: true
+
+                            Rectangle {
+                                id: pBar
+                                height: parent.height
+                                radius: 4
+                                width: parent.width * Math.max(0.05, Math.min(1.0, (root.bar ? root.bar.updateProgress : 0) / 100.0))
+                                gradient: Gradient {
+                                    orientation: Gradient.Horizontal
+                                    GradientStop { position: 0.0; color: "#007AFF" }
+                                    GradientStop { position: 1.0; color: "#5856D6" }
+                                }
+                                Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            }
+                        }
+
+                        Text {
+                            text: root.bar && root.bar.updateStatusText ? root.bar.updateStatusText : I18n.tr("Applying components…")
+                            color: pal.text2
+                            font.family: root.fontForWeight(Font.Normal, pal.fam)
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                            width: parent.width
+                        }
+
+                        // Log viewer toggle
+                        Row {
+                            spacing: 8
+                            MouseArea {
+                                width: logToggleTxt.implicitWidth; height: 20
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: updateCol.showLog = !updateCol.showLog
+                                Text {
+                                    id: logToggleTxt
+                                    text: updateCol.showLog ? I18n.tr("Hide Log Details ▲") : I18n.tr("Show Log Details ▼")
+                                    color: pal.accent
+                                    font.family: root.fontForWeight(Font.Medium, pal.fam)
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 110
+                            radius: 8
+                            color: pal.dark ? Qt.rgba(0, 0, 0, 0.6) : Qt.rgba(0, 0, 0, 0.06)
+                            border.width: 1
+                            border.color: pal.buttonBorder
+                            visible: updateCol.showLog
+                            clip: true
+
+                            Flickable {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                contentWidth: width
+                                contentHeight: logContent.implicitHeight
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                Text {
+                                    id: logContent
+                                    width: parent.width
+                                    text: root.bar ? root.bar.updateLogText : ""
+                                    color: pal.dark ? "#70E070" : "#208020"
+                                    font.family: "monospace"
+                                    font.pixelSize: 10
+                                    wrapMode: Text.WrapAnywhere
+                                }
+                                onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+                            }
+                        }
+                    }
+
+                    // CASE 3: Update Available
+                    Column {
+                        width: parent.width
+                        spacing: 14
+                        topPadding: 16; bottomPadding: 16; leftPadding: 18; rightPadding: 18
+                        visible: root.bar && !root.bar.updateChecking && !root.bar.updateApplying && root.bar.updateState === "available"
+
+                        Row {
+                            width: parent.width
+                            spacing: 12
+                            Rectangle {
+                                width: 38; height: 38; radius: 10
+                                color: "#007AFF"
+                                WGlyph {
+                                    anchors.centerIn: parent
+                                    width: 20; height: 20
+                                    kind: "restart"
+                                    color: "white"
+                                }
+                            }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+                                Text {
+                                    text: I18n.tr("MacShell Update Available: ") + (root.bar ? root.bar.updateVersion : "")
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.Bold, pal.fam)
+                                    font.pixelSize: 15
+                                    font.weight: Font.Bold
+                                }
+                                Text {
+                                    text: I18n.tr("Commit ") + (root.bar ? root.bar.updateCommitLatest : "") + " • " + (root.bar && root.bar.updateCommitDate ? root.bar.updateCommitDate.slice(0, 10) : "")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+
+                        // Release notes container
+                        Rectangle {
+                            width: parent.width
+                            height: Math.max(54, notesTxt.implicitHeight + 20)
+                            radius: 10
+                            color: pal.dark ? Qt.rgba(0, 0, 0, 0.3) : Qt.rgba(0, 0, 0, 0.04)
+                            border.width: 1
+                            border.color: pal.buttonBorder
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 4
+                                Text {
+                                    text: I18n.tr("What's New in this update:")
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    id: notesTxt
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: root.bar && root.bar.updateCommitMessage ? root.bar.updateCommitMessage : I18n.tr("Bug fixes, visual enhancements, and performance optimizations.")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+
+                        // Action buttons
+                        Row {
+                            spacing: 10
+                            Rectangle {
+                                width: updateNowTxt.implicitWidth + 32
+                                height: 32
+                                radius: 8
+                                color: "#007AFF"
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: { if (root.bar) root.bar.applyUpdate(); }
+                                }
+                                Text {
+                                    id: updateNowTxt
+                                    anchors.centerIn: parent
+                                    text: I18n.tr("Update Now")
+                                    color: "white"
+                                    font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                            SButton {
+                                t: pal
+                                text: I18n.tr("View on GitHub")
+                                onClicked: { if (root.bar) root.bar.openUpdateLink(); }
+                            }
+                            SButton {
+                                t: pal
+                                text: I18n.tr("Check Again")
+                                onClicked: { if (root.bar) root.bar.checkForUpdates(false); }
+                            }
+                        }
+                    }
+
+                    // CASE 4: Up to date or Completed
+                    Column {
+                        width: parent.width
+                        spacing: 12
+                        topPadding: 16; bottomPadding: 16; leftPadding: 18; rightPadding: 18
+                        visible: root.bar && !root.bar.updateChecking && !root.bar.updateApplying && (root.bar.updateState === "uptodate" || root.bar.updateState === "completed")
+
+                        Row {
+                            width: parent.width
+                            spacing: 12
+                            Rectangle {
+                                width: 38; height: 38; radius: 19
+                                color: "#34C759"
+                                WGlyph {
+                                    anchors.centerIn: parent
+                                    width: 20; height: 20
+                                    kind: "check"
+                                    color: "white"
+                                }
+                            }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+                                Text {
+                                    text: root.bar && root.bar.updateState === "completed" ? I18n.tr("Update Installed Successfully!") : I18n.tr("MacShell is up to date")
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.Bold, pal.fam)
+                                    font.pixelSize: 15
+                                    font.weight: Font.Bold
+                                }
+                                Text {
+                                    text: I18n.tr("macOS MacShell ") + (root.bar ? root.bar.updateCurrentVersion : "0.4.9") + " (" + (root.bar ? root.bar.updateCommitCurrent : "latest") + ")" + (root.bar && root.bar.updateLastChecked ? " • " + I18n.tr("Last checked: ") + root.bar.updateLastChecked : "")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+
+                        Row {
+                            spacing: 10
+                            SButton {
+                                t: pal
+                                text: I18n.tr("Check for Updates")
+                                onClicked: { if (root.bar) root.bar.checkForUpdates(false); }
+                            }
+                            SButton {
+                                t: pal
+                                text: I18n.tr("Re-sync from Repo")
+                                onClicked: { if (root.bar) root.bar.applyUpdate(); }
+                            }
+                        }
+                    }
+
+                    // CASE 5: Error or Initial idle
+                    Column {
+                        width: parent.width
+                        spacing: 12
+                        topPadding: 16; bottomPadding: 16; leftPadding: 18; rightPadding: 18
+                        visible: root.bar && !root.bar.updateChecking && !root.bar.updateApplying && root.bar.updateState !== "available" && root.bar.updateState !== "uptodate" && root.bar.updateState !== "completed"
+
+                        Row {
+                            width: parent.width
+                            spacing: 12
+                            Rectangle {
+                                width: 38; height: 38; radius: 19
+                                color: root.bar && root.bar.updateState === "error" ? "#FF3B30" : "#8E8E93"
+                                WGlyph {
+                                    anchors.centerIn: parent
+                                    width: 18; height: 18
+                                    kind: root.bar && root.bar.updateState === "error" ? "close" : "gear"
+                                    color: "white"
+                                }
+                            }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+                                Text {
+                                    text: root.bar && root.bar.updateState === "error" ? I18n.tr("Couldn't Check for Updates") : I18n.tr("MacShell Software Update")
+                                    color: pal.text
+                                    font.family: root.fontForWeight(Font.Bold, pal.fam)
+                                    font.pixelSize: 15
+                                    font.weight: Font.Bold
+                                }
+                                Text {
+                                    text: root.bar && root.bar.updateErrorMessage ? root.bar.updateErrorMessage : I18n.tr("Check for the newest features, bug fixes, and improvements from 4sakenme/MacOsSHell-New.")
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+
+                        Row {
+                            spacing: 10
+                            SButton {
+                                t: pal
+                                text: I18n.tr("Check for Updates")
+                                onClicked: { if (root.bar) root.bar.checkForUpdates(false); }
+                            }
+                        }
+                    }
+                }
+
+                // ── Repository Configuration Card ──
+                SLabel { t: pal; header: true; text: I18n.tr("Repository & Environment") }
+
+                SCard {
+                    t: pal
+                    SRow {
+                        t: pal
+                        title: I18n.tr("GitHub Repository")
+                        subtitle: I18n.tr("Upstream repository tracked for automatic updates")
+                        Text {
+                            text: root.bar ? root.bar.updateRepo : "4sakenme/MacOsSHell-New"
+                            color: pal.text2
+                            font.family: root.fontForWeight(Font.Medium, pal.fam)
+                            font.pixelSize: 13
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Tracked Branch")
+                        subtitle: I18n.tr("Branch pulled when updates are installed")
+                        Text {
+                            text: root.bar ? root.bar.updateBranch : "main"
+                            color: pal.text2
+                            font.family: root.fontForWeight(Font.Medium, pal.fam)
+                            font.pixelSize: 13
+                        }
+                    }
+                    SRow {
+                        t: pal
+                        title: I18n.tr("Installation Location")
+                        subtitle: I18n.tr("Quickshell target directory for MacShell")
+                        Text {
+                            text: "~/.config/quickshell/MacShell"
+                            color: pal.text2
+                            font.family: "monospace"
+                            font.pixelSize: 12
+                        }
+                    }
+                }
             }
         }
 
