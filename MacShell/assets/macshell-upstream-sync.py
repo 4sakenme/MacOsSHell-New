@@ -69,27 +69,40 @@ def get_latest_upstream_tag():
 def sync_git_repo(repo_dir):
     print(f"[*] Inspecting local git repo at {repo_dir}...")
     
-    # 1. Ensure remotes exist
+    # 1. Ensure remotes exist and fetch both origin (repo của bạn) and upstream (0-ss)
     run("git remote add upstream https://github.com/0-ss/MacShell.git", cwd=repo_dir)
-    run("git fetch upstream main --tags", cwd=repo_dir)
+    print("[*] Fetching latest commits from your repo (origin/main)...")
     run("git fetch origin main", cwd=repo_dir)
+    print("[*] Fetching latest commits from upstream (0-ss/MacShell)...")
+    run("git fetch upstream main --tags", cwd=repo_dir)
 
-    # 2. Check if upstream has new commits
-    rev_upstream = run("git rev-parse upstream/main", cwd=repo_dir).stdout.strip()
+    # 2. Pull down any new commits from your own repo (origin main)
+    pulled_from_origin = False
+    rev_origin = run("git rev-parse origin/main", cwd=repo_dir).stdout.strip()
     rev_head = run("git rev-parse HEAD", cwd=repo_dir).stdout.strip()
+    if rev_origin and rev_head and rev_origin != rev_head:
+        print(f"[*] Fast-forwarding local workspace to latest commit from your repo ({rev_origin[:7]})...")
+        pull_res = run("git pull --ff-only origin main", cwd=repo_dir)
+        if pull_res.returncode != 0:
+            run("git merge --no-edit origin/main", cwd=repo_dir)
+        rev_head = run("git rev-parse HEAD", cwd=repo_dir).stdout.strip()
+        pulled_from_origin = True
+
+    # 3. Check if upstream (0-ss) has new commits
+    rev_upstream = run("git rev-parse upstream/main", cwd=repo_dir).stdout.strip()
     merge_base = run("git merge-base HEAD upstream/main", cwd=repo_dir).stdout.strip()
 
     print(f"[*] Upstream SHA: {rev_upstream[:7]} | HEAD SHA: {rev_head[:7]}")
 
     tag = get_latest_upstream_tag()
 
-    # 3. List files changed between merge_base and upstream/main
+    # 4. List files changed between merge_base and upstream/main
     diff_files = run(f"git diff --name-only {merge_base} upstream/main", cwd=repo_dir).stdout.strip().splitlines()
     diff_files = [f.strip() for f in diff_files if f.strip()]
 
     if not diff_files:
         print("[*] Already fully up to date with upstream 0-ss/MacShell.")
-        return False, tag
+        return pulled_from_origin, tag
 
     print(f"[*] Upstream modified {len(diff_files)} files: {', '.join(diff_files[:5])}...")
 
@@ -224,3 +237,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
