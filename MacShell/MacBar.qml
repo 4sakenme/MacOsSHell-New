@@ -292,12 +292,19 @@ Scope {
             if (exitCode === 0) {
                 root.updateProgress = 100;
                 root.updateState = "completed";
+                root.updateCurrentVersion = root.updateVersion;
+                if (root.updateCommitLatest) root.updateCommitCurrent = root.updateCommitLatest;
                 root.updateStatusText = "Update completed successfully! MacShell has reloaded.";
+                try {
+                    if (root.hub && root.hub.dock) {
+                        root.hub.dock.prefsOpen = false;
+                    }
+                } catch (e1) {}
                 try {
                     if (root.hub && root.hub.setupAssistant) {
                         root.hub.setupAssistant.startUpdateWelcome(root.updateVersion, root.updateReleaseTitle, root.updateReleaseNotes);
                     }
-                } catch (e) {}
+                } catch (e2) {}
             } else {
                 root.updateState = "error";
                 root.updateErrorMessage = "Update failed (exit code " + exitCode + "). Check log details.";

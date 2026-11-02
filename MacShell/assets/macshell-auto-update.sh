@@ -215,13 +215,14 @@ cmd_apply() {
     state_set "installed_commit" "$new_sha"
     state_set "installed_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    echo "PROGRESS:97:Launching macOS Welcome experience & reloading..."
-    # Trigger the post-update Hello & What's New screen
-    qs -c MacShell ipc call update welcome 2>/dev/null || true
-    touch "$DEST/shell.qml"
-    [ -d "$LOCK_DEST" ] && touch "$LOCK_DEST/shell.qml"
+    echo "PROGRESS:97:Setting up macOS Welcome experience..."
+    cat <<EOF > "$STATE_DIR/pending_welcome"
+{"version":"$new_ver","title":"${up_name:-MacShell $new_ver}","notes":"$clean_notes"}
+EOF
 
-    echo "PROGRESS:100:Update completed successfully! MacShell has been updated."
+    echo "PROGRESS:100:Restarting MacShell to apply updates..."
+    # Launch clean Quickshell reload in background
+    setsid sh -c "sleep 0.8; pkill -f 'qs -c MacShell' 2>/dev/null || pkill -f 'quickshell -c MacShell' 2>/dev/null; sleep 0.3; LC_ALL=C.UTF-8 qs -c MacShell &" >/dev/null 2>&1 &
     return 0
 }
 

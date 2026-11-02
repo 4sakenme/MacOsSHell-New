@@ -400,6 +400,28 @@ ShellRoot {
         }
     }
 
+    FileView {
+        id: pendingWelcomeFile
+        path: Quickshell.env("HOME") + "/.local/share/macshell/pending_welcome"
+        printErrors: false
+        onLoaded: {
+            try {
+                var c = text().trim();
+                if (c.length > 0) {
+                    var o = JSON.parse(c);
+                    Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.local/share/macshell/pending_welcome"]);
+                    Qt.callLater(function() {
+                        if (setupAssistant) {
+                            setupAssistant.startUpdateWelcome(o.version || "0.5.1", o.title || "MacShell 0.5.1", o.notes || "");
+                        }
+                    });
+                }
+            } catch (err) {
+                Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.local/share/macshell/pending_welcome"]);
+            }
+        }
+    }
+
     MacBar { id: macBar; hub: sharedHub }
     MacDock { id: macDock; hub: sharedHub; bar: macBar }
     // Keep the desktop layer below widgets; desktop placement also reserves each widget's live footprint.
