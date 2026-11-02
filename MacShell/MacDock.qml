@@ -1582,20 +1582,61 @@ Scope {
                 spacing: 12
                 property bool showLog: false
 
-                // ── Hero Banner ──
-                SCard {
-                    t: pal
+                // ── Hero Banner with Liquid Waterflow Shader ──
+                Item {
+                    id: heroCard
+                    width: parent.width
+                    height: 98
+
+                    // Running clock for GLSL waterflow wave animation
+                    property real animTime: 0.0
+                    FrameAnimation {
+                        running: prefsWindow.visible
+                        onTriggered: {
+                            heroCard.animTime += 0.016;
+                            if (heroCard.animTime > 10000.0) heroCard.animTime = 0.0;
+                        }
+                    }
+
+                    // Waterflow Shader Effect (Apple Liquid Cyan-Blue Horizontal Flow)
+                    ShaderEffect {
+                        id: heroWaterShader
+                        anchors.fill: parent
+                        fragmentShader: Qt.resolvedUrl("waterflow.frag.qsb")
+                        property vector2d itemSize: Qt.vector2d(width, height)
+                        property real u_time: heroCard.animTime
+                        property real borderRadius: 20.0
+                    }
+
+                    // Specular rim & subtle highlight border
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 20
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, 0.28)
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: 19
+                            color: "transparent"
+                            border.width: 1
+                            border.color: Qt.rgba(0.0, 0.8, 1.0, 0.25)
+                        }
+                    }
+
                     Item {
-                        width: parent.width
-                        height: 96
+                        anchors.fill: parent
+
                         Rectangle {
                             id: updateIconBox
-                            x: 18; y: 14
+                            x: 18; y: 15
                             width: 68; height: 68
                             radius: 18
-                            color: Qt.rgba(0.0, 0.35, 0.85, pal.dark ? 0.30 : 0.15)
+                            color: Qt.rgba(0.0, 0.15, 0.35, 0.55)
                             border.width: 1.2
-                            border.color: Qt.rgba(0.2, 0.7, 1.0, 0.55)
+                            border.color: Qt.rgba(0.4, 0.85, 1.0, 0.65)
 
                             // Subtle liquid glass inner highlight
                             Rectangle {
@@ -1604,7 +1645,7 @@ Scope {
                                 radius: 17
                                 color: "transparent"
                                 border.width: 1
-                                border.color: Qt.rgba(1, 1, 1, 0.25)
+                                border.color: Qt.rgba(1, 1, 1, 0.35)
                             }
 
                             Image {
@@ -1621,7 +1662,7 @@ Scope {
                                 radius: 18
                                 color: "transparent"
                                 border.width: 2
-                                border.color: "#007AFF"
+                                border.color: "#00E5FF"
                                 visible: root.bar && (root.bar.updateChecking || root.bar.updateApplying)
                                 RotationAnimation on rotation {
                                     running: root.bar && (root.bar.updateChecking || root.bar.updateApplying)
@@ -1641,22 +1682,26 @@ Scope {
                                 spacing: 8
                                 Text {
                                     text: "macOS MacShell"
-                                    color: pal.text
+                                    color: "#FFFFFF"
                                     font.family: root.fontForWeight(Font.DemiBold, pal.fam)
                                     font.pixelSize: 18
                                     font.weight: Font.DemiBold
+                                    style: Text.Raised
+                                    styleColor: Qt.rgba(0, 0, 0, 0.35)
                                 }
                                 Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: verTxt.implicitWidth + 12
+                                    width: verTxt.implicitWidth + 14
                                     height: 18
                                     radius: 9
-                                    color: Qt.rgba(pal.accent.r, pal.accent.g, pal.accent.b, 0.18)
+                                    color: Qt.rgba(0.0, 0.7, 1.0, 0.35)
+                                    border.width: 1
+                                    border.color: Qt.rgba(0.4, 0.9, 1.0, 0.55)
                                     Text {
                                         id: verTxt
                                         anchors.centerIn: parent
                                         text: (root.bar ? root.bar.updateCurrentVersion : "0.5.1")
-                                        color: pal.accent
+                                        color: "#E6F7FF"
                                         font.family: root.fontForWeight(Font.Medium, pal.fam)
                                         font.pixelSize: 11
                                     }
@@ -1665,7 +1710,7 @@ Scope {
 
                             Text {
                                 text: I18n.tr("GitHub Repository: ") + (root.bar ? root.bar.updateRepo : "4sakenme/MacOsSHell-New") + " (" + (root.bar ? root.bar.updateBranch : "main") + ")"
-                                color: pal.text2
+                                color: Qt.rgba(0.85, 0.94, 1.0, 0.85)
                                 font.family: root.fontForWeight(Font.Normal, pal.fam)
                                 font.pixelSize: 12
                             }
@@ -1869,7 +1914,8 @@ Scope {
 
                         // Release notes container
                         Rectangle {
-                            width: parent.width
+                            width: parent.width - 36
+                            anchors.horizontalCenter: parent.horizontalCenter
                             height: Math.max(54, notesTxt.implicitHeight + 20)
                             radius: 10
                             color: pal.dark ? Qt.rgba(0, 0, 0, 0.3) : Qt.rgba(0, 0, 0, 0.04)
@@ -1974,6 +2020,71 @@ Scope {
                             }
                         }
 
+                        // Installed Update / Release Information
+                        Rectangle {
+                            width: parent.width - 36
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            height: Math.max(76, updateDetailsCol.implicitHeight + 24)
+                            radius: 12
+                            color: pal.dark ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.04)
+                            border.width: 1
+                            border.color: pal.buttonBorder
+
+                            Column {
+                                id: updateDetailsCol
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                Row {
+                                    spacing: 8
+                                    width: parent.width
+                                    Text {
+                                        text: I18n.tr("Installed Update Details")
+                                        color: pal.text
+                                        font.family: root.fontForWeight(Font.DemiBold, pal.fam)
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: tagBadgeTxt.implicitWidth + 10
+                                        height: 16
+                                        radius: 8
+                                        color: Qt.rgba(0.0, 0.48, 1.0, 0.2)
+                                        Text {
+                                            id: tagBadgeTxt
+                                            anchors.centerIn: parent
+                                            text: (root.bar && root.bar.updateCurrentVersion ? ("v" + root.bar.updateCurrentVersion) : "v0.5.1")
+                                            color: pal.accent
+                                            font.family: root.fontForWeight(Font.Medium, pal.fam)
+                                            font.pixelSize: 10
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: (root.bar && root.bar.updateReleaseNotes && root.bar.updateReleaseNotes.length > 5)
+                                          ? root.bar.updateReleaseNotes
+                                          : ((root.bar && root.bar.updateCommitMessage) ? root.bar.updateCommitMessage : I18n.tr("Includes upstream 0.5.1 sync, customizable desktop folders, PictureSheet, and software update engine."))
+                                    color: pal.text2
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 12
+                                    lineHeight: 1.25
+                                }
+
+                                Text {
+                                    visible: root.bar && root.bar.updateCommitCurrent !== ""
+                                    text: I18n.tr("Commit: ") + (root.bar ? root.bar.updateCommitCurrent : "") + ((root.bar && root.bar.updateCommitDate) ? (" • " + root.bar.updateCommitDate.slice(0, 10)) : "")
+                                    color: pal.text3
+                                    font.family: root.fontForWeight(Font.Normal, pal.fam)
+                                    font.pixelSize: 11
+                                }
+                            }
+                        }
+
                         Row {
                             spacing: 10
                             SButton {
@@ -1985,6 +2096,11 @@ Scope {
                                 t: pal
                                 text: I18n.tr("Re-sync from Repo")
                                 onClicked: { if (root.bar) root.bar.applyUpdate(); }
+                            }
+                            SButton {
+                                t: pal
+                                text: I18n.tr("View on GitHub")
+                                onClicked: { if (root.bar) root.bar.openUpdateLink(); }
                             }
                         }
                     }

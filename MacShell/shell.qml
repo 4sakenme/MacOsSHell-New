@@ -495,6 +495,14 @@ ShellRoot {
         // qs -c MacShell ipc call settings pane wallpaper   (general, dock, menubar, appearance, wallpaper, behavior, apps, about)
         function pane(id: string): void { macDock.openPrefs(id); }
     }
+    // qs -c MacShell ipc call appearance light | dark | toggle
+    IpcHandler {
+        target: "appearance"
+        function light(): void { macDock.setAppearance("light"); }
+        function dark(): void { macDock.setAppearance("dark"); }
+        function toggle(): void { macDock.setAppearance(macDock.darkMode ? "light" : "dark"); }
+    }
+
     // qs -c MacShell ipc call clock open | tab alarms | stop | snooze
     IpcHandler {
         target: "clock"

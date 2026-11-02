@@ -28,7 +28,7 @@ Scope {
 
     // Feature Modules Checklist choices
     property bool darkMode: hub && hub.bar ? hub.bar.darkMode : false
-    onDarkModeChanged: root.applyThemeToSystem()
+    property string activeWallpaperUrl: ""
     property bool liquidGlassEnabled: hub && hub.dock ? hub.dock.dockStyle === "liquid" : true
     readonly property bool stageManagerEnabled: true
     property bool wifiManagerEnabled: true
@@ -121,6 +121,7 @@ Scope {
         if (!root.updateReleaseNotes) {
             fetchNotesProc.running = true;
         }
+        activeWallpaperDetector.running = true;
         root.isUpdateWelcome = true;
         root.currentStep = 0;
         root.exitOpacity = 1.0;
@@ -590,48 +591,62 @@ Scope {
         }
     }
 
+    // Active desktop wallpaper resolver
+    function resolveCurrentWallpaper() {
+        var p = "";
+        if (root.hub) {
+            if (root.hub.bar && root.hub.bar.wallpaperPath) {
+                p = root.hub.bar.wallpaperPath;
+            } else if (root.hub.dock && typeof root.hub.dock.wallpaperFor === "function") {
+                p = root.hub.dock.wallpaperFor("");
+            } else if (root.hub.wallpaperMap && (root.hub.wallpaperMap["wallpaper.default"] || root.hub.wallpaperMap["wallpaper.last"])) {
+                p = root.hub.wallpaperMap["wallpaper.default"] || root.hub.wallpaperMap["wallpaper.last"];
+            }
+        }
+        if (!p || p === "") {
+            p = Quickshell.env("HOME") + "/Pictures/Wallpapers/Simon Petrikov Flowers.png";
+        }
+        if (p.indexOf("~/") === 0) p = Quickshell.env("HOME") + p.substring(1);
+        if (p.indexOf("file://") === 0) return p;
+        return "file://" + p;
+    }
+
+    Process {
+        id: activeWallpaperDetector
+        command: ["sh", "-c", "p=\"\"; if command -v awww >/dev/null 2>&1; then p=$(awww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1); fi; [ -z \"$p\" ] && if command -v swww >/dev/null 2>&1; then p=$(swww query 2>/dev/null | sed -n 's/.*image: //p' | head -n1); fi; if [ -z \"$p\" ] && [ -f \"$HOME/.config/macbar/settings.json\" ]; then p=$(grep '\"wallpaperPath\"' \"$HOME/.config/macbar/settings.json\" | sed -E 's/.*: *\"([^\"]+)\".*/\\1/'); fi; printf '%s' \"$p\""]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var wp = text.trim();
+                if (wp !== "") {
+                    if (wp.indexOf("~/") === 0) wp = Quickshell.env("HOME") + wp.substring(1);
+                    root.activeWallpaperUrl = "file://" + wp;
+                }
+            }
+        }
+    }
+
     function applyThemeToSystem() {
-        var wpPath = root.darkMode ? (Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg")
-                                   : (Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg");
         var iconTheme = root.darkMode ? "MacOS-Like-Dark" : "MacOS-Like-Light";
 
-        // 1. Immediately apply to the desktop background via awww / swww
-        Quickshell.execDetached(["sh", "-c", "if command -v awww >/dev/null 2>&1; then awww img '" + wpPath + "' --transition-type fade --transition-duration 0.7; elif command -v swww >/dev/null 2>&1; then swww img '" + wpPath + "' --transition-type fade --transition-duration 0.7; fi"]);
-
-        // 2. Set GTK/GNOME appearance
+        // 1. Set GTK/GNOME appearance without altering user wallpaper
         Quickshell.execDetached(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", root.darkMode ? "prefer-dark" : "prefer-light"]);
         Quickshell.execDetached(["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", iconTheme]);
 
-        // 3. Update MacBar / MacDock if running live
+        // 2. Update MacBar / MacDock if running live
         if (root.hub && root.hub.bar) {
             root.hub.bar.darkMode = root.darkMode;
-            // Only force Tahoe wallpaper pair if no custom wallpaper was already set by the user
-            var currentWp = root.hub.bar.wallpaperPath || "";
-            if (currentWp === "" || currentWp.indexOf("tahoe") >= 0) {
-                root.hub.bar.wpPairLight = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg";
-                root.hub.bar.wpPairDark = Quickshell.env("HOME") + "/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg";
-                root.hub.bar.wallpaperAppearance = "auto";
-                root.hub.bar.wpApplyAppearance();
-            }
         }
         if (root.hub && root.hub.dock) {
             root.hub.dock.darkMode = root.darkMode;
         }
 
-        // 4. Update settings.json files on disk
+        // 3. Update settings.json files on disk (preserve wallpaper settings!)
         var pyCmd = "import json, os\n" +
                     "p = os.path.expanduser('~/.config/macbar/settings.json')\n" +
                     "if os.path.exists(p):\n" +
                     "    with open(p) as f: d = json.load(f)\n" +
                     "    d['darkMode'] = " + (root.darkMode ? "True" : "False") + "\n" +
                     "    d['appearanceMode'] = '" + (root.darkMode ? "dark" : "light") + "'\n" +
-                    "    cur_wp = d.get('wallpaperPath', '')\n" +
-                    "    if not cur_wp or 'tahoe' in cur_wp:\n" +
-                    "        d['wallpaperPath'] = '" + wpPath + "'\n" +
-                    "        d['wpRestorePath'] = '" + wpPath + "'\n" +
-                    "        d['wpPairLight'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_light.jpg')\n" +
-                    "        d['wpPairDark'] = os.path.expanduser('~/.config/quickshell/MacShell/assets/wallpapers/tahoe_dark.jpg')\n" +
-                    "        d['wallpaperAppearance'] = 'auto'\n" +
                     "    with open(p, 'w') as f: json.dump(d, f, indent=2)\n";
         Quickshell.execDetached(["python3", "-c", pyCmd]);
     }
@@ -962,29 +977,31 @@ Scope {
                             }
                         }
 
-                        // Light mode wallpaper
+                        // Light mode wallpaper (Setup assistant only)
                         Image {
                             id: tahoeLightImg
                             anchors.fill: parent
+                            visible: !root.isUpdateWelcome
                             source: Qt.resolvedUrl("assets/wallpapers/tahoe_light.jpg")
                             fillMode: Image.PreserveAspectCrop
                             smooth: true
                             mipmap: true
-                            opacity: root.darkMode ? 0.0 : 1.0
+                            opacity: (!root.isUpdateWelcome && !root.darkMode) ? 1.0 : 0.0
                             Behavior on opacity {
                                 NumberAnimation { duration: 500; easing.type: Easing.InOutCubic }
                             }
                         }
 
-                        // Dark mode wallpaper
+                        // Dark mode wallpaper (Setup assistant only)
                         Image {
                             id: tahoeDarkImg
                             anchors.fill: parent
+                            visible: !root.isUpdateWelcome
                             source: Qt.resolvedUrl("assets/wallpapers/tahoe_dark.jpg")
                             fillMode: Image.PreserveAspectCrop
                             smooth: true
                             mipmap: true
-                            opacity: root.darkMode ? 1.0 : 0.0
+                            opacity: (!root.isUpdateWelcome && root.darkMode) ? 1.0 : 0.0
                             Behavior on opacity {
                                 NumberAnimation { duration: 500; easing.type: Easing.InOutCubic }
                             }
@@ -995,12 +1012,7 @@ Scope {
                             id: userActiveWallpaperImg
                             anchors.fill: parent
                             visible: root.isUpdateWelcome
-                            source: {
-                                var wp = (root.hub && root.hub.dock && root.hub.dock.resolvedWallpaper)
-                                         ? root.hub.dock.resolvedWallpaper
-                                         : ((root.hub && root.hub.bar && root.hub.bar.resolvedWallpaper) ? root.hub.bar.resolvedWallpaper : "")
-                                return wp !== "" ? ("file://" + wp) : Qt.resolvedUrl("assets/wallpapers/tahoe_dark.jpg");
-                            }
+                            source: root.activeWallpaperUrl !== "" ? root.activeWallpaperUrl : root.resolveCurrentWallpaper()
                             fillMode: Image.PreserveAspectCrop
                             smooth: true
                             mipmap: true

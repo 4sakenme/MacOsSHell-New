@@ -4679,7 +4679,7 @@ Scope {
     property string wallpaperAppearance: "auto"     // auto (follows Dark Mode) | light | dark | dynamic (time of day)
     property string wpPairLight: ""
     property string wpPairDark: ""
-    readonly property bool wpHasPair: wpPairLight !== "" && wpPairDark !== "" && (wallpaperPath === "" || wallpaperPath === wpPairLight || wallpaperPath === wpPairDark)
+    readonly property bool wpHasPair: wpPairLight !== "" && wpPairDark !== "" && (wallpaperPath === wpPairLight || wallpaperPath === wpPairDark)
     readonly property string dynwallScript: Quickshell.env("HOME") + "/.config/hypr-macshell/scripts/macshell-dynwall.sh"
     // "<name>-Light.ext" ↔ "<name>-Dark.ext" in the same folder (from the folder scan)
     function wpPairOf(path) {
@@ -4749,8 +4749,8 @@ Scope {
         wpApplyProc.command = ["sh", "-c", root.awwwScript, "sh", p];  // the real desktop wallpaper, through awww
         wpApplyProc.running = true;
     }
-    onWallpaperAppearanceChanged: wpApplyAppearance()
-    onDarkModeChanged: if (wallpaperAppearance === "auto") wpApplyAppearance()
+    onWallpaperAppearanceChanged: if (wpHasPair) wpApplyAppearance()
+    onDarkModeChanged: if (wpHasPair && wallpaperAppearance === "auto") wpApplyAppearance()
     Timer { interval: 60000; repeat: true; running: root.wpHasPair && root.wallpaperAppearance === "dynamic" && !root.gaming; onTriggered: root.wpApplyAppearance() }
     // at start: scan the folder, then pick up a pair for the wallpaper already in use
     Timer { interval: 1500; running: true; onTriggered: root.wpRefresh() }
