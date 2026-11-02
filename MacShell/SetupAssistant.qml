@@ -49,6 +49,14 @@ Scope {
     property string updateReleaseTitle: "macOS MacShell 0.5.1"
     property string updateReleaseNotes: ""
 
+    function fontForWeight(weight, family) {
+        var fam = family || root.systemFontFamily || "Open Runde";
+        if (fam === "Open Runde" || fam === "Open Runde Semibold") {
+            return (weight >= Font.DemiBold) ? "Open Runde Semibold" : "Open Runde";
+        }
+        return fam;
+    }
+
     function startUpdateWelcome(version, title, notes) {
         if (version) root.updateVersionTag = version;
         if (title) root.updateReleaseTitle = title;
@@ -62,16 +70,12 @@ Scope {
         root.helloZoomScale = 1.0;
         root.helloWordIndex = 0;
         root.active = true;
-        if (root.hub && root.hub.bar) root.hub.bar.barEnabled = false;
-        if (root.hub && root.hub.dock) root.hub.dock.dockEnabled = false;
         step0Timer.restart();
     }
 
     function finishUpdateWelcome() {
         root.playSound("pop");
         exitAnim.restart();
-        if (root.hub && root.hub.bar) root.hub.bar.barEnabled = true;
-        if (root.hub && root.hub.dock) root.hub.dock.dockEnabled = true;
         Qt.callLater(function() {
             root.isUpdateWelcome = false;
         });
@@ -829,6 +833,15 @@ Scope {
             root.darkMode = enable;
         }
         function close(): void { root.active = false; }
+        function finish(): void { root.finishSetup(); }
+        function reset(): void {
+            Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.config/macshell/.setup_completed"]);
+            if (root.hub) root.hub.setupCompleted = false;
+            root.currentStep = 0;
+            root.exitScale = 1.0;
+            root.exitOpacity = 1.0;
+            root.active = true;
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════

@@ -22,10 +22,10 @@ Scope {
     readonly property string fam: dock ? dock.fontFamily : "Open Runde"
     readonly property bool darkMode: dock ? dock.darkMode : true
 
-    readonly property bool enabled: bar ? bar.windowBar : true
-    readonly property bool showTitle: bar ? bar.windowBarTitle : true
-    readonly property bool alwaysSymbols: bar ? bar.tlAlwaysSymbols : false
-    readonly property bool colorOnHover: bar ? bar.tlColorOnHover : false
+    readonly property bool enabled: bar && bar.windowBar !== undefined ? bar.windowBar : true
+    readonly property bool showTitle: bar && bar.windowBarTitle !== undefined ? bar.windowBarTitle : true
+    readonly property bool alwaysSymbols: bar && bar.tlAlwaysSymbols !== undefined ? bar.tlAlwaysSymbols : false
+    readonly property bool colorOnHover: bar && bar.tlColorOnHover !== undefined ? bar.tlColorOnHover : false
 
     // the focused window, straight from the geometry feed the glass already uses
     readonly property var clients: hub ? (hub.glassClients || []) : []

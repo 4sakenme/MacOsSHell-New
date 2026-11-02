@@ -49,6 +49,8 @@ ShellRoot {
         property var about: aboutApp
         property var stagemanager: stageManager
         property var siriEdgeGlow: siriEdgeGlow
+        property var setupAssistant: null
+        property bool winBarWantsGeo: false
 
         // First-run Setup Assistant (OOBE) status
         property bool setupChecked: false
@@ -502,32 +504,6 @@ ShellRoot {
         function snooze() { clockApp.snooze(); }
     }
 
-    // qs -c MacShell ipc call setup start | reset | step <n> | finish
-    IpcHandler {
-        target: "setup"
-        function start(): void {
-            sharedHub.setupCompleted = false;
-            setupAssistant.exitOpacity = 1.0;
-            setupAssistant.exitScale = 1.0;
-            setupAssistant.active = true;
-            setupAssistant.currentStep = 0;
-        }
-        function step(n: int): void {
-            sharedHub.setupCompleted = false;
-            setupAssistant.exitOpacity = 1.0;
-            setupAssistant.exitScale = 1.0;
-            setupAssistant.active = true;
-            setupAssistant.currentStep = n;
-        }
-        function finish(): void {
-            setupAssistant.finishSetup();
-        }
-        function reset(): void {
-            Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.config/macshell/.setup_completed"]);
-            sharedHub.setupCompleted = false;
-            setupAssistant.currentStep = 0;
-        }
-    }
     IpcHandler {
         target: "update"
         function welcome(): void {

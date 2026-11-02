@@ -290,7 +290,7 @@ Scope {
                             }
                         }
                     }
-                    LiquidScrollBar { flick: compFlick; anchors.right: compFlick.right; anchors.top: compFlick.top; anchors.bottom: compFlick.bottom; material: root.bar ? root.bar.material : "liquid"; dark: root.darkMode }
+                    LiquidScrollBar { flick: compFlick; anchors.right: compFlick.right; anchors.top: compFlick.top; anchors.bottom: compFlick.bottom; material: (root.bar && root.bar.material) ? root.bar.material : "liquid"; dark: root.darkMode }
                 }
 
                 // 2 — installation: what will happen, then the progress as it happens

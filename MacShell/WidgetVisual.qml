@@ -38,9 +38,9 @@ Item {
                 daily: host.wxDaily
                 glassReady: host.glassState === "ready"
                 shaderUrl: "file://" + host.glassShaderOut
-                wallUrl: host.fileUrl(host.wallpaperFor(v.sname))
-                wallVideo: host.liveWallVideo
-                wallPaused: host.liveWallPaused
+                wallUrl: host.fileUrl(host.wallpaperFor(v.sname)) || ""
+                wallVideo: Boolean(host.liveWallVideo)
+                wallPaused: Boolean(host.liveWallPaused)
                 screenW: v.sw
                 screenH: v.sh
                 glassOpacity: host.glassOpacity
@@ -66,9 +66,9 @@ Item {
                 weekStart: 0
                 glassReady: host.glassState === "ready"
                 shaderUrl: "file://" + host.glassShaderOut
-                wallUrl: host.fileUrl(host.wallpaperFor(v.sname))
-                wallVideo: host.liveWallVideo
-                wallPaused: host.liveWallPaused
+                wallUrl: host.fileUrl(host.wallpaperFor(v.sname)) || ""
+                wallVideo: Boolean(host.liveWallVideo)
+                wallPaused: Boolean(host.liveWallPaused)
                 screenW: v.sw
                 screenH: v.sh
                 glassOpacity: host.glassOpacity
@@ -93,9 +93,9 @@ Item {
                 screenX: v.sx; screenY: v.sy
                 glassReady: host.glassState === "ready"
                 shaderUrl: "file://" + host.glassShaderOut
-                wallUrl: host.fileUrl(host.wallpaperFor(v.sname))
-                wallVideo: host.liveWallVideo
-                wallPaused: host.liveWallPaused
+                wallUrl: host.fileUrl(host.wallpaperFor(v.sname)) || ""
+                wallVideo: Boolean(host.liveWallVideo)
+                wallPaused: Boolean(host.liveWallPaused)
                 screenW: v.sw
                 screenH: v.sh
                 glassOpacity: host.glassOpacity
@@ -139,9 +139,9 @@ Item {
                 onLyricsToggled: on => host.lyricsWanted = on
                 glassReady: host.glassState === "ready"
                 shaderUrl: "file://" + host.glassShaderOut
-                wallUrl: host.fileUrl(host.wallpaperFor(v.sname))
-                wallVideo: host.liveWallVideo
-                wallPaused: host.liveWallPaused
+                wallUrl: host.fileUrl(host.wallpaperFor(v.sname)) || ""
+                wallVideo: Boolean(host.liveWallVideo)
+                wallPaused: Boolean(host.liveWallPaused)
                 screenW: v.sw
                 screenH: v.sh
                 glassOpacity: host.glassOpacity
