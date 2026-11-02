@@ -167,21 +167,14 @@ def sync_git_repo(repo_dir):
                     out_path = sh_path + ".qsb"
                     run([qsb_bin, "--glsl", "300es,120", "--hlsl", "50", "--msl", "12", "-o", out_path, sh_path])
 
-    # 6. Check git status and commit & push if modified
+    # 6. Check git status and commit locally if modified (NO AUTO-PUSH to remote)
     st = run("git status --porcelain", cwd=repo_dir).stdout.strip()
     if st:
-        print("[*] Changes detected, creating git commit and pushing...")
+        print("[*] Changes detected, creating local commit...")
         run("git add -A", cwd=repo_dir)
-        commit_msg = f"sync(upstream): auto-ingest updates from 0-ss/MacShell {tag}"
+        commit_msg = f"sync(upstream): ingest updates from 0-ss/MacShell {tag}"
         run(["git", "commit", "-m", commit_msg], cwd=repo_dir)
-        
-        # Auto-push to origin main and feature/custom-widgets
-        push_res = run("git push origin main", cwd=repo_dir)
-        if push_res.returncode == 0:
-            print("[+] Successfully auto-pushed updates to origin main!")
-            run("git push origin main:feature/custom-widgets", cwd=repo_dir)
-        else:
-            print(f"[!] Push warning: {push_res.stderr}")
+        print("[+] Merged changes saved to local workspace (auto-push disabled).")
         return True, tag
     else:
         print("[*] No code changes needed to commit.")
