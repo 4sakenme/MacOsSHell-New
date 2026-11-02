@@ -192,29 +192,6 @@ Item {
             readonly property real bn:
                 Math.min(1.0, w.glassBlur * 1.4 * ds / 64.0)
 
-            property bool updating: true
-            Timer {
-                id: settleTimer
-                interval: 350
-                onTriggered: gl.updating = false
-            }
-            function triggerUpdate() {
-                gl.updating = true;
-                settleTimer.restart();
-            }
-            Connections {
-                target: w
-                function onScreenXChanged() { gl.triggerUpdate(); }
-                function onScreenYChanged() { gl.triggerUpdate(); }
-                function onWallUrlChanged() { gl.triggerUpdate(); }
-                function onGlassBlurChanged() { gl.triggerUpdate(); }
-                function onGlassLiquidChanged() { gl.triggerUpdate(); }
-                function onWidthChanged() { gl.triggerUpdate(); }
-                function onHeightChanged() { gl.triggerUpdate(); }
-                function onEditingChanged() { if (!w.editing) gl.triggerUpdate(); }
-            }
-            Component.onCompleted: gl.triggerUpdate()
-
             Item {
                 id: backdrop
 
@@ -244,7 +221,6 @@ Item {
                     asynchronous: true
                     sourceSize.width: w.screenW
                     smooth: true
-                    onStatusChanged: if (status === Image.Ready) gl.triggerUpdate()
                 }
 
                 LiveWall {
@@ -270,7 +246,7 @@ Item {
                 id: bsrc
                 sourceItem: backdrop
                 hideSource: true
-live: (gl.streaming || w.editing || gl.updating)
+live: gl.streaming
                 visible: false
 
                 textureSize: Qt.size(
@@ -294,7 +270,7 @@ live: (gl.streaming || w.editing || gl.updating)
             ShaderEffectSource {
                 id: blurred
                 sourceItem: blurFx
-live: (gl.streaming || w.editing || gl.updating)
+live: gl.streaming
                 visible: false
             }
 
