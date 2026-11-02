@@ -131,7 +131,6 @@ Scope {
         root.helloZoomScale = 1.0;
         root.helloWordIndex = 0;
         root.active = true;
-        step0Timer.restart();
     }
 
     function finishUpdateWelcome() {
@@ -907,8 +906,14 @@ Scope {
         function dark(enable: bool): void {
             root.darkMode = enable;
         }
-        function close(): void { root.active = false; }
-        function finish(): void { root.finishSetup(); }
+        function close(): void {
+            if (root.isUpdateWelcome) root.finishUpdateWelcome();
+            else root.active = false;
+        }
+        function finish(): void {
+            if (root.isUpdateWelcome) root.finishUpdateWelcome();
+            else root.finishSetup();
+        }
         function reset(): void {
             Quickshell.execDetached(["rm", "-f", Quickshell.env("HOME") + "/.config/macshell/.setup_completed"]);
             if (root.hub) root.hub.setupCompleted = false;
