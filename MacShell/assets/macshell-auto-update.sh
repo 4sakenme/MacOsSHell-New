@@ -179,16 +179,23 @@ cmd_apply() {
             "$tmp_dir/src/MacLock/" "$LOCK_DEST/"
     fi
 
-    # Compile shaders if qsb exists
+    # Compile shaders if qsb exists (checking PATH and /usr/lib/qt6/bin/qsb)
+    local qsb_cmd=""
     if command -v qsb >/dev/null 2>&1; then
-        echo "PROGRESS:90:Compiling graphics shaders (qsb)..."
+        qsb_cmd="qsb"
+    elif [ -x /usr/lib/qt6/bin/qsb ]; then
+        qsb_cmd="/usr/lib/qt6/bin/qsb"
+    fi
+
+    if [ -n "$qsb_cmd" ]; then
+        echo "PROGRESS:90:Compiling graphics shaders ($qsb_cmd)..."
         for sh in "$DEST"/*.frag "$DEST"/*.vert "$DEST"/modules/*.frag; do
             [ -f "$sh" ] || continue
-            qsb --glsl "300es,120" --hlsl 50 --msl 12 -o "$sh.qsb" "$sh" 2>/dev/null || true
+            "$qsb_cmd" --glsl "300es,120" --hlsl 50 --msl 12 -o "$sh.qsb" "$sh" 2>/dev/null || true
         done
         for sh in "$LOCK_DEST"/*.frag "$LOCK_DEST"/*.vert; do
             [ -f "$sh" ] || continue
-            qsb --glsl "300es,120" --hlsl 50 --msl 12 -o "$sh.qsb" "$sh" 2>/dev/null || true
+            "$qsb_cmd" --glsl "300es,120" --hlsl 50 --msl 12 -o "$sh.qsb" "$sh" 2>/dev/null || true
         done
     fi
 

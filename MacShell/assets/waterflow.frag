@@ -75,3 +75,4 @@ void main()
 
     fragColor = vec4(col * alpha, alpha * 0.94);
 }
+
