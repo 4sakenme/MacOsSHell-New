@@ -221,8 +221,14 @@ cmd_apply() {
 EOF
 
     echo "PROGRESS:100:Restarting MacShell to apply updates..."
-    # Launch clean Quickshell reload in background
-    setsid sh -c "sleep 0.8; pkill -f 'qs -c MacShell' 2>/dev/null || pkill -f 'quickshell -c MacShell' 2>/dev/null; sleep 0.3; LC_ALL=C.UTF-8 qs -c MacShell &" >/dev/null 2>&1 &
+    # Launch clean Quickshell reload through compositor or background process
+    pkill -f "qs -c MacShell" 2>/dev/null || true
+    sleep 0.5
+    if command -v hyprctl >/dev/null 2>&1; then
+        hyprctl dispatch 'hl.dsp.exec_cmd("LC_ALL=C.UTF-8 qs -c MacShell")' 2>/dev/null || setsid qs -c MacShell >/dev/null 2>&1 &
+    else
+        setsid qs -c MacShell >/dev/null 2>&1 &
+    fi
     return 0
 }
 
